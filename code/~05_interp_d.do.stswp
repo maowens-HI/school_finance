@@ -1,0 +1,476 @@
+
+
+
+*** ---------------------------------------------------------------------------
+*** 04_interp_d. Housekeeping
+*** ---------------------------------------------------------------------------
+clear
+set more off
+cd "$SchoolSpending\data"
+
+use f33_indfin_grf_canon,clear
+* Convert string LEAID → numeric
+encode LEAID, gen(LEAID_num)
+
+* gap detector
+bysort LEAID (year): gen gap_next = year[_n+1] - year
+gen too_far = gap_next > 3
+* Declare panel and fill missing years
+* Identify panel range
+summ year
+local min = r(min)
+local max = r(max)
+
+* Ensure full county-year panel
+drop if missing(year4)
+tsset LEAID_num year
+tsfill, full
+
+
+
+*--- 1. Fill identifiers ------------------------------------------------------
+
+*Strings
+foreach var in NAME GOVID CENSUSID LEAID name{
+    bys LEAID_num: egen __fill_`var' = mode(`var'), maxmode
+    replace `var' = __fill_`var' if missing(`var')
+    drop __fill_`var'
+}
+
+
+bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
+
+*--- 2. Interpolate county expenditures --------------------------------------
+bys LEAID_num: ipolate pp_exp year if too_far == 0, gen(exp2)
+replace exp2 = pp_exp if !missing(pp_exp)
+
+drop pp_exp population county totalexpenditure gap_next too_far
+
+rename exp2 pp_exp
+
+*** ---------------------------------------------------------------------------
+*** Save final panel
+*** ---------------------------------------------------------------------------
+keep LEAID GOVID name year4 pp_exp LEAID_num
+save interp_d, replace
+
+
+
+
+/*****************************************************************************
+Assign one LEAID to each tract based on allocated population
+*******************************************************************************/
+use "$SchoolSpending\data\grf_tract_canon", clear
+gen coc70 = substr(tract70,3,3)
+
+* Guard against . sorting to the top
+gen byte has_alloc = alloc_pop < .
+
+* Pick exactly one LEAID per (tract70 sdtc):
+*   max alloc_pop; tie fallback = smallest LEAID
+gsort tract70 sdtc -has_alloc -alloc_pop LEAID
+by tract70 sdtc: keep if _n==1
+drop if missing(tract70)
+drop if missing(sdtc)  
+* Sanity
+isid tract70 sdtc
+
+* Save crosswalk
+tempfile xwalk
+save `xwalk', replace
+
+
+***Merge panel to tracts
+*District Year Spending
+use "$SchoolSpending\data\interp_d.dta", clear
+
+
+*ExplodeL one row per tract-year
+joinby LEAID using `xwalk', unmatched(both) _merge(join_merge)
+
+*** Clean and Save
+sort tract70 year4
+cd "$SchoolSpending\data"
+
+keep if join_merge ==3
+save interp_t, replace
+
+
+
+
+
+*** Register FRED key once (no more nagging)
+set fredkey 87d3478358d0f3e781d2657d1aefd1ff, permanently
+
+*** Import MONTHLY CPI-U (NSA), grab 1966 so FY1967 is complete
+tempfile cpi_monthly fy_tbl cpi_fy deflators
+import fred CPIAUCNS, daterange(1964-01-01 2019-12-31) clear
+gen m = mofd(daten)
+format m %tm
+rename CPIAUCNS cpi_u_all_nsa
+keep m cpi_u_all_nsa
+save `cpi_monthly'
+
+*** Load fiscal-year lookup
+import delimited "$SchoolSpending\data\fiscal_year.csv", ///
+    varnames(1) clear
+
+*** Make sure state_fips is str2
+tostring state_fips, replace format("%02.0f")
+keep state_fips fy_start_month
+duplicates drop
+save `fy_tbl', replace
+
+*** Cross product of CPI months with states, assign fiscal year end-year
+use `cpi_monthly', clear
+cross using `fy_tbl'
+
+gen cal_y = year(dofm(m))
+gen cal_m = month(dofm(m))
+gen fy_end_year = cal_y + (cal_m >= fy_start_month)
+
+keep if inrange(fy_end_year, 1967,2019)
+
+
+*** Collapse to fiscal-year averages
+*This was messing stuff up
+*collapse (mean) cpi_u_all_nsa (count) nmonths = m, by(state_fips fy_end_year)
+collapse (mean) cpi_u_all_nsa (count) nmonths = cpi_u_all_nsa, by(state_fips fy_end_year)
+assert nmonths == 12
+rename fy_end_year year4
+rename cpi_u_all_nsa cpi_fy_avg
+label var cpi_fy_avg "CPI-U (NSA) averaged over state fiscal year"
+save `cpi_fy', replace
+
+*** Build 2000-dollar factors
+bys state_fips: egen base2000 = max(cond(year4==2000, cpi_fy_avg, .))
+gen deflator_2000 = cpi_fy_avg / base2000
+gen inflator_2000 = base2000 / cpi_fy_avg
+
+order state_fips year4 cpi_fy_avg deflator_2000 inflator_2000
+save `deflators', replace
+
+*** Merge to panel
+use "$SchoolSpending\data\interp_t", clear
+
+*** Standardize state_fips to str2
+capture confirm string variable state_fips
+if _rc {
+    tostring state_fips, gen(state_fips_str) force
+    replace state_fips_str = substr("00"+state_fips_str, -2, 2)
+    drop state_fips
+    rename state_fips_str state_fips
+}
+
+merge m:1 state_fips year4 using `deflators', keep(match master) nogen
+
+*** deflate per-pupil spending to 2000 dollars
+gen pp_exp_real = pp_exp * inflator_2000
+label var pp_exp_real "Per-pupil expenditure in 2000 dollars (state FY CPI-U avg)"
+
+gen str13 gisjoin2 = substr(tract70, 1, 2) + "0" + substr(tract70, 3, 3) + "0" + substr(tract70, 6, 6)
+*** Save merged panel 
+save "$SchoolSpending\data\interp_t_real.dta", replace
+
+
+
+
+
+
+
+
+*** Housekeeping
+clear 
+set more off 
+
+*** Set working directory
+cd "$SchoolSpending\data"
+
+*** Load tract-level NHGIS school enrollment data
+import delimited "$SchoolSpending\data\school_level_1970.csv", clear
+
+*** Create truncated GISJOIN for merging with tract panel
+gen gisjoin2 = substr(gisjoin, 2, 14)
+
+*** Merge NHGIS data to tract panel
+merge 1:m gisjoin2 using "$SchoolSpending\data\interp_t_real"
+
+*** Drop NHGIS-only records and clean merge variable
+drop if _merge == 1
+drop _merge
+
+*** Generate county code from state FIPS and county code
+gen str5 county_code = state_fips + coc70
+
+*** Save intermediate dataset
+tempfile grf_tract_enrollment_v1
+save `grf_tract_enrollment_v1'
+
+*** Load county-level enrollment file
+import delimited ///
+    "$SchoolSpending\data\county_level.csv", ///
+    clear
+
+*** Construct county code using state and county numeric codes
+gen str5 county_code = string(statea, "%02.0f") + string(countya, "%03.0f")
+
+*** Merge county-level enrollment with tract-level dataset
+merge 1:m county_code using `grf_tract_enrollment_v1' , update replace 
+*** Drop records not found in tract file
+drop if _merge ==1
+drop _merge
+
+*** Save updated dataset
+tempfile grf_tract_enrollment_v2
+save `grf_tract_enrollment_v2' , replace
+
+*** Rename NHGIS enrollment variables for clarity
+rename c05001 nursery_school
+rename c05002 kindergarten
+rename c05003 elementary
+rename c05004 high_school
+rename c05005 college
+
+*** Keep only relevant variables
+keep state county tract70 nursery_school kindergarten elementary high_school college gisjoin2 coc70 sdtc LEAID GOVID year4 pp_exp pp_exp_real state_fips 
+
+*** Generate enrollment measures
+gen enrollment = kindergarten + elementary + high_school
+gen primary_age    = kindergarten + elementary
+gen secondary_age  = high_school
+gen age_total      = primary_age + secondary_age
+gen share_primary   = primary_age   / age_total if age_total > 0
+gen share_secondary = secondary_age / age_total if age_total > 0
+
+*** Rename and construct county identifiers
+rename county county_name
+gen str5 county = state_fips + coc70
+
+*** Pivot from long to wide
+
+
+*** Drop exact duplicates of tract-year-district observations
+duplicates drop gisjoin2 year4 sdtc LEAID tract70, force
+
+*** If multiple LEAIDs remain for same tract-year-type, keep first
+by tract70 year4 sdtc (LEAID), sort: keep if _n == 1
+
+*** Reshape dataset wide by district type
+keep LEAID gisjoin2 year4 sdtc pp_exp_real enrollment ///
+share_primary share_secondary county_name county  
+reshape wide LEAID pp_exp_real enrollment share_primary share_secondary county_name county, i(gisjoin2 year4) j(sdtc)
+
+/*────────────────────────────────────────────────────────────────────────────
+   ── Assign tract-level per-pupil expenditure (PPE) ─────────────────────────
+   Combine primary (sdtc==2) and secondary (sdtc==3) PPE weighted by shares.
+   ------------------------------------------------------------------------*/
+
+*** Drop redundant share variables from reshape
+drop share_primary3 share_secondary2
+
+*** Initialize tract PPE variable
+gen ppe_tract = .
+
+*** Calculate weighted PPE for split-district cases
+replace ppe_tract = pp_exp_real2*share_primary2 + ///
+                    pp_exp_real3*share_secondary3 ///
+                    if !missing(pp_exp_real2) & !missing(pp_exp_real3)
+
+*** Sanity check distribution of tract PPE
+summarize ppe_tract, detail
+
+*** Fill missing tract PPE with available single-district values
+replace ppe_tract = pp_exp_real1 if missing(ppe_tract) & !missing(pp_exp_real1)
+replace ppe_tract = pp_exp_real2 if missing(ppe_tract) & !missing(pp_exp_real2)
+replace ppe_tract = pp_exp_real3 if missing(ppe_tract) & !missing(pp_exp_real3)
+
+*** Final rename for tract PPE
+rename ppe_tract pp_exp_real
+
+*** Reset working directory
+cd "$SchoolSpending\data"
+
+*** Clean enrollment variables
+rename enrollment1 enrollment
+replace enrollment = enrollment2 if missing(enrollment) 
+drop enrollment2
+replace enrollment = enrollment3 if missing(enrollment)
+drop enrollment3
+
+*** Clean county_name variables from reshape
+rename county_name1 county_name
+replace county_name = county_name2 if missing(county_name)
+drop county_name2
+replace county_name = county_name3 if missing(county_name)
+drop county_name3
+
+*** Clean county identifiers from reshape
+rename county1 county
+replace county = county2 if missing(county)
+drop county2
+replace county = county3 if missing(county)
+drop county3
+
+*** Clean LEAID variables
+rename LEAID1 LEAID
+replace LEAID = LEAID2 + LEAID3 if missing(LEAID)
+
+*** Create county-level lookup for merging back later
+preserve
+keep county_name county
+duplicates drop county_name county, force
+tempfile mytemp
+save `mytemp'
+restore
+
+*****************************************************************************
+*Collapse into counties
+*****************************************************************************
+
+*** Collapse tract data to county-year averages, weighted by enrollment
+collapse (sum) enrollment (mean) pp_exp_real, by(county year4)
+
+
+*** Rename collapsed variables for clarity
+rename pp_exp_real county_exp   
+gen state_fips = substr(county,1,2)
+gen year_unified = year4 - 1
+
+*** Save county-year panel temporarily
+tempfile mytemp2
+save `mytemp2'
+
+*** Merge county names back into collapsed panel
+use `mytemp'
+merge 1:m county using `mytemp2'
+keep if _merge==3
+drop _merge
+
+*** Clean county names for consistency
+replace county_name = lower(county_name)
+gen county_name2 = regexr(county_name, "(County|Census|Parish|Borough|city|City).*", "")
+drop county_name 
+rename county_name2 county_name
+replace county_name = trim(county_name)
+
+
+
+*****************************************************************************
+*non-missing county list
+*****************************************************************************
+* ==== Counts: before vs after restriction ====
+
+* Count unique counties in baseline years BEFORE filtering
+preserve
+    keep county
+    duplicates drop
+    count
+    di as text "Unique counties (any year): " as result r(N)
+restore
+
+* Apply the restriction
+merge m:1 county using clean_cty
+
+* Count unique counties AFTER filtering (in baseline years)
+preserve
+    keep county
+    duplicates drop
+    count
+    di as text "Unique counties (any year): " as result r(N)
+restore
+rename _merge clean_3
+*** Save final county-level per-pupil expenditure panel
+save interp_c, replace
+
+
+
+
+
+
+*** ============================================
+*** Use JJP reform table instead of Hanushek logic
+*** ============================================
+
+*** Housekeeping
+clear
+set more off
+cd "$SchoolSpending\data"
+*** Load JJP reform mapping (first sheet assumed)
+import excel using "$SchoolSpending\data\tabula-tabled2.xlsx", firstrow
+
+
+rename CaseNameLegislationwithout case_name
+rename Constitutionalityoffinancesys const
+rename TypeofReform reform_type
+rename FundingFormulaafterReform form_post
+rename FundingFormulabeforeReform form_pre
+rename Year reform_year
+rename State state_name
+
+
+
+* create a local with the number of rows
+local N = _N  
+
+forvalues i = 2/`N' {
+    if missing(state_name[`i']) {
+        replace state_name = state_name[`i'-1] in `i'
+    }
+    else {
+        replace state_name = state_name[`i'] in `i'
+    }
+}
+
+replace state_name = itrim(lower(strtrim(state_name)))
+* replace line feeds with a space
+replace state_name = subinstr(state_name, char(10), " ", .)
+replace state_name = subinstr(state_name, char(13), " ", .)
+* now clean up any double spaces
+replace state_name = itrim(strtrim(state_name))
+
+replace state_name = "massachusetts" if state_name == "massachuset ts"
+
+drop if missing(case_name)
+keep if const == "Overturned"
+bysort state_name: keep if _n == 1
+
+gen mfp_pre = "MFP" if regexm(form_pre, "MFP")
+gen ep_pre  = "EP"  if regexm(form_pre, "EP")
+gen le_pre  = "LE"  if regexm(form_pre, "LE")
+gen sl_pre  = "SL"  if regexm(form_pre, "SL")
+
+gen mfp_post = "MFP" if regexm(form_post, "MFP")
+gen ep_post  = "EP"  if regexm(form_post, "EP")
+gen le_post  = "LE"  if regexm(form_post, "LE")
+gen sl_post  = "SL"  if regexm(form_post, "SL")
+
+gen reform = 0
+replace reform = 1 if regexm(reform_type, "Equity")
+drop reform_type
+label define reform_lbl 0 "Adequacy" 1 "Equity"
+label values reform reform_lbl
+label variable reform "School finance reform type"
+gen treatment = 1
+
+tempfile temp
+
+
+
+save `temp'
+
+import delimited using state_fips_master, clear
+replace state_name = itrim(lower(strtrim(state_name)))
+
+merge 1:m state_name using `temp'
+drop _merge
+tostring fips, gen(state_fips) format(%02.0f)
+
+drop fips
+
+*** Save final panel with JJP treatment
+merge 1:m state_fips using interp_c
+replace treatment = 0 if missing(treatment)
+keep if _merge ==3
+drop _merge
+drop long_name sumlev region division state division_name region_name
+save "$SchoolSpending\data\interp_c", replace

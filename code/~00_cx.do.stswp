@@ -692,37 +692,6 @@ display as result "Conflict rate (pp_exp): " %5.2f (100*r(mean)) "%"
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-
 *** ---------------------------------------------------------------------------
 *** 4. Simple Merger NO canon IDs
 *** ---------------------------------------------------------------------------
@@ -745,7 +714,6 @@ preserve
     drop if missing(LEAID) 
 	drop if LEAID == "M"
 	drop if LEAID == "N"
-	duplicates drop LEAID GOVID, force
     bysort LEAID: gen n_govid = _N       // distinct GOVIDs for this LEAID
     bysort GOVID: gen n_leaid = _N       // distinct LEAIDs for this GOVID
     gen byte rel_type = .
