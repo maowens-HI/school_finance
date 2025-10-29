@@ -17,6 +17,8 @@ rename enrollment school_age_pop
 gen never_treated = treatment == 0
 bysort county_id: egen ever_treated = max(treatment)
 gen never_treated2 = ever_treated == 0
+gen year_unified = year4-1
+keep if good_county ==1
 winsor2 county_exp, replace c(1 99) by(year_unified)
 *take the 99% value and any obs that are above the 99% replace with 99%
 
@@ -155,8 +157,9 @@ save jjp_interp, replace
 
 
 use jjp_interp, clear
-collapse (mean) reform_year (count) N = county_num, by(relative_year)
-twoway (line reform_year relative_year) (bar N relative_year, yaxis(2))
+collapse (mean) exp, by(year4)
+twoway line exp year4
+
 
 
 
@@ -175,7 +178,7 @@ foreach v of local var {
 
     areg `v' ///
         i.lag_* i.lead_* ///
-        i.year_unified [w = school_age_pop] if (never_treated==1 | (reform_year<2000)), ///
+        i.year_unified if (never_treated==1 | (reform_year<2000)), ///
         absorb(county_id) vce(cluster county_id)
 
     *log close
@@ -226,7 +229,7 @@ foreach v of local var {
 **********************************/
 
 local var lexp lexp_ma lexp_ma_strict
-local years pre_q1966  pre_q1969 pre_q1970 pre_q1971 pre_q_66_70 pre_q_66_71 pre_q_69_71
+local years  pre_q1971 pre_q_66_71 pre_q_69_71
 
 foreach y of local years {
     foreach v of local var {
@@ -237,7 +240,7 @@ foreach y of local years {
 
             areg `v' ///
                 i.lag_* i.lead_* ///
-                i.year_unified [w = school_age_pop] if `y'==`q' & (never_treated==1 | reform_year<2000), ///
+                i.year_unified if `y'==`q' & (never_treated==1 | reform_year<2000), ///
                 absorb(county_id) vce(cluster county_id)
             *log close
 
@@ -292,7 +295,7 @@ foreach v of local var{
 	use jjp_interp, clear
 areg `v' ///
     i.lag_* i.lead_* ///
-    i.year_unified [w = school_age_pop] if `y' < 4 & (never_treated==1 | reform_year<2000), ///
+    i.year_unified  if `y' < 4 & (never_treated==1 | reform_year<2000), ///
     absorb(county_id) vce(cluster county_id)
 
 *--------------------------------------*

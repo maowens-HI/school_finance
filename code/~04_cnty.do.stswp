@@ -64,7 +64,7 @@ rename c05004 high_school
 rename c05005 college
 
 *** Keep only relevant variables
-keep state county tract70 nursery_school kindergarten elementary high_school college gisjoin2 coc70 sdtc LEAID GOVID year4 pp_exp pp_exp_real state_fips tract_missing_any
+keep LEAID GOVID year4 pp_exp_real good_tract sdtc state_fips gisjoin2 coc70 tract70 county kindergarten elementary high_school
 
 *** Generate enrollment measures
 gen enrollment = kindergarten + elementary + high_school
@@ -89,7 +89,7 @@ by tract70 year4 sdtc (LEAID), sort: keep if _n == 1
 
 *** Reshape dataset wide by district type
 keep LEAID gisjoin2 year4 sdtc pp_exp_real enrollment ///
-share_primary share_secondary county_name county  tract_missing_any
+share_primary share_secondary county_name county good_tract
 reshape wide LEAID pp_exp_real enrollment share_primary share_secondary county_name county, i(gisjoin2 year4) j(sdtc)
 
 /*────────────────────────────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ restore
 *** Collapse tract data to county-year averages, weighted by enrollment
 * preferred: one-liner with analytic weights
 * Proper syntax: apply weights inside the mean group only
-collapse (sum) enrollment (mean) pp_exp_real (max) county_missing_any = tract_missing_any, by(county year4)
+collapse (sum) enrollment (mean) pp_exp_real (max) good_county = good_tract, by(county year4)
 
 
 save county_panel_temp, replace
@@ -211,12 +211,9 @@ restore
 
 * Keep counties present in all 4 baseline years AND zero problems
 preserve
-    keep county year4 county_missing_any
-    keep if inlist(year4, 1967, 1970, 1971, 1972)
-    bys county: egen byte n_base   = total(inlist(year4,1967,1970,1971,1972))
-    bys county: egen byte ever_bad = max(county_missing_any)
-    keep if n_base == 4 & ever_bad == 0
-    keep county
+    keep county year4 good_county
+    keep if good_county ==1
+    keep county good_county
     duplicates drop
     save clean_cty, replace
 restore

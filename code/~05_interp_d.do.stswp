@@ -20,7 +20,7 @@ gen too_far = gap_next > 3
 summ year
 local min = r(min)
 local max = r(max)
-
+/*
 * Ensure full county-year panel
 drop if missing(year4)
 tsset LEAID_num year
@@ -31,7 +31,7 @@ tsfill, full
 *--- 1. Fill identifiers ------------------------------------------------------
 
 *Strings
-foreach var in NAME GOVID CENSUSID LEAID name{
+foreach var in GOVID LEAID good_govid_baseline{
     bys LEAID_num: egen __fill_`var' = mode(`var'), maxmode
     replace `var' = __fill_`var' if missing(`var')
     drop __fill_`var'
@@ -44,14 +44,14 @@ bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
 bys LEAID_num: ipolate pp_exp year if too_far == 0, gen(exp2)
 replace exp2 = pp_exp if !missing(pp_exp)
 
-drop pp_exp population county totalexpenditure gap_next too_far
+drop pp_exp gap_next too_far
 
 rename exp2 pp_exp
-
+*/
 *** ---------------------------------------------------------------------------
 *** Save final panel
 *** ---------------------------------------------------------------------------
-keep LEAID GOVID name year4 pp_exp LEAID_num
+keep LEAID GOVID  year4 pp_exp LEAID_num
 save interp_d, replace
 
 
@@ -473,4 +473,6 @@ replace treatment = 0 if missing(treatment)
 keep if _merge ==3
 drop _merge
 drop long_name sumlev region division state division_name region_name
+keep state_fips reform_year reform year4 enrollment county_exp county good_county treatment
+replace good_county = 0 if missing(good_county)
 save "$SchoolSpending\data\interp_c", replace

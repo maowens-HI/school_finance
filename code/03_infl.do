@@ -78,4 +78,5 @@ gen pp_exp_real = pp_exp * inflator_2000
 label var pp_exp_real "Per-pupil expenditure in 2000 dollars (state FY CPI-U avg)"
 */
 *** Save merged panel 
+keep LEAID GOVID year4 pp_exp_real good_tract sdtc state_fips gisjoin2 coc70 tract70
 save "$SchoolSpending\data\tracts_panel_real.dta", replace

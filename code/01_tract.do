@@ -165,12 +165,7 @@ save grf_block,replace
 
 *** Housekeeping
 
-use canon_crosswalk,clear
-duplicates drop LEAID, force
-drop year
-merge 1:m LEAID using grf_block
-replace LEAID = LEAID_canon if !missing(LEAID_canon)   
-drop GOVID GOVID_canon _merge   canon_*
+use grf_block,clear  
 
 collapse (sum) alloc_pop alloc_hou, by(tract70 sdtc LEAID)
 
@@ -213,13 +208,12 @@ preserve
     save `xwalk_multi'
 
     use "$SchoolSpending\data\f33_indfin_grf_canon.dta", clear
-    keep LEAID year4 pp_exp 
-	gen no_spend = 0
-	replace no_spend = 1 if missing(pp_exp)
+    keep LEAID year4 pp_exp good_govid_baseline
+	rename good_govid_baseline good_govid
 
     joinby LEAID using `xwalk_multi'
-    bys tract70 year4: egen tract_missing_any = max(no_spend)
-    keep tract70 sdtc year4 tract_missing_any 
+    bys tract70 year4: egen good_tract = max(good_govid)
+    keep tract70 sdtc year4 good_tract
     duplicates drop
     tempfile tract_flag
     save `tract_flag'
@@ -271,13 +265,10 @@ cd "$SchoolSpending\data"
 
 
 merge m:1 tract70 sdtc year4 using `tract_flag', nogen
-drop totalexpenditure county 
 keep if join_merge ==3
-drop  NAME  CENSUSID bad_pop bad_exp sortcode idchanged statecode typecode name ///
-totaleductotalexp elemeductotalexp district_tag has_alloc id tracts_per_district join_merge _merge ///
-alloc_pop alloc_hou V33 TOTALEXP population
 gen str13 gisjoin2 = substr(tract70, 1, 2) + "0" + substr(tract70, 3, 3) + "0" + substr(tract70, 6, 6)
 gen str3 coc70 = substr(tract70, 3, 3)
+keep LEAID GOVID year4 pp_exp good_tract sdtc state_fips gisjoin2 coc70 tract70
 save tracts_panel_canon, replace
 
 
