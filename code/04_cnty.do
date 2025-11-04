@@ -1,14 +1,14 @@
 /*-------------------------------------------------------------------------------
 File     : 04_cnty
 Purpose  : Collapse tracts into a county level spending panel
-Inputs   : school enrollment data: school_level_1970.csv
-		   county enrollment data: county_level.csv
+Inputs   : school school_age_pop data: school_level_1970.csv
+		   county school_age_pop data: county_level.csv
 		   tract spending data: tracts_panel_real
 Outputs  : county spending data: county_pp_exp_panel_real
 Author   : Myles Owens
 Created  : 27 August 2025
-Notes    : - merges enrollment data into tract spending panel
-		   - collapses tract spending into county level weighted by enrollment
+Notes    : - merges school_age_pop data into tract spending panel
+		   - collapses tract spending into county level weighted by school_age_pop
 -------------------------------------------------------------------------------*/
 
 *** Housekeeping
@@ -18,58 +18,187 @@ set more off
 *** Set working directory
 cd "$SchoolSpending\data"
 
-*** Load tract-level NHGIS school enrollment data
-import delimited "$SchoolSpending\data\school_level_1970.csv", clear
+*** Load tract-level NHGIS school school_age_pop data
+*import delimited "$SchoolSpending\data\school_level_1970.csv", clear
+import delimited "$SchoolSpending\data\enroll_age_tract.csv", clear
+
+*** Label variables from NHGIS 1970 "Age by school_age_pop Status" table (NT112)
+
+label var gisjoin   "GIS Join Match Code"
+label var year      "Data File Year"
+label var regiona   "Region Code"
+label var divisiona "Division Code"
+label var state     "State Name"
+label var statea    "State Code"
+label var county    "County Name"
+label var countya   "County Code"
+label var cty_suba  "County Subdivision Code"
+label var placea    "Place Code"
+label var tracta    "Census Tract Code"
+label var scsaa     "Standard Consolidated Statistical Area Code"
+label var smsaa     "Standard Metropolitan Statistical Area Code"
+label var urb_areaa "Urban Area Code"
+label var areaname  "Area Name"
+label var cencnty   "1970 Central County Code"
+label var cbd       "Central Business District"
+label var sea       "State Economic Area"
+
+*** Table NT112: Age by school_age_pop Status (Persons 3–34 Years)
+label var c04001 "3–4 years old — Enrolled"
+label var c04002 "3–4 years old — Not enrolled"
+label var c04003 "5–6 years old — Enrolled"
+label var c04004 "5–6 years old — Not enrolled"
+label var c04005 "7–13 years old — Enrolled"
+label var c04006 "7–13 years old — Not enrolled"
+label var c04007 "14–15 years old — Enrolled"
+label var c04008 "14–15 years old — Not enrolled"
+label var c04009 "16–17 years old — Enrolled"
+label var c04010 "16–17 years old — Not enrolled"
+label var c04011 "18–24 years old — Enrolled"
+label var c04012 "18–24 years old — Not enrolled"
+label var c04013 "25–34 years old — Enrolled"
+label var c04014 "25–34 years old — Not enrolled"
+
+
+*** Optional: create total school-age population (approx ages 5–17)
+gen school_age_pop = c04003 + c04004 + c04005 + c04006 + c04007 + c04008 + c04009 + c04010
+label var school_age_pop "Estimated school-age population (5–17 years, enrolled + not enrolled)"
+
+*****************************************************************************
+*Clean data
+*****************************************************************************
+gen str2 state_str  = string(statea,  "%02.0f")
+gen str3 county_str = string(countya, "%03.0f")
+
+*** Build tract_str intelligently from numeric tracta
+gen digits = floor(log10(tracta)) + 1 if tracta > 0
+replace digits = 1 if tracta == 0 | tracta==.
+
+gen str6 tract_str = ""
+replace tract_str = string(tracta*100, "%06.0f") if digits <= 4    // 101 → 010100
+replace tract_str = string(tracta, "%06.0f")      if digits == 5 | digits == 6   // 123456 → 123456
+
+
+* Canonical 11-digit tract identifier
+gen str11 tract70 = state_str + county_str + tract_str
+
+gen tract_merge = substr(tract70,1,9)
+label var tract70 "11-digit Census Tract FIPS (state+county+tract)"  // 
+
 
 *** Create truncated GISJOIN for merging with tract panel
 gen gisjoin2 = substr(gisjoin, 2, 14)
 
+
+*****************************************************************************
+*Merge tract level
+*****************************************************************************
+
+collapse (mean) school_age_pop, by(tract_merge)
+summ school_age_pop
+save school_age_pop,replace 
+
+
 *** Merge NHGIS data to tract panel
-merge 1:m gisjoin2 using "$SchoolSpending\data\tracts_panel_real"
+merge 1:m tract_merge using "$SchoolSpending\data\tracts_panel_real"
+
+rename _merge good_merge
+tempfile check_no_tract
+save `check_no_tract'
+
+
+use grf_id_tractlevel,clear
+keep tract70 no_tract
+duplicates drop tract70,force
+merge 1:m tract70 using `check_no_tract'
 
 *** Drop NHGIS-only records and clean merge variable
-drop if _merge == 1
+drop if good_merge == 1
+drop good_merge
 drop _merge
 
 *** Generate county code from state FIPS and county code
 gen str5 county_code = state_fips + coc70
 
 *** Save intermediate dataset
-tempfile grf_tract_enrollment_v1
-save `grf_tract_enrollment_v1'
+preserve 
+keep if no_tract ==0
+tempfile grf_tract_school_age_pop_v1
+save `grf_tract_school_age_pop_v1'
+restore
+keep if no_tract ==1
+tempfile grf_no_tract
+save `grf_no_tract'
 
-*** Load county-level enrollment file
+
+
+*****************************************************************************
+*Merge county level
+*****************************************************************************
+*** Load county-level school_age_pop file
 import delimited ///
-    "$SchoolSpending\data\county_level.csv", ///
+    "$SchoolSpending\data\enroll_age_county.csv", ///
     clear
+	
+	
+* Labels (county-level NT112: Age by school_age_pop Status)
+label var gisjoin   "GIS Join Match Code"
+label var year      "Data File Year"
+label var regiona   "Region Code"
+label var divisiona "Division Code"
+label var state     "State Name"
+label var statea    "State Code"
+label var county    "County Name"
+label var countya   "County Code"
+label var cty_suba  "County Subdivision Code"
+label var placea    "Place Code"
+label var tracta    "Census Tract Code"
+label var scsaa     "Standard Consolidated Statistical Area Code"
+label var smsaa     "Standard Metropolitan Statistical Area Code"
+label var urb_areaa "Urban Area Code"
+label var areaname  "Area Name"
+label var cencnty   "1970 Central County Code"
+label var cbd       "Central Business District"
+label var sea       "State Economic Area"
+
+label var c04001 "3–4 yrs — Enrolled"
+label var c04002 "3–4 yrs — Not enrolled"
+label var c04003 "5–6 yrs — Enrolled"
+label var c04004 "5–6 yrs — Not enrolled"
+label var c04005 "7–13 yrs — Enrolled"
+label var c04006 "7–13 yrs — Not enrolled"
+label var c04007 "14–15 yrs — Enrolled"
+label var c04008 "14–15 yrs — Not enrolled"
+label var c04009 "16–17 yrs — Enrolled"
+label var c04010 "16–17 yrs — Not enrolled"
+label var c04011 "18–24 yrs — Enrolled"
+label var c04012 "18–24 yrs — Not enrolled"
+label var c04013 "25–34 yrs — Enrolled"
+label var c04014 "25–34 yrs — Not enrolled"
+
+* County school-age total (5–17), and a clean 1970 county FIPS
+gen school_age_pop = c04003 + c04004 + c04005 + c04006 + c04007 + c04008 + c04009 + c04010
+label var school_age_pop "School-age population (5–17), 1970"
 
 *** Construct county code using state and county numeric codes
 gen str5 county_code = string(statea, "%02.0f") + string(countya, "%03.0f")
+*** Merge county-level school_age_pop with tract-level dataset
+merge 1:m county_code using `grf_no_tract'
 
-*** Merge county-level enrollment with tract-level dataset
-merge 1:m county_code using `grf_tract_enrollment_v1' , update replace 
-*** Drop records not found in tract file
-drop if _merge ==1
+keep if _merge==3
 drop _merge
 
+
+append using `grf_tract_school_age_pop_v1'
+
 *** Save updated dataset
-tempfile grf_tract_enrollment_v2
-save `grf_tract_enrollment_v2' , replace
+tempfile grf_tract_school_age_pop_v2
+save `grf_tract_school_age_pop_v2' , replace
+drop if missing(sdtc) | sdtc==4
 
-*** Rename NHGIS enrollment variables for clarity
-rename c05001 nursery_school
-rename c05002 kindergarten
-rename c05003 elementary
-rename c05004 high_school
-rename c05005 college
-
-*** Keep only relevant variables
-keep LEAID GOVID year4 pp_exp_real good_tract sdtc state_fips gisjoin2 coc70 tract70 county kindergarten elementary high_school
-
-*** Generate enrollment measures
-gen enrollment = kindergarten + elementary + high_school
-gen primary_age    = kindergarten + elementary
-gen secondary_age  = high_school
+*** Generate school_age_pop measures
+gen primary_age    = c04003 + c04004 + c04005 + c04006
+gen secondary_age  = c04007 + c04008 + c04009 + c04010
 gen age_total      = primary_age + secondary_age
 gen share_primary   = primary_age   / age_total if age_total > 0
 gen share_secondary = secondary_age / age_total if age_total > 0
@@ -88,9 +217,11 @@ duplicates drop gisjoin2 year4 sdtc LEAID tract70, force
 by tract70 year4 sdtc (LEAID), sort: keep if _n == 1
 
 *** Reshape dataset wide by district type
-keep LEAID gisjoin2 year4 sdtc pp_exp_real enrollment ///
-share_primary share_secondary county_name county good_tract
-reshape wide LEAID pp_exp_real enrollment share_primary share_secondary county_name county, i(gisjoin2 year4) j(sdtc)
+keep LEAID gisjoin2 tract70 year4 sdtc pp_exp_real school_age_pop ///
+share_primary share_secondary county_name county good_tract ///
+good_tract_1967 good_tract_1970 good_tract_1971 ///
+    good_tract_1972 good_tract_6771
+reshape wide LEAID pp_exp_real school_age_pop share_primary share_secondary county_name county, i(tract70 year4) j(sdtc)
 
 /*────────────────────────────────────────────────────────────────────────────
    ── Assign tract-level per-pupil expenditure (PPE) ─────────────────────────
@@ -122,12 +253,12 @@ rename ppe_tract pp_exp_real
 *** Reset working directory
 cd "$SchoolSpending\data"
 
-*** Clean enrollment variables
-rename enrollment1 enrollment
-replace enrollment = enrollment2 if missing(enrollment) 
-drop enrollment2
-replace enrollment = enrollment3 if missing(enrollment)
-drop enrollment3
+*** Clean school_age_pop variables
+rename school_age_pop1 school_age_pop
+replace school_age_pop = school_age_pop2 if missing(school_age_pop) 
+drop school_age_pop2
+replace school_age_pop = school_age_pop3 if missing(school_age_pop)
+drop school_age_pop3
 
 *** Clean county_name variables from reshape
 rename county_name1 county_name
@@ -158,12 +289,63 @@ restore
 *Collapse into counties
 *****************************************************************************
 
-*** Collapse tract data to county-year averages, weighted by enrollment
-* preferred: one-liner with analytic weights
-* Proper syntax: apply weights inside the mean group only
-collapse (sum) enrollment (mean) pp_exp_real (max) good_county = good_tract, by(county year4)
+tempfile no_tract_fix
+save `no_tract_fix',replace
+
+use grf_id_tractlevel,clear
+keep tract70 no_tract
+duplicates drop tract70,force
+merge 1:m tract70 using `no_tract_fix'
+
+* 1. For each county, check if any of its tracts are untracted
+bys county: egen has_untracted = max(no_tract)
+
+* 2. Tabulate at the county level
+bys county: keep if _n==1
+tab has_untracted
+
+* 3. Optionally, calculate share (explicitly)
+summ has_untracted
+display "Share of counties with untracted areas: " r(mean)
+display "Share of counties fully tracted: " 1 - r(mean)
 
 
+
+
+preserve
+keep if no_tract==0
+collapse (sum) school_age_pop ///
+         (mean) pp_exp_real ///
+         (max)  good_county              = good_tract ///
+         (max)  good_county_6771         = good_tract_6771 ///
+         (max)  good_county_1967         = good_tract_1967 ///
+         (max)  good_county_1970         = good_tract_1970 ///
+         (max)  good_county_1971         = good_tract_1971 ///
+         (max)  good_county_1972         = good_tract_1972, ///
+         by(county year4)
+
+save tracted_collapse,replace
+restore
+
+
+preserve
+keep if no_tract==1
+collapse (sum) school_age_pop ///
+         (mean) pp_exp_real ///
+         (max)  good_county              = good_tract ///
+         (max)  good_county_6771         = good_tract_6771 ///
+         (max)  good_county_1967         = good_tract_1967 ///
+         (max)  good_county_1970         = good_tract_1970 ///
+         (max)  good_county_1971         = good_tract_1971 ///
+         (max)  good_county_1972         = good_tract_1972, ///
+         by(county year4)
+save no_tract_collapse,replace
+restore
+
+
+
+use tracted_collapse,clear
+append using no_tract_collapse
 save county_panel_temp, replace
 
 
@@ -179,6 +361,7 @@ save `mytemp2'
 
 *** Merge county names back into collapsed panel
 use county_lookup
+duplicates drop county,force
 merge 1:m county using `mytemp2'
 keep if _merge==3
 drop _merge
@@ -211,9 +394,15 @@ restore
 
 * Keep counties present in all 4 baseline years AND zero problems
 preserve
-    keep county year4 good_county
+    keep county year4 good_county ///
+     good_county_6771 good_county_1967 ///
+     good_county_1970 good_county_1971 ///
+     good_county_1972
     keep if good_county ==1
-    keep county good_county
+    keep county year4 good_county ///
+     good_county_6771 good_county_1967 ///
+     good_county_1970 good_county_1971 ///
+     good_county_1972
     duplicates drop
     save clean_cty, replace
 restore

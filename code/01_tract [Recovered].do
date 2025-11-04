@@ -175,13 +175,7 @@ gen state_fips = substr(LEAID,1,2)
 save grf_tract_canon,replace
 
 
-use grf_id_tractlevel,clear
-duplicates drop tract70 no_tract,force
-merge 1:m tract70 using grf_tract_canon
-
-keep if no_tract==1
-
-* Unique tract count per district (ignores duplicate tract–district rows)
+/* Unique tract count per district (ignores duplicate tract–district rows)
 bysort LEAID: egen tracts_per_district = nvals(tract70)
 
 * Tag one row per district so counts aren't multiplied by number of tracts
@@ -200,7 +194,7 @@ display as text "Districts with exactly one tract: " as result `one' ///
 
 * Optional: distribution of tracts per district
 *tab tracts_per_district if district_tag
-
+*/
 /*****************************************************************************
 Tag a tract if ANY of its districts has missing data for that year
 *******************************************************************************/
@@ -221,26 +215,29 @@ keep LEAID year4 pp_exp good_govid ///
     good_govid_1972 good_govid_6771
 
 
-joinby LEAID using `xwalk_multi'
+joinby LEAID using `xwalk_multi', unmatched(both)
+tab _merge
+keep if _merge==3
 
 * Aggregate all GOVID-level tags to tract-year level
-bys tract70 year4: egen good_tract          = max(good_govid)
-bys tract70 year4: egen good_tract_6771     = max(good_govid_6771)
-bys tract70 year4: egen good_tract_1967     = max(good_govid_1967)
-bys tract70 year4: egen good_tract_1970     = max(good_govid_1970)
-bys tract70 year4: egen good_tract_1971     = max(good_govid_1971)
-bys tract70 year4: egen good_tract_1972     = max(good_govid_1972)
+bys tract70: egen good_tract          = max(good_govid)
+bys tract70: egen good_tract_6771     = max(good_govid_6771)
+bys tract70: egen good_tract_1967     = max(good_govid_1967)
+bys tract70: egen good_tract_1970     = max(good_govid_1970)
+bys tract70: egen good_tract_1971     = max(good_govid_1971)
+bys tract70: egen good_tract_1972     = max(good_govid_1972)
 
-keep tract70 sdtc year4 good_tract ///
-    good_tract_1967 good_tract_1970 good_tract_1971 ///
-    good_tract_1972 good_tract_6771
-
-    duplicates drop
+* Keep ONLY the tract-level flags you just made
+drop if missing(good_tract)
+keep tract70 good_tract good_tract_1967 good_tract_1970 ///
+     good_tract_1971 good_tract_1972 good_tract_6771
+	duplicates drop
     tempfile tract_flag
     save `tract_flag'
 restore
+use `tract_flag',clear
 
-
+*/
 
 
 
@@ -249,21 +246,13 @@ restore
 Assign one LEAID to each tract based on allocated population
 *******************************************************************************/
 
-
-/* Drop hopeless tracts (no allocated pop across all LEAIDs)
-bys tract70 sdtc: egen tot_alloc = total(alloc_pop)
-drop if missing(tot_alloc) | tot_alloc==0
-drop tot_alloc */
-
-* Guard against . sorting to the top
-gen byte has_alloc = alloc_pop < .
-
+use grf_tract_canon, clear
 * Pick exactly one LEAID per (tract70 sdtc):
-*   max alloc_pop; tie fallback = smallest LEAID
-gsort tract70 sdtc -has_alloc -alloc_pop LEAID
-by tract70 sdtc: keep if _n==1
+gsort tract70 sdtc -alloc_pop LEAID
 drop if missing(tract70)
 drop if missing(sdtc)  
+by tract70 sdtc: keep if _n==1
+
 * Sanity
 isid tract70 sdtc
 
@@ -278,27 +267,36 @@ use "$SchoolSpending\data\f33_indfin_grf_canon.dta", clear
 drop if year4 == 9999
 
 *ExplodeL one row per tract-year
-joinby LEAID using `xwalk', unmatched(both) _merge(join_merge)
-
+joinby LEAID using `xwalk', unmatched(both)
+tab _merge
+keep if _merge ==3
 *** Clean and Save
 sort tract70 year4
 cd "$SchoolSpending\data"
 
-
-merge m:1 tract70 sdtc year4 using `tract_flag', nogen
-keep if join_merge ==3
+drop _merge
+merge m:1 tract70 using `tract_flag'
+tab _merge
+keep if _merge==3
 gen str13 gisjoin2 = substr(tract70, 1, 2) + "0" + substr(tract70, 3, 3) + "0" + substr(tract70, 6, 6)
 gen str3 coc70 = substr(tract70, 3, 3)
 keep LEAID GOVID year4 pp_exp good_tract sdtc state_fips gisjoin2 coc70 tract70 ///
     good_tract_1967 good_tract_1970 good_tract_1971 ///
     good_tract_1972 good_tract_6771
-save tracts_panel_canon, replace
+	
+gen str5 county_code = substr(LEAID,1,5)	
+save tracts_panel_canon,replace
+	
 
-
-
+********************************************************************************
+*Tabulations
+********************************************************************************
+/*
 use grf_id_tractlevel, clear
-duplicates drop tract70,force
+keep no_tract tract70 county_code
+duplicates drop no_tract tract70 county_code,force
 merge 1:m tract70 using tracts_panel_canon
+keep if _merge==3
 rename county_code county
 * Identify county-year types:
 * Type 1 = all tracted (no_tract==0)
@@ -323,9 +321,10 @@ replace county_type = 1 if n_tr   == n_total & n_total>0          // all tracted
 replace county_type = 2 if n_untr == n_total & n_total>0          // all untracted
 replace county_type = 3 if n_tr>0 & n_untr>0                      // mixture
 
-label define ctype 1 "Type 1: all tracted" ///
-                   2 "Type 2: all untracted" ///
-                   3 "Type 3: mixed", replace
+label define ctype 1 "Tracted only (Type 1)" ///
+                   2 "Untracted only (Type 2)" ///
+                   3 "Mixed (Type 3)", replace
+
 label values county_type ctype
 
 * keep one row per county-year for merge back if needed
@@ -335,64 +334,125 @@ keep county year4 county_type
 tempfile county_types
 save `county_types', replace
 
+use county_school_age,clear
+drop county
+rename county_code county
+merge 1:m county using `county_types'
+keep if _merge ==3
+tab county_type
+tab county_type [w= school_age_pop]
 restore
 
 * merge classification back if desired
-merge m:1 county year4 using `county_types', nogen
+drop _merge
+merge m:1 county year4 using `county_types'
+drop _merge
+save county_type_temp,replace
+
+* After you save `county_types'
+use county_school_age,clear
+drop county
+rename county_code county
+merge 1:m county using county_type_temp
+tab county_type           
+tab county_type [w= school_age_pop]
+    
+
+* Start from your county–year types
+use county_school_age,clear
+drop county
+rename county_code county
+merge 1:m county using `county_types'
+keep if _merge ==3
+* One label per county = max over time
+bys county: egen max_type = max(county_type)
+
+* Keep one row per county and keep the label pretty
+bys county: keep if _n==1
+label define ctype 1 "All tracted (ever only 1)" ///
+                   2 "Ever untracted (no 3s)"   ///
+                   3 "Ever mixed (dominates via max)", replace
+label values max_type ctype
+
+* Tab: share of counties by max rule
+tab max_type
+tab max_type [w= school_age_pop]
+*/
+/**************************************************************************
+Tabulations of county tracting status (Nick's rule)
+Nick's rule:
+  - Type 3 (problematic): ≥ 2 non-tracted areas in a county–year
+  - Type 2: exactly 1 non-tracted area AND zero tracted areas in that county–year
+  - Type 1: otherwise
+**************************************************************************/
+
+*----------------------------------------------------------*
+* 1) Build county–year classification (distinct areas)     *
+*----------------------------------------------------------*
+use grf_id_tractlevel, clear
+keep no_tract tract70 county_code
+duplicates drop no_tract tract70 county_code, force
+
+merge 1:m tract70 using tracts_panel_canon
+rename county_code county
+
+* At this point every tract in the panel should have a label as to if it is an //
+* ... untracted area or not.
+
+* Count DISTINCT non-tracted areas per county–year
+bys county year4 tract70: egen byte any_untr = max(no_tract==1) 
+bys county year4 tract70: gen  byte tag_tr   = _n==1
+gen byte nt_tag = tag_tr & any_untr
+bys county year4: egen n_nontr_uniq = total(nt_tag)
+drop any_untr tag_tr nt_tag
+
+* Count DISTINCT tracted areas per county–year (for the "no tracts" test)
+bys county year4 tract70: egen byte any_tr = max(no_tract==0)
+bys county year4 tract70: gen  byte tag_tr2 = _n==1
+gen byte tr_tag = tag_tr2 & any_tr
+bys county year4: egen n_tr_uniq = total(tr_tag)
+drop any_tr tag_tr2 tr_tag
+
+* --- New: a 4-type that splits Nick's Type 1 into two buckets ---
+gen byte county_type = .
+replace county_type = 2 if n_nontr_uniq == 1 & n_tr_uniq == 0                 // exactly 1 untracted, 0 tracted
+replace county_type = 1 if n_nontr_uniq == 0 & n_tr_uniq > 0                  // all tracted only
+replace county_type = 3 if n_nontr_uniq >= 2                                  // ≥2 untracted
+replace county_type = 4 if n_nontr_uniq == 1 & n_tr_uniq > 0                  // mixed: 1 untracted + some tracted
+
+* Safety: if something weird sneaks through, mark it
+replace county_type = . if n_nontr_uniq==. | n_tr_uniq==.
+
+label define ctype ///
+    1 "All tracted only" ///
+    2 "Single untracted only (no tracts)" ///
+    3 "Problematic: ≥2 untracted" ///
+    4 "Mixed: 1 untracted + some tracted", replace
+label values county_type ctype
 
 
-* County ID = SS0CCC (6 chars). Make sure inputs are strings.
-capture confirm string variable state_fips
-if _rc tostring state_fips, replace
-capture confirm string variable coc70
-if _rc tostring coc70, replace
-gen str6 county = state_fips + "0" + coc70
+drop if inlist(county_type, 3)
 
-* Manual renames (shifted baseline + per-year flags)
-rename good_tract               good_tract_6671
-rename good_tract_6771          good_tract_6670
-rename good_tract_1967          good_tract_1966
-rename good_tract_1970          good_tract_1969
-rename good_tract_1971          good_tract_1970
-rename good_tract_1972          good_tract_1971
+save tract_no_tract,replace
+* One row per county–year
+bys county year4: keep if _n==1
+keep county year4 county_type
+tempfile county_types
+save `county_types', replace
 
-* ---------- TRACT-LEVEL TABS (panel-wide) ----------
-di as text "== good_tract_6671 =="
-tab good_tract_6671, missing
-di as text "== good_tract_6670 =="
-tab good_tract_6670, missing
-di as text "== good_tract_1966 =="
-tab good_tract_1966, missing
-di as text "== good_tract_1969 =="
-tab good_tract_1969, missing
-di as text "== good_tract_1970 =="
-tab good_tract_1970, missing
-di as text "== good_tract_1971 =="
-tab good_tract_1971, missing
 
-* ---------- COUNTY x YEAR COLLAPSE ----------
-preserve
-    collapse (max) ///
-        good_county_6671 = good_tract_6671 ///
-        good_county_6670 = good_tract_6670 ///
-        good_county_1966 = good_tract_1966 ///
-        good_county_1969 = good_tract_1969 ///
-        good_county_1970 = good_tract_1970 ///
-        good_county_1971 = good_tract_1971, ///
-        by(county year4)
+*----------------------------------------------------------*
+* 2) County–year shares (unweighted and pop-weighted)      *
+*----------------------------------------------------------*
 
-    * ---------- COUNTY-LEVEL TABS (panel-wide) ----------
-    di as text "== good_county_6671 =="
-    tab good_county_6671, missing
-    di as text "== good_county_6670 =="
-    tab good_county_6670, missing
-    di as text "== good_county_1966 =="
-    tab good_county_1966, missing
-    di as text "== good_county_1969 =="
-    tab good_county_1969, missing
-    di as text "== good_county_1970 =="
-    tab good_county_1970, missing
-    di as text "== good_county_1971 =="
-    tab good_county_1971, missing
-restore
+
+use county_school_age,  clear
+drop county
+rename county_code county
+merge 1:m county using `county_types'
+tab county_type, missing
+tab county_type [w=school_age_pop], missing
+
+
+
 

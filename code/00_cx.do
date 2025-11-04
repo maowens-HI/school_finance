@@ -161,7 +161,7 @@ save indfin_panel, replace
 
 
 
-
+/*
 *** ---------------------------------------------------------------------------
 *** 3. Import Master ID Files (F33 IDs, INDFIN IDs, GRF)
 *** ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ keep if typecode == 5  // school districts only
 drop id idchanged typecode county censusreg statecode ///
 version population jacketunit zerodata
 save indfin_id, replace
-
+*/
 
 
 *** --- GRF (Geographic Reference File) 1969
@@ -311,12 +311,14 @@ label variable aduc   "Administrative Unit Code"
 
 
 * Clean and construct geographic identifiers
-*** Basic Tract Code (btc) should be 4 digits; if missing, treat as 0000
-*** Tract-Suffix Code (tsc) should be 2 digits; if missing, treat as 00  
-replace btc = 0  if missing(btc)
-replace tsc = 0 if tsc == .
 gen no_tract = 0
-replace no_tract = 1 if missing(trac)
+replace no_tract = 1 if missing(trac) 
+
+*** Basic Tract Code (btc) should be 4 digits; if missing, treat as 0000
+*** Tract-Suffix Code (tsc) should be 2 digits; if missing, treat as 00 
+replace btc = 0  if missing(btc) & !missing(trac)
+replace tsc = 0 if tsc == . & !missing(trac)
+
 
 * Build composite identifiers
 gen str4 btc_str = string(btc,"%04.0f")
@@ -333,6 +335,16 @@ gen str7 LEAID = string(stc70,"%02.0f") + sdc_str
 	
 *** Drop the two-digit suffix only when it equals "00"
 replace gisjoin2 = substr(gisjoin2, 1, 11) if substr(gisjoin2, -2, 2) == "00"
+
+*** SAVE tract-level GRF IDs with the no_tract flag (keep it!)
+preserve
+	gen str5 county_code = string(stc70,"%02.0f") + string(coc70,"%03.0f")
+    keep LEAID tract70 county_code no_tract 
+
+
+	
+    save grf_id_tractlevel, replace
+restore
 
 *** one row per LEAID with its district-type flag (sdtc)
 keep LEAID 
@@ -355,11 +367,13 @@ assert !missing(GOVID) & strlen(GOVID)==9
 ********************************************************************************
 * B) BASELINE ON INDFIN (GOVID level, pre-dedup; then propagate)
 ********************************************************************************
-// Row-level baseline flags
 gen byte _in_baseline = inlist(year4, 1967, 1970, 1971, 1972)
-gen byte _present_baseline = (_in_baseline==1 & !missing(totalexpenditure))
+gen byte _present_baseline = (_in_baseline==1 & !missing(pp_exp))
 
-// Master GOVID list
+gen byte _in_baseline_6771 = inlist(year4, 1967, 1970, 1971)
+gen byte _present_baseline_6771 = (_in_baseline_6771==1 & !missing(pp_exp))
+
+* Master GOVID list
 preserve
     keep GOVID
     duplicates drop
@@ -367,7 +381,7 @@ preserve
     save `govmaster', replace
 restore
 
-// Collapse baseline presence counts (4 baseline years)
+* Collapse 1967–72
 preserve
     keep if _in_baseline==1
     collapse (sum) n_baseline_years_present = _present_baseline, by(GOVID)
@@ -375,30 +389,60 @@ preserve
     save `basecnt', replace
 restore
 
-// Merge counts, fill zeros, and flag good GOVIDs
+* Collapse 1967–71
+preserve
+    keep if _in_baseline_6771==1
+    collapse (sum) n_baseline_years_present_6771 = _present_baseline_6771, by(GOVID)
+    tempfile basecnt6771
+    save `basecnt6771', replace
+restore
+
+* Merge baseline counts
 use `govmaster', clear
 merge 1:1 GOVID using `basecnt'
+drop _merge
+merge 1:1 GOVID using `basecnt6771'
+drop _merge
+
 replace n_baseline_years_present = 0 if missing(n_baseline_years_present)
+replace n_baseline_years_present_6771 = 0 if missing(n_baseline_years_present_6771)
+
 gen byte good_govid_baseline = (n_baseline_years_present==4)
-label var n_baseline_years_present "Count of baseline years w/ non-missing totalexpenditure (1967,1970–72)"
-label var good_govid_baseline "INDFIN baseline complete on all 4 years (flag=1)"
+gen byte good_govid_baseline_6771 = (n_baseline_years_present_6771==3)
+
+********************************************************************************
+* Add per-year completeness (1967, 1970–72)
+********************************************************************************
+preserve
+    use "indfin_panel.dta", clear
+    local years 1967 1970 1971 1972
+    foreach y of local years {
+        bys GOVID: egen byte good_govid_`y' = max(year4==`y' & !missing(pp_exp))
+    }
+    keep GOVID good_govid_*
+    duplicates drop
+    tempfile govyeartags
+    save `govyeartags', replace
+restore
+
+merge 1:1 GOVID using `govyeartags', nogen
+
+label var good_govid_baseline        "Nonmissing spending all 4 baseline years (1967,1970–72)"
+label var good_govid_baseline_6771   "Nonmissing spending all 3 baseline years (1967,1970–71)"
+label var good_govid_1970            "Nonmissing spending in 1970"
+
 tempfile govtag
 save `govtag', replace
 
-// Propagate tags to INDFIN rows
+********************************************************************************
+* Propagate tags to INDFIN rows
+********************************************************************************
 use "indfin_panel.dta", clear
-merge m:1 GOVID using `govtag', assert(match using) nogen
-gen byte fail_no_baseline      = (n_baseline_years_present==0)
-gen byte fail_partial_baseline = (n_baseline_years_present>0 & n_baseline_years_present<4)
-label var fail_no_baseline      "No INDFIN baseline years present for GOVID"
-label var fail_partial_baseline "Some but not all baseline years present for GOVID"
-
-// Verify duplicates are consistent before dropping
-duplicates drop GOVID year4, force
+merge m:1 GOVID using `govtag', nogen
 
 isid GOVID year4
-tempfile indfin_work
 gen byte has_indfin = 1
+tempfile indfin_work
 save `indfin_work', replace
 
 
@@ -424,7 +468,7 @@ keep LEAID GOVID
     replace rel_type = 4 if n_govid>1  & n_leaid>1     // M:M
     label define rel 1 "1:1" 2 "1:M (LEAID→GOVID)" 3 "1:M (GOVID→LEAID)" 4 "M:M"
     label values rel_type rel
-keep if rel_type == 1
+keep if rel_type == 1 
 
 isid LEAID  // should be unique now
 
@@ -437,65 +481,34 @@ save "f33_1to1_map.dta", replace
 ********************************************************************************
 * D) MAP INDFIN → LEAID VIA 1:1 MAP; CAPTURE UNMAPPED
 ********************************************************************************
-use `indfin_work', clear
-merge m:1 GOVID using `map1to1', keep(master match) nogen
+use `govtag', clear
+merge m:1 GOVID using `map1to1'
 
 gen byte mapped_1to1   = !missing(LEAID)
 gen byte fail_unmapped = (mapped_1to1==0)
 label var mapped_1to1   "INDFIN GOVID mapped to LEAID via F-33 1:1"
 label var fail_unmapped "GOVID had no 1:1 LEAID map (excluded from main panel)"
 
-// Write unmapped list with basic diagnostics
-preserve
-    keep if fail_unmapped==1
-    gen int statefips = real(substr(GOVID,1,2))
-    // summarize per GOVID
-    collapse (count) n_rows=year4 (max) n_baseline_years_present (max) good_govid_baseline, by(statefips GOVID)
-    order statefips GOVID n_rows n_baseline_years_present good_govid_baseline
-    save "unmapped_govid_list.dta", replace
-restore
-
-// Restrict to mapped only for the main panel
-keep if mapped_1to1==1
-drop fail_unmapped
+drop if _merge == 1 // Dropping GOVIDs that could never effect tracts' goodness
+replace good_govid_baseline = 0 if missing(good_govid_baseline) & _merge == 2
 assert !missing(LEAID)
 
 // Post-join uniqueness at LEAID×year4 (must pass)
-isid LEAID year4
+isid LEAID 
+drop _merge
 
+// Order and label
+order LEAID GOVID good_govid_baseline ///
+      n_baseline_years_present
 ********************************************************************************
 * E) ATTACH has_f33 PRESENCE AND FINAL TAGS
 ********************************************************************************
-// Build F-33 presence by LEAID×year
-preserve
-    use "f33_id.dta", clear
-    keep LEAID year
-    drop if missing(LEAID) | missing(year)
-    rename year year4
-    gen byte has_f33 = 1
-    duplicates drop LEAID year4, force
-    tempfile f33presence
-    save `f33presence', replace
-restore
 
-// Attach presence flag (no F-33 spending mixed in)
-merge m:1 LEAID year4 using `f33presence', keep(master match) nogen
-replace has_f33 = 0 if missing(has_f33)
-label var has_f33 "F-33 has a row for LEAID×year4 (presence only)"
-
-// 1:1 implies LEAID inherits GOVID baseline tag
-gen byte good_leaid_baseline = good_govid_baseline
-label var good_leaid_baseline "LEAID baseline=GOVID baseline (1:1 only)"
-
-// Order and label
-order LEAID GOVID year4 pp_exp has_indfin has_f33 good_govid_baseline ///
-      n_baseline_years_present good_leaid_baseline fail_partial_baseline fail_no_baseline
-
-label var pp_exp "Per-pupil expenditure (INDFIN)"
-compress
+merge 1:m GOVID using "indfin_panel.dta"
+drop if _merge ==2
 drop _merge
-
-
+replace good_govid_baseline = 0 if missing(good_govid_baseline)
+drop rel_type
 save "indfin_panel_tagged.dta", replace
 
 
@@ -521,6 +534,7 @@ keep LEAID GOVID
     label define rel 1 "1:1" 2 "1:M (LEAID→GOVID)" 3 "1:M (GOVID→LEAID)" 4 "M:M"
     label values rel_type rel
 keep if rel_type == 1
+drop rel_type
 save f33_11,replace
 restore
 use f33_11, clear
@@ -532,8 +546,9 @@ drop if missing(LEAID)
 
 rename year year4
 append using "indfin_panel_tagged.dta"
-keep LEAID GOVID year4 pp_exp good_govid_baseline
-duplicates drop LEAID GOVID year4, force
+keep LEAID GOVID year4 pp_exp good_govid_baseline ///
+good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771
+duplicates drop LEAID GOVID year4 pp_exp, force
 bysort LEAID: egen __g = max(good_govid_baseline)
 replace good_govid_baseline = __g if missing(good_govid_baseline)
 drop __g
@@ -548,7 +563,7 @@ twoway line pp_exp year4
 * G) FINAL CHECK: open and show a sample (non-interactive)
 ********************************************************************************
 use "district_panel_tagged.dta", clear
-isid LEAID year4
+
 
 
 
@@ -556,282 +571,14 @@ isid LEAID year4
 ********************************************************************************
 * GRF) Merege GRF -> Tagged District Panel
 ********************************************************************************
-/*
+
 use grf_id,clear
 merge 1:m LEAID using "district_panel_tagged.dta"
 keep if _merge ==3
-keep LEAID GOVID year4 
-*/
+
+
+replace year4 = 9999 if missing(year4)
+isid LEAID year4
+drop _merge
 save f33_indfin_grf_canon, replace
 
-/*
-*** ---------------------------------------------------------------------------
-*** 4. Simple Merger NO canon IDs
-*** ---------------------------------------------------------------------------
-
-use grf_id, clear
-merge 1:m LEAID using f33_id
-keep if _merge==3
-drop _merge CENSUSID 
-
-* 0) Drop exact duplicate rows for the same LEAID–GOVID combo
-gsort LEAID GOVID -year
-bysort LEAID GOVID: keep if _n==1
-
-*==============================================================*
-* 1) Build unique LEAID×GOVID crosswalk and label relationship
-*    Types: 1:1, 1:M (LEAID→GOVID), 1:M (GOVID→LEAID), M:M
-*==============================================================*
-preserve
-    keep LEAID GOVID
-    drop if missing(LEAID) 
-	drop if LEAID == "M"
-	drop if LEAID == "N"
-    bysort LEAID: gen n_govid = _N       // distinct GOVIDs for this LEAID
-    bysort GOVID: gen n_leaid = _N       // distinct LEAIDs for this GOVID
-    gen byte rel_type = .
-    replace rel_type = 1 if n_govid==1 & n_leaid==1
-    replace rel_type = 2 if n_govid>1  & n_leaid==1    // 1:M (LEAID→GOVID)
-    replace rel_type = 3 if n_govid==1 & n_leaid>1     // 1:M (GOVID→LEAID)
-    replace rel_type = 4 if n_govid>1  & n_leaid>1     // M:M
-    label define rel 1 "1:1" 2 "1:M (LEAID→GOVID)" 3 "1:M (GOVID→LEAID)" 4 "M:M"
-    label values rel_type rel
-    tempfile pairtypes
-    save `pairtypes'
-restore
-
-* Attach the relationship label to every observation in your panel
-merge m:1 LEAID GOVID using `pairtypes'
-drop _merge
-* Optional sanity check
-tab rel_type
-
-
-keep if rel_type ==1
-save f33_grf,replace
-
-use f33_grf, clear
-merge 1:m GOVID using indfin_id
-drop if missing(GOVID)
-drop if _merge == 2
-*save indfin_clean,replace
-keep LEAID GOVID
-save f33_indfin_grf_11,replace
-
-
-*panel
-
-use f33_indfin_grf_11, clear
-merge 1:m LEAID GOVID using f33_panel
-keep if _merge == 3
-drop _merge
-duplicates drop LEAID GOVID year pp_exp, force
-rename year year4
-save f33_grf_panel, replace
-
-use f33_indfin_grf_11, clear
-merge 1:m GOVID using indfin_panel
-drop if _merge == 2
-save indfin_grf_panel, replace
-
-
-append using f33_grf_panel
-duplicates drop LEAID GOVID year4, force
-
-save f33_indfin_grf_canon, replace
-
-
-/*
-*** ---------------------------------------------------------------------------
-*** 4. BUILD CROSSWALK: LEAID × GOVID
-*** ---------------------------------------------------------------------------
-
-*=============================*
-* Start
-*=============================*
-use f33_id, clear
-drop CENSUSID
-
-* 0) Drop exact duplicate rows for the same LEAID–GOVID combo
-gsort LEAID GOVID -year
-bysort LEAID GOVID: keep if _n==1
-
-*==============================================================*
-* 1) Build unique LEAID×GOVID crosswalk and label relationship
-*    Types: 1:1, 1:M (LEAID→GOVID), 1:M (GOVID→LEAID), M:M
-*==============================================================*
-preserve
-    keep LEAID GOVID
-    drop if missing(LEAID) 
-	drop if LEAID == "M"
-	drop if LEAID == "N"
-	duplicates drop LEAID GOVID, force
-    bysort LEAID: gen n_govid = _N       // distinct GOVIDs for this LEAID
-    bysort GOVID: gen n_leaid = _N       // distinct LEAIDs for this GOVID
-    gen byte rel_type = .
-    replace rel_type = 1 if n_govid==1 & n_leaid==1
-    replace rel_type = 2 if n_govid>1  & n_leaid==1    // 1:M (LEAID→GOVID)
-    replace rel_type = 3 if n_govid==1 & n_leaid>1     // 1:M (GOVID→LEAID)
-    replace rel_type = 4 if n_govid>1  & n_leaid>1     // M:M
-    label define rel 1 "1:1" 2 "1:M (LEAID→GOVID)" 3 "1:M (GOVID→LEAID)" 4 "M:M"
-    label values rel_type rel
-    tempfile pairtypes
-    save `pairtypes'
-restore
-
-* Attach the relationship label to every observation in your panel
-merge m:1 LEAID GOVID using `pairtypes'
-
-* Optional sanity check
-tab rel_type
-
-
-
-
-
-
-
-
-
-*==============================================================*
-* 2) Canonical IDs (deterministic, prefer valid over junk)
-*    - GOVID_canon: prefer non-junk GOVID; if only junk exists → missing
-*    - LEAID_canon: exclude junk LEAID entirely (unusable)
-*    Ties break by smallest code.
-*==============================================================*
-
-*-------------------------------*
-* Canonical GOVID for each LEAID
-*-------------------------------*
-preserve
-    keep LEAID GOVID
-    drop if missing(LEAID) | inlist(LEAID,"M","N")   // LEAID must be usable
-    duplicates drop LEAID GOVID, force
-
-    contract LEAID GOVID                              // _freq
-    gen byte is_govid_junk = missing(GOVID) | inlist(GOVID,"M","N")
-
-    * Sort: within LEAID, prefer non-junk (0), then higher freq, then smallest code
-    gsort LEAID is_govid_junk -_freq GOVID
-    by LEAID: gen byte pick = _n==1
-    keep if pick
-    drop pick
-
-    * If all GOVIDs were junk for a LEAID, the top one is still junk.
-    * We'll keep it for inspection, but blank it out so canon never equals "M"/"N".
-    replace GOVID = "" if is_govid_junk
-    drop is_govid_junk
-
-    rename GOVID GOVID_canon
-    keep LEAID GOVID_canon
-    tempfile canon_leaid
-    save `canon_leaid'
-restore
-merge m:1 LEAID using `canon_leaid', nogen
-
-*-------------------------------*
-* Canonical LEAID for each GOVID
-*-------------------------------*
-preserve
-    keep LEAID GOVID
-    drop if missing(LEAID) | inlist(LEAID,"M","N")   // junk LEAID unusable
-    duplicates drop LEAID GOVID, force
-
-    contract GOVID LEAID
-    * Here we can keep junk GOVIDs in the pool; we're choosing a LEAID for each GOVID.
-    gsort GOVID -_freq LEAID
-    by GOVID: gen byte pick = _n==1
-    keep if pick
-    drop pick
-
-    rename LEAID LEAID_canon
-    keep GOVID LEAID_canon
-    tempfile canon_govid
-    save `canon_govid'
-restore
-merge m:1 GOVID using `canon_govid', nogen
-
-* Optional QA flags
-gen byte canon_govid_is_junk = inlist(GOVID_canon,"M","N") | missing(GOVID_canon)
-gen byte canon_leaid_is_junk = inlist(LEAID_canon,"M","N") | missing(LEAID_canon)
-drop _merge
-save canon_crosswalk, replace
-* If you actually want to collapse onto canon IDs:
-* replace GOVID = GOVID_canon if !missing(GOVID_canon)
-* replace LEAID = LEAID_canon if !missing(LEAID_canon)
-
-*** ---------------------------------------------------------------------------
-*** 5. APPLY CROSSWALK: Merge Canonical IDs into INDFIN + F33 + GRF
-*** ---------------------------------------------------------------------------
-
-*-------------------------------*
-* Merge into indfin
-*-------------------------------*
-use canon_crosswalk,clear
-drop if missing(GOVID)
-keep if rel_type ==1
-merge 1:m GOVID using indfin_panel
-drop if _merge == 1
-drop _merge
-tempfile indfin_11
-save `indfin_11',replace
-
-
-use canon_crosswalk,clear
-drop if missing(GOVID) | inlist(GOVID, "N", "M")
-keep if rel_type ==3
-duplicates drop GOVID, force
-merge 1:m GOVID using `indfin_11'
-drop if _merge == 1
-drop _merge
-tempfile indfin_11_1M
-drop year n_govid n_leaid rel_type GOVID_canon
-replace LEAID = LEAID_canon if !missing(LEAID_canon)   
-tempfile indfin_11_1M           
-save `indfin_11_1M',replace
-
-use canon_crosswalk,clear
-drop if missing(GOVID) | inlist(GOVID, "N", "M")
-keep if rel_type ==2
-merge 1:m GOVID using `indfin_11_1M'
-drop if _merge == 1
-drop _merge
-replace GOVID = GOVID_canon if !missing(GOVID_canon)  
-drop year n_govid n_leaid rel_type GOVID_canon LEAID_canon
-tempfile indfin_11_1M_M1
-save `indfin_11_1M_M1',replace
-
-*-------------------------------*
-* Merge into F33
-*-------------------------------*
-use canon_crosswalk,clear
-duplicates drop LEAID, force
-drop year
-merge 1:m LEAID using f33_panel
-replace LEAID = LEAID_canon if !missing(LEAID_canon)   
-replace GOVID = GOVID_canon if !missing(GOVID_canon)  
-
-rename year year4
-rename V33 population
-rename TOTALEXP totalexpenditure
-drop n_govid n_leaid rel_type GOVID_canon LEAID_canon
-append using  `indfin_11_1M_M1'
-drop _merge
-save f33_indfin_canon, replace
-
-*-------------------------------*
-* Canonize and merge GRF into full-panel
-*-------------------------------*
-use canon_crosswalk,clear
-duplicates drop LEAID, force
-drop year
-merge 1:m LEAID using grf_id
-replace LEAID = LEAID_canon if !missing(LEAID_canon)   
-drop GOVID GOVID_canon _merge
-duplicates drop LEAID, force
-merge 1:m LEAID using f33_indfin_canon
-keep if _merge == 3
-drop arnam _merge
-
-
-*/

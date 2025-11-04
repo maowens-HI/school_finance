@@ -9,20 +9,22 @@
 clear all
 set more off
 cd "$SchoolSpending\data"
-
-use interp_c, clear
+use clean_cty, clear
+drop year4
+merge 1:m county using interp_c
+drop _merge
+replace good_county = 0 if missing(good_county)
 drop if missing(county_exp)
 rename county county_id
-rename enrollment school_age_pop
 gen never_treated = treatment == 0
 bysort county_id: egen ever_treated = max(treatment)
 gen never_treated2 = ever_treated == 0
 gen year_unified = year4-1
-keep if good_county ==1
+*keep if good_county ==1
 winsor2 county_exp, replace c(1 99) by(year_unified)
 *take the 99% value and any obs that are above the 99% replace with 99%
 
-
+*keep if good_county == 1
 /**************************************************************************
 *   STRICT 13-YEAR ROLLING MEAN
 **************************************************************************/
@@ -111,7 +113,7 @@ egen base_exp3 = rowmean( base_69 base_70 base_71)
 bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
 
-**log using "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\10_28_25\q_sum.*log", replace
+**log using "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_3_25\q_sum.*log", replace
 local year 1966 1969 1970 1971
 foreach y of local year{
 	forvalues q = 1/4{
@@ -123,18 +125,7 @@ foreach y of local year{
 /**************************************************************************
 *   LEADS AND LAGS
 **************************************************************************/
-/*
 
-forvalues k = 1/17 {
-    gen lag_`k' = (relative_year ==  `k')
-    replace lag_`k' = . if never_treated == 1
-}
-forvalues k = 1/5 {
-    gen lead_`k' = (relative_year == -`k')
-    replace lead_`k' = . if never_treated == 1
-}
-
-*/
 forvalues k = 1/17 {
     gen lag_`k' = (relative_year == `k')
     replace lag_`k' = 0 if missing(relative_year)
@@ -155,12 +146,24 @@ replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year)
 **************************************************************************/
 save jjp_interp, replace
 
-
+/* 
 use jjp_interp, clear
+
+rename good_county good_county_6671
+keep county_id good_county_6671 school_age_pop
+
+Weighted tabulation of "good" vs "bad" counties
+tab good_county_6671 [aw=school_age_pop]
+duplicates drop county_id, force 
+tab good_county_6671
+*/
+/*
+summ school_age_pop
+hist school_age_pop, bin(80) frequency
+
 collapse (mean) exp, by(year4)
 twoway line exp year4
-
-
+*/
 
 
 
@@ -178,7 +181,7 @@ foreach v of local var {
 
     areg `v' ///
         i.lag_* i.lead_* ///
-        i.year_unified if (never_treated==1 | (reform_year<2000)), ///
+        i.year_unified  if (never_treated==1 | (reform_year<2000)), ///
         absorb(county_id) vce(cluster county_id)
 
     *log close
@@ -220,16 +223,15 @@ foreach v of local var {
         graphregion(color(white)) ///
         scheme(s2mono)
 
-    graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\10_28_25\event_`v'_simple.png", replace
+    graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_3_25\event_`v'_simple.png", replace
 }
 
 
 /*********************************
 * Split by quartiles of baseline spending
 **********************************/
-
 local var lexp lexp_ma lexp_ma_strict
-local years  pre_q1971 pre_q_66_71 pre_q_69_71
+local years  pre_q1971 pre_q1966 pre_q1969 pre_q1970 pre_q_66_70 pre_q_66_71 pre_q_69_71
 
 foreach y of local years {
     foreach v of local var {
@@ -240,7 +242,7 @@ foreach y of local years {
 
             areg `v' ///
                 i.lag_* i.lead_* ///
-                i.year_unified if `y'==`q' & (never_treated==1 | reform_year<2000), ///
+                i.year_unified  if `y'==`q' & (never_treated==1 | reform_year<2000), ///
                 absorb(county_id) vce(cluster county_id)
             *log close
 
@@ -278,7 +280,7 @@ foreach y of local years {
                 legend(off) ///
                 scheme(s2mono)
 
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\10_28_25\reg_`v'_`q'_`y'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_3_25\reg_`v'_`q'_`y'.png", replace
         }
     }
 }
@@ -288,7 +290,7 @@ graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\not
 * Regression: exclude top quartile (q == 4)
 *--------------------------------------*
 local var lexp lexp_ma lexp_ma_strict
-local years pre_q1966   pre_q1969 pre_q1970 pre_q1971 pre_q_66_70 pre_q_66_71 pre_q_69_71
+local years  pre_q1971 pre_q1966 pre_q1969 pre_q1970 pre_q_66_70 pre_q_66_71 pre_q_69_71
 
 foreach y of local years {
 foreach v of local var{
@@ -340,7 +342,7 @@ gen ci_hi = b + 1.645*se
                 legend(off) ///
                 scheme(s2mono)
 				
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\10_28_25\btm_`v'_`y'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_3_25\btm_`v'_`y'.png", replace
 	
 }
 }
