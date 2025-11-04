@@ -12,19 +12,18 @@ The original JJP (2016) paper and its Online Appendix describe the following key
 
 - **Data Sources**:
   - *INDFIN Historical Database* (FY 1967,1969–1991) — standardized local government finances including school districts.
-  - *NCES F-33 Finance Survey* (post-1992 annual continuation).
-  - *Common Core of Data (CCD)* and *PSID Geocode Data* for long-run outcomes.
-  - *1969–70 School District Geographic Reference File (GRF)* for linking Census tracts to 1970 district geographies.
+  - *Common COre of Data (CCD) NCES F-33 Finance Survey* (post-1992 annual continuation).
+  - *1969–70 School District Geographic Reference File (GRF)* for linking Census tracts to pre-reform district geographies.
 
 - **Identification Strategy**:
-  - Court-ordered **School Finance Reforms (SFRs)** serve as quasi-exogenous shocks.
-  - The number of **school-age years of exposure** to post-reform periods is the treatment variable.
+  - Court-ordered **School Finance Reforms (SFRs)** serve as exogenous shocks.
+  - The number of **years of exposure** to initial SFR is the treatment variable.
   - Event-study and 2SLS models estimate causal impacts on spending and individual outcomes.
   - Data on court rulings comes from a preceding NBER working paper: https://www.nber.org/papers/w20118
 
 
 Specifically, we aim to:
-1. Develop transparent crosswalks linking **LEAID ↔ GOVID ↔ Tract ↔ County** identifiers.
+1. Develop transparent crosswalks linking **F-33 (District) ↔ INDFIN (District) ↔ Tract (GRF) ↔ County (GRF) ** identifiers.
 2. Handle **mixed counties** that contain both tracted and non-tracted areas by combining untracted units within each county.
 3. Reconstruct consistent annual per-pupil spending at the county level.
 4. Use this data to estimate event studies akin to figures 1 and 2 in JJP 2016.
