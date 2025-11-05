@@ -121,6 +121,8 @@ label variable aduc   "Administrative Unit Code"
 *** Tract-Suffix Code (tsc) should be 2 digits; if missing, treat as 00  
 replace btc = 0  if missing(btc) & !missing(trac)
 replace tsc = 0 if tsc == . & !missing(trac)
+replace btc = NNNN if missing(trac)
+replace tsc = NN if missing(trac)
 gen no_tract = 0
 replace no_tract = 1 if missing(trac)
 
@@ -431,7 +433,7 @@ label define ctype ///
 label values county_type ctype
 
 
-drop if inlist(county_type, 3, 4)
+drop if inlist(county_type, 3)
 
 save tract_no_tract,replace
 * One row per county–year

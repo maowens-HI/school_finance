@@ -113,7 +113,7 @@ egen base_exp3 = rowmean( base_69 base_70 base_71)
 bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
 
-**log using "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_3_25\q_sum.*log", replace
+**log using "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_4_25_no_wt\q_sum.*log", replace
 local year 1966 1969 1970 1971
 foreach y of local year{
 	forvalues q = 1/4{
@@ -140,30 +140,31 @@ replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year)
 
 
 
-
+drop if county_id == "06037"
 /**************************************************************************
 *   SAVE CLEAN INTERPOLATED DATASET
 **************************************************************************/
 save jjp_interp, replace
 
-/* 
+/*
 use jjp_interp, clear
 
 rename good_county good_county_6671
 keep county_id good_county_6671 school_age_pop
 
-Weighted tabulation of "good" vs "bad" counties
+* Weighted tabulation of "good" vs "bad" counties
 tab good_county_6671 [aw=school_age_pop]
 duplicates drop county_id, force 
 tab good_county_6671
-*/
-/*
+
+
 summ school_age_pop
 hist school_age_pop, bin(80) frequency
 
 collapse (mean) exp, by(year4)
 twoway line exp year4
 */
+
 
 
 
@@ -181,7 +182,7 @@ foreach v of local var {
 
     areg `v' ///
         i.lag_* i.lead_* ///
-        i.year_unified  if (never_treated==1 | (reform_year<2000)), ///
+        i.year_unified if (never_treated==1 | (reform_year<2000)), ///
         absorb(county_id) vce(cluster county_id)
 
     *log close
@@ -223,7 +224,7 @@ foreach v of local var {
         graphregion(color(white)) ///
         scheme(s2mono)
 
-    graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_3_25\event_`v'_simple.png", replace
+    graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_4_25_no_wt\event_`v'_simple.png", replace
 }
 
 
@@ -242,7 +243,7 @@ foreach y of local years {
 
             areg `v' ///
                 i.lag_* i.lead_* ///
-                i.year_unified  if `y'==`q' & (never_treated==1 | reform_year<2000), ///
+                i.year_unified if `y'==`q' & (never_treated==1 | reform_year<2000), ///
                 absorb(county_id) vce(cluster county_id)
             *log close
 
@@ -280,7 +281,7 @@ foreach y of local years {
                 legend(off) ///
                 scheme(s2mono)
 
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_3_25\reg_`v'_`q'_`y'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_4_25_no_wt\reg_`v'_`q'_`y'.png", replace
         }
     }
 }
@@ -342,7 +343,7 @@ gen ci_hi = b + 1.645*se
                 legend(off) ///
                 scheme(s2mono)
 				
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_3_25\btm_`v'_`y'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_4_25_no_wt\btm_`v'_`y'.png", replace
 	
 }
 }

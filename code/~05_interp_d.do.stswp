@@ -1,8 +1,10 @@
-
-
-
+/*-------------------------------------------------------------------------------
+File     : 05_interp_d
+Purpose  : This file assigns district spending to tracts it imputes spending for
+missing years. It then collapses tracts into countie and assingings treatments.
+-------------------------------------------------------------------------------*/
 *** ---------------------------------------------------------------------------
-*** 04_interp_d. Housekeeping
+*** Housekeeping - Prep for Interpolation
 *** ---------------------------------------------------------------------------
 clear
 set more off
@@ -11,27 +13,21 @@ cd "$SchoolSpending\data"
 use f33_indfin_grf_canon,clear
 drop if year4 == 9999
 * Convert string LEAID → numeric
-encode LEAID, gen(LEAID_num)
+encode LEAID, gen(LEAID_num) // LEAID is a string and needs to be changed for interpolation
 
 * gap detector
-bysort LEAID (year): gen gap_next = year[_n+1] - year
-gen too_far = gap_next > 3
-* Declare panel and fill missing years
-* Identify panel range
-summ year
-local min = r(min)
-local max = r(max)
+bysort LEAID (year): gen gap_next = year[_n+1] - year // gap = next year - current year
+gen too_far = gap_next > 3 // We don't want to impute gaps that are too big
 
 * Ensure full county-year panel
-drop if missing(year4)
 tsset LEAID_num year
-tsfill, full
+tsfill, full // creates missing values for the whole rang of the panel
 
 
 
 *--- 1. Fill identifiers ------------------------------------------------------
 
-*Strings
+*Strings // adds back in stable variables for the gaps we created
 foreach var in GOVID LEAID good_govid_baseline{
     bys LEAID_num: egen __fill_`var' = mode(`var'), maxmode
     replace `var' = __fill_`var' if missing(`var')
@@ -42,7 +38,9 @@ foreach var in GOVID LEAID good_govid_baseline{
 bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
 
 *--- 2. Interpolate county expenditures --------------------------------------
-bys LEAID_num: ipolate pp_exp year if too_far == 0, gen(exp2)
+bys LEAID_num: ipolate pp_exp year if too_far == 0, gen(exp2) 
+// We create exp2 the imputed spending 
+
 replace exp2 = pp_exp if !missing(pp_exp)
 
 drop pp_exp gap_next too_far
@@ -54,18 +52,18 @@ rename exp2 pp_exp
 *** ---------------------------------------------------------------------------
 keep LEAID GOVID  year4 pp_exp LEAID_num
 save interp_d, replace
-
+// This is a district level panel of interpolated spending
 
 
 
 /*****************************************************************************
 Assign one LEAID to each tract based on allocated population
 *******************************************************************************/
-use "$SchoolSpending\data\grf_tract_canon", clear
+use "$SchoolSpending\data\grf_tract_canon", clear // list of all tracts
 gen coc70 = substr(tract70,3,3)
 
 * Guard against . sorting to the top
-gen byte has_alloc = alloc_pop < .
+gen byte has_alloc = !missing(alloc_pop)
 
 * Pick exactly one LEAID per (tract70 sdtc):
 *   max alloc_pop; tie fallback = smallest LEAID
@@ -84,34 +82,43 @@ save `xwalk', replace
 ***Merge panel to tracts
 *District Year Spending
 use "$SchoolSpending\data\interp_d.dta", clear
-drop if year4 == 9999
+
 
 *ExplodeL one row per tract-year
 joinby LEAID using `xwalk', unmatched(both) _merge(join_merge)
+// This won't be a perfect join since some LEAIDs dissapear due to assignment
 
 *** Clean and Save
 sort tract70 year4
 cd "$SchoolSpending\data"
-
 keep if join_merge ==3
-
-
 save interp_t_temp, replace
 
-use grf_id_tractlevel, clear
+
+use grf_id_tractlevel, clear // this tells me if an area is non-tracted
 keep no_tract tract70 county_code
-duplicates drop no_tract tract70 county_code, force
-
-merge 1:m tract70 using interp_t_temp
+duplicates drop no_tract tract70 county_code, force // want it on the tract level
+merge 1:m tract70 using interp_t_temp // allows us to see non-t in tract panel
 rename county_code county
-
 * At this point every tract in the panel should have a label as to if it is an //
 * ... untracted area or not.
 
+
+/*******************************************************************************
+Prep for sorting out untracted areas in the GRF
+********************************************************************************/
 * Count DISTINCT non-tracted areas per county–year
+
+// IS a tract ever considered non-tracted?
 bys county year4 tract70: egen byte any_untr = max(no_tract==1) 
-bys county year4 tract70: gen  byte tag_tr   = _n==1
-gen byte nt_tag = tag_tr & any_untr
+
+// first row of every tract
+bys county year4 tract70: gen  byte tag_tr   = _n==1 
+
+// Is this the first row and is this untracted?
+gen byte nt_tag = tag_tr & any_untr 
+
+// Count of distinct non tracted areas in a county
 bys county year4: egen n_nontr_uniq = total(nt_tag)
 drop any_untr tag_tr nt_tag
 
@@ -125,10 +132,11 @@ drop any_tr tag_tr2 tr_tag
 
 * --- New: a 4-type that splits Nick's Type 1 into two buckets ---
 gen byte county_type = .
-replace county_type = 2 if n_nontr_uniq == 1 & n_tr_uniq == 0                 // exactly 1 untracted, 0 tracted
-replace county_type = 1 if n_nontr_uniq == 0 & n_tr_uniq > 0                  // all tracted only
-replace county_type = 3 if n_nontr_uniq >= 2                                  // ≥2 untracted
-replace county_type = 4 if n_nontr_uniq == 1 & n_tr_uniq > 0                  // mixed: 1 untracted + some tracted
+replace county_type = 1 if n_nontr_uniq == 0 & n_tr_uniq > 0      // fully tracted
+replace county_type = 2 if n_nontr_uniq == 1 & n_tr_uniq == 0     // fully untracted
+replace county_type = 4 if n_nontr_uniq == 1 & n_tr_uniq > 0      // mixed: 1 untracted + some tracted
+replace county_type = 3 if n_nontr_uniq >= 2                      // ≥2 untracted (multi-untracted counties)
+
 
 * Safety: if something weird sneaks through, mark it
 replace county_type = . if n_nontr_uniq==. | n_tr_uniq==.
@@ -141,98 +149,8 @@ label define ctype ///
 label values county_type ctype
 
 
-drop if county_type == 3   // drop problematic counties
 
 save interp_t, replace
-
-/*old way
-
-*****************************************************************************
-*Collapse into counties
-*****************************************************************************
-
-tempfile no_tract_fix
-save `no_tract_fix',replace
-
-use grf_id_tractlevel,clear
-keep tract70 no_tract
-duplicates drop tract70,force
-merge 1:m tract70 using `no_tract_fix'
-
-
-* You're currently in the dataset after merging no_tract onto tract panel
-* Keys assumed: county year4 tract70 no_tract pp_exp_real school_age_pop
-
-* 0) Build county-year totals of school_age_pop once
-preserve
-
-collapse (sum) school_age_pop, by(county year4)
-tempfile totpop
-save `totpop'
-restore
-
-* 1) Weighted county PPE for tracted part
-preserve
-keep if no_tract == 0
-collapse (mean) pp_exp_real [w=school_age_pop], by(county year4)
-tempfile tracted
-save `tracted', replace
-restore
-
-* 2) Weighted county PPE for untracted part
-preserve
-keep if no_tract == 1
-collapse (mean) pp_exp_real [w=school_age_pop], by(county year4)
-tempfile untracted
-save `untracted', replace
-restore
-
-* 3) Stack the two views
-use `tracted', clear
-append using `untracted'
-
-* 4) Merge total school-age population back in
-merge m:1 county year4 using `totpop', nogen
-
-* Now you have:
-* - one row per county-year for tracted (untr=0) if it exists
-* - one row per county-year for untracted (untr=1) if it exists
-* - total county-year school_age_pop from the full data
-save county_panel_temp2, replace
-
-
-use county_panel_temp2,clear
-duplicates tag county year4, gen(dup)
-*** Rename collapsed variables for clarity
-rename pp_exp_real county_exp   
-gen state_fips = substr(county,1,2)
-gen year_unified = year4 - 1
-
-*** Save county-year panel temporarily
-tempfile mytemp2
-save `mytemp2'
-
-*** Merge county names back into collapsed panel
-use county_lookup
-duplicates drop county,force
-merge 1:m county using `mytemp2'
-keep if _merge==3
-drop _merge
-
-*** Clean county names for consistency
-replace county_name = lower(county_name)
-gen county_name2 = regexr(county_name, "(County|Census|Parish|Borough|city|City).*", "")
-drop county_name 
-rename county_name2 county_name
-replace county_name = trim(county_name)
-
-*** Save final county-level per-pupil expenditure panel
-gen interp = 0
-
-save interp_c,replace
-
-
-
 
 
 
@@ -316,19 +234,11 @@ save "$SchoolSpending\data\interp_t_real.dta", replace
 
 
 
-/*-------------------------------------------------------------------------------
-File     : 04_cnty
-Purpose  : Collapse tracts into a county level spending panel
-Inputs   : school school_age_pop data: school_level_1970.csv
-		   county school_age_pop data: county_level.csv
-		   tract spending data: tracts_panel_real
-Outputs  : county spending data: county_pp_exp_panel_real
-Author   : Myles Owens
-Created  : 27 August 2025
-Notes    : - merges school_age_pop data into tract spending panel
-		   - collapses tract spending into county level weighted by school_age_pop
--------------------------------------------------------------------------------*/
 
+
+/*******************************************************************************
+Turn tract panel into county panel
+********************************************************************************/
 *** Housekeeping
 clear 
 set more off 
@@ -423,23 +333,14 @@ merge 1:m tract_merge using "interp_t_real.dta"
 
 rename _merge good_merge
 tempfile check_no_tract
+rename county county_code
 save `check_no_tract'
-
-
-use grf_id_tractlevel,clear
-keep tract70 no_tract
-duplicates drop tract70,force
-merge 1:m tract70 using `check_no_tract'
 
 *** Drop NHGIS-only records and clean merge variable
 drop if good_merge == 1
 drop good_merge
-drop _merge
 
-*** Generate county code from state FIPS and county code
-gen str5 county_code = state_fips + coc70
-
-*** Save intermediate dataset
+*** Save intermediate dataset // We split the data so we can assing county sch_pop
 preserve 
 keep if no_tract ==0
 tempfile grf_tract_school_age_pop_v1
@@ -521,10 +422,7 @@ gen share_secondary = secondary_age / age_total if age_total > 0
 
 *** Rename and construct county identifiers
 rename county county_name
-gen str5 county = state_fips + coc70
-
-*** Pivot from long to wide
-
+rename county_code county
 
 *** Drop exact duplicates of tract-year-district observations
 duplicates drop gisjoin2 year4 sdtc LEAID tract70, force
@@ -534,7 +432,7 @@ by tract70 year4 sdtc (LEAID), sort: keep if _n == 1
 
 *** Reshape dataset wide by district type
 keep LEAID gisjoin2 tract70 year4 sdtc pp_exp_real school_age_pop ///
-share_primary share_secondary county_name county county_type
+share_primary share_secondary county_name county county_type no_tract
 reshape wide LEAID pp_exp_real school_age_pop share_primary share_secondary county_name county, i(tract70 year4) j(sdtc)
 
 
@@ -607,34 +505,103 @@ restore
 tempfile no_tract_fix
 save `no_tract_fix',replace
 
-use grf_id_tractlevel,clear
-keep tract70 no_tract
-duplicates drop tract70,force
-merge 1:m tract70 using `no_tract_fix'
 
 
 save tract_b4_collapse,replace
 
 use tract_b4_collapse, clear
-/* Example
-keep if county == "01073"
-keep if year4== 1980
-*/
 
 
-* Step 1: total school-age population across tracts within each county-year
+
+
+/*******************************************************************************
+Handle untracted populations in mixed/problematic counties
+(Type 3 = ≥2 untracted; Type 4 = 1 untracted + some tracted)
+*******************************************************************************/
+
+use tract_b4_collapse, clear
+
+********************************************************************************
+* ---- TYPE 4: One untracted area + some tracted ----
+********************************************************************************
+preserve
+keep if county_type == 4
+summ school_age_pop
+
+* Step 0. county totals (from NHGIS/IPUMS)
+gen county_school_age_pop = school_age_pop if no_tract==1
+bys county year4: egen county_total = max(county_school_age_pop)
+
+* Step 1. sum tracted tracts
 bys county year4: egen tract_sum = total(cond(no_tract==0, school_age_pop, .))
 
-* Step 2: compute residual population for untracted rows
-gen impute_total = .
-replace impute_total = school_age_pop - tract_sum if no_tract==1 & !missing(tract_sum)   // mixed counties
+* Step 2. residual = county total – tracted total
+gen residual_pop = county_total - tract_sum
 
-* Step 3: overwrite untracted record with residual only for mixed counties (type 4)
-replace school_age_pop = impute_total if county_type==4 & no_tract==1
+* Step 3. assign that residual to the untracted row
+replace school_age_pop = residual_pop if no_tract==1
 
-* Clean up
-drop impute_total tract_sum
+* clean
+*drop county_school_age_pop county_total tract_sum residual_pop
+tempfile type4
+save `type4'
+summ school_age_pop
+restore
+
+
+********************************************************************************
+* ---- TYPE 3: Two or more untracted areas ----
+********************************************************************************
+preserve
+keep if county_type == 3
+summ school_age_pop
+* Step 0. county totals (from NHGIS/IPUMS)
+gen county_school_age_pop = school_age_pop if no_tract==1
+bys county year4: egen county_total = max(county_school_age_pop)
+
+* Step 1. total tracted population
+bys county year4: egen tract_sum = total(cond(no_tract==0, school_age_pop, .))
+
+* Step 2. residual population = county total – tracted total
+bys county year4: gen residual_pop = county_total - tract_sum
+
+* Step 3. average untracted spending (unweighted)
+bys county year4: egen untr_pp_avg = mean(cond(no_tract==1, pp_exp_real, .))
+
+* Step 4. pick one representative untracted row per county-year
+gen keep_flag = 0
+bys county year4 (tract70): replace keep_flag = 1 if no_tract==1 & keep_flag==0
+keep if no_tract==0 | keep_flag==1
+
+* Step 5. assign the averaged spending + residual population
+replace pp_exp_real = untr_pp_avg if no_tract==1
+replace school_age_pop = residual_pop if no_tract==1
+
+* clean
+*drop county_school_age_pop county_total tract_sum residual_pop untr_pp_avg keep_flag
+tempfile type3
+save `type3'
+summ school_age_pop
+restore
+
+********************************************************************************
+* ---- Combine all types back together ----
+********************************************************************************
+drop if inlist(county_type,3,4)
+append using `type3'
+append using `type4'
+
 save tract_b4_collapse_fixed, replace
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -646,9 +613,8 @@ tempfile totpop
 save `totpop'
 restore
 
-* 1) Weighted county PPE for tracted part
+
 preserve
-keep if no_tract == 0
 collapse (mean) pp_exp_real [w=school_age_pop], by(county year4)
 tempfile tracted
 save `tracted', replace
@@ -700,6 +666,96 @@ gen interp = 0
 save interp_c,replace
 
 
+
+/*old way
+
+*****************************************************************************
+*Collapse into counties
+*****************************************************************************
+
+tempfile no_tract_fix
+save `no_tract_fix',replace
+
+use grf_id_tractlevel,clear
+keep tract70 no_tract
+duplicates drop tract70,force
+merge 1:m tract70 using `no_tract_fix'
+
+
+* You're currently in the dataset after merging no_tract onto tract panel
+* Keys assumed: county year4 tract70 no_tract pp_exp_real school_age_pop
+
+* 0) Build county-year totals of school_age_pop once
+preserve
+
+collapse (sum) school_age_pop, by(county year4)
+tempfile totpop
+save `totpop'
+restore
+
+* 1) Weighted county PPE for tracted part
+preserve
+keep if no_tract == 0
+collapse (mean) pp_exp_real [w=school_age_pop], by(county year4)
+tempfile tracted
+save `tracted', replace
+restore
+
+* 2) Weighted county PPE for untracted part
+preserve
+keep if no_tract == 1
+collapse (mean) pp_exp_real [w=school_age_pop], by(county year4)
+tempfile untracted
+save `untracted', replace
+restore
+
+* 3) Stack the two views
+use `tracted', clear
+append using `untracted'
+
+* 4) Merge total school-age population back in
+merge m:1 county year4 using `totpop', nogen
+
+* Now you have:
+* - one row per county-year for tracted (untr=0) if it exists
+* - one row per county-year for untracted (untr=1) if it exists
+* - total county-year school_age_pop from the full data
+save county_panel_temp2, replace
+
+
+use county_panel_temp2,clear
+duplicates tag county year4, gen(dup)
+*** Rename collapsed variables for clarity
+rename pp_exp_real county_exp   
+gen state_fips = substr(county,1,2)
+gen year_unified = year4 - 1
+
+*** Save county-year panel temporarily
+tempfile mytemp2
+save `mytemp2'
+
+*** Merge county names back into collapsed panel
+use county_lookup
+duplicates drop county,force
+merge 1:m county using `mytemp2'
+keep if _merge==3
+drop _merge
+
+*** Clean county names for consistency
+replace county_name = lower(county_name)
+gen county_name2 = regexr(county_name, "(County|Census|Parish|Borough|city|City).*", "")
+drop county_name 
+rename county_name2 county_name
+replace county_name = trim(county_name)
+
+*** Save final county-level per-pupil expenditure panel
+gen interp = 0
+
+save interp_c,replace
+
+
+
+*/
 
 
 
