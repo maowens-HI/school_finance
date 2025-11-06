@@ -321,7 +321,6 @@ gen gisjoin2 = substr(gisjoin, 2, 14)
 *****************************************************************************
 *Merge tract level
 *****************************************************************************
-
 collapse (mean) school_age_pop, by(tract_merge)
 summ school_age_pop
 save school_age_pop,replace 
@@ -400,6 +399,17 @@ label var school_age_pop "School-age population (5–17), 1970"
 
 *** Construct county code using state and county numeric codes
 gen str5 county_code = string(statea, "%02.0f") + string(countya, "%03.0f")
+
+preserve
+duplicates drop county_code,force
+rename county county_name
+keep county_code county_name
+save cnames, replace
+restore
+
+
+
+
 *** Merge county-level school_age_pop with tract-level dataset
 merge 1:m county_code using `grf_no_tract'
 
@@ -592,14 +602,6 @@ append using `type3'
 append using `type4'
 
 save tract_b4_collapse_fixed, replace
-
-
-
-
-
-
-
-
 
 
 
@@ -828,10 +830,35 @@ label values reform reform_lbl
 label variable reform "School finance reform type"
 gen treatment = 1
 
+* Generate flags
+gen mfp_flag = (mfp_post != "" & mfp_pre == "")
+gen ep_flag  = (ep_post  != "" & ep_pre  == "")
+gen le_flag  = (le_post  != "" & le_pre  == "")
+gen sl_flag  = (sl_post  != "" & sl_pre  == "")
+
+* Encode into a single numeric variable
+gen formula_new = .
+replace formula_new = 1 if mfp_flag
+replace formula_new = 2 if ep_flag
+replace formula_new = 3 if le_flag
+replace formula_new = 4 if sl_flag
+
+label define formula_lbl 1 "MFP" 2 "EP" 3 "LE" 4 "SL"
+label values formula_new formula_lbl
+
+gen reform_mfp = mfp_flag == 1
+gen reform_ep = ep_flag == 1
+gen reform_le = le_flag == 1
+gen reform_sl = sl_flag == 1
+rename reform reform_eq
+
+label variable reform_mfp "MFP Reform"
+label variable reform_ep "EP Reform"
+label variable reform_le "LE Reform"
+label variable reform_sl "SL Reform"
+
+
 tempfile temp
-
-
-
 save `temp'
 
 import delimited using state_fips_master, clear
@@ -849,7 +876,110 @@ replace treatment = 0 if missing(treatment)
 keep if _merge ==3
 drop _merge
 drop long_name sumlev region division state division_name region_name
-keep state_fips reform_year reform year4  county_exp county  treatment school_age_pop
+keep state_fips reform_year reform_* year4 county_name county_exp county  treatment school_age_pop
 
-save "$SchoolSpending\data\interp_c", replace
+save "$SchoolSpending\data\interp_c_treat", replace
 
+
+
+use cnames, clear
+rename county_code county
+merge 1:m county using interp_c_treat
+keep if _merge ==3
+drop _merge
+replace county_name = lower(county_name)
+save interp_c_treat,replace
+
+/*-------------------------------------------------------------------------------
+File     : 12_fix_median_income
+Purpose  : Add family county level median family income to the county panel
+Inputs   : Historical Income Tables: Table C1. Median Household Income by County
+Outputs  : county_exp_final.dta
+Requires : None
+Author   : Myles Owens
+Created  : 27 August 2025
+Notes    : - cleans county names to one standard format
+		   - Where names differ I standardized names based on the using file
+-------------------------------------------------------------------------------*/
+*** Housekeeping
+clear
+
+set more off
+
+*** Import raw county income data
+import delimited using "$SchoolSpending\data\county2.csv", varnames(1)
+
+*** Rename column and drop junk rows
+rename v2 median_family_income
+drop in 3271/3279
+drop if missing(county)
+
+*** Clean county names and extract state abbreviation
+gen county_name = regexr(county, "(County|Census|Parish|Borough|city|City).*", "")
+gen state_abbr = ""
+replace state_abbr = regexs(1) if regexm(county, " ([A-Za-z]+)$")
+
+/*
+replace state_abbr = "ND" if state_abbr == "Dakota"
+replace state_abbr = "NC" if state_abbr == "Carolina"
+replace state_abbr = "NH" if state_abbr == "Hampshire"
+*/
+*** Save as a temporary dataset
+tempfile temp
+save `temp'
+
+*** Import master FIPS state crosswalk
+import delimited using "$SchoolSpending\data\state_fips_master.csv", clear
+
+*** Merge in the county income data by state abbreviation
+merge 1:m state_abbr using `temp'
+keep if _merge==3
+drop _merge
+
+*** Standardize state FIPS (zero-padded string) and handle duplicate counties
+gen state_fips = string(fips, "%02.0f")
+duplicates tag county_name state_fips, gen(dup_tag)
+gen tag_county = strpos(county, "County") > 0
+
+drop if regexm(county, "(?i)\bcensus\b")
+drop if regexm(county, "(?i)\bcity\b") & county!= "Carson City, NV" ///
+& county!= "St. Louis city, MO" 
+
+replace county_name = "carson city" if county == "Carson City, NV"
+replace county_name = "st. louis city" if county == "St. Louis city, MO"
+
+keep county_name state_fips median_family_income
+
+*** Truncate county name, standardize case, trim spaces
+gen county_name2 = substr(county_name, 1, 25)
+drop county_name
+rename county_name2 county_name
+replace county_name = lower(county_name)
+replace county_name = trim(county_name)
+
+*** Individual county-specific fixes
+replace county_name = subinstr(county_name, "debaca", "de baca", .)
+replace county_name = subinstr(county_name, "de kalb", "dekalb", .)
+replace county_name = subinstr(county_name, "laplata", "la plata", .)
+replace county_name = subinstr(county_name, "la porte", "laporte", .)
+replace county_name = subinstr(county_name, "mc kean", "mckean", .)
+replace county_name = subinstr(county_name, "o'brien", "o brien", .)
+replace county_name = subinstr(county_name, ".", "", .)
+
+duplicates tag county_name state_fips, gen(dup_tag)
+
+*Not good hygeine fix later...
+* Sort so the preferred record comes first (choose asc or desc)
+bysort county_name state_fips (median_family_income): keep if _n == 1
+*** Set working directory 
+cd "$SchoolSpending\data"
+
+
+*** Merge with county expenditure panel
+merge 1:m county_name state_fips using interp_c_treat
+keep if _merge==3
+drop _merge
+
+
+*** Save final cleaned dataset
+save county_exp_final, replace

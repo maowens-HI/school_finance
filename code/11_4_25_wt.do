@@ -11,7 +11,7 @@ set more off
 cd "$SchoolSpending\data"
 use clean_cty, clear
 drop year4
-merge 1:m county using interp_c
+merge 1:m county using county_exp_final
 drop _merge
 replace good_county = 0 if missing(good_county)
 drop if missing(county_exp)
@@ -146,7 +146,7 @@ drop if county_id == "06037"
 **************************************************************************/
 save jjp_interp, replace
 
-/*
+
 use jjp_interp, clear
 
 rename good_county good_county_6671
@@ -163,7 +163,6 @@ hist school_age_pop, bin(80) frequency
 
 collapse (mean) exp, by(year4)
 twoway line exp year4
-*/
 
 
 
