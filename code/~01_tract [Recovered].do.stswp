@@ -38,7 +38,7 @@ clear
 set more off
 
 *** File Location
-local dfile "$SchoolSpending/data/raw/GRF69/DS0001/03515-0001-Data.txt"
+local dfile "$SchoolSpending/data/raw/GRF69/DS0001\03515-0001-Data.txt"
 
 *** import fixed-width ASCII [ICPSR layout]
 infix ///
@@ -154,7 +154,7 @@ gen str9 govid = ///
 	
 	
 * testing stuff
-cd "$SchoolSpending/data"
+cd "$SchoolSpending\data"
 gen double alloc_pop = popc * (perc/100)
 gen double alloc_hou = houc * (perc/100)
 
@@ -205,7 +205,7 @@ preserve
     tempfile xwalk_multi
     save `xwalk_multi'
 
-use "$SchoolSpending/data/f33_indfin_grf_canon.dta", clear
+use "$SchoolSpending\data\f33_indfin_grf_canon.dta", clear
 
 rename good_govid_baseline        good_govid
 rename good_govid_baseline_6771   good_govid_6771
@@ -263,7 +263,7 @@ save `xwalk', replace
 
 ***Merge panel to tracts
 *District Year Spending
-use "$SchoolSpending/data/f33_indfin_grf_canon.dta", clear
+use "$SchoolSpending\data\f33_indfin_grf_canon.dta", clear
 drop if year4 == 9999
 
 *ExplodeL one row per tract-year
@@ -272,7 +272,7 @@ tab _merge
 keep if _merge ==3
 *** Clean and Save
 sort tract70 year4
-cd "$SchoolSpending/data"
+cd "$SchoolSpending\data"
 
 drop _merge
 merge m:1 tract70 using `tract_flag'

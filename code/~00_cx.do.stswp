@@ -232,7 +232,7 @@ save indfin_id, replace
 *** --- GRF (Geographic Reference File) 1969
 clear 
 set more off
-local dfile "$SchoolSpending/data/raw/GRF69/DS0001/03515-0001-Data.txt"
+local dfile "$SchoolSpending\data\raw\GRF69\DS0001\03515-0001-Data.txt"
 
 *** import fixed-width ASCII [ICPSR layout]
 infix ///

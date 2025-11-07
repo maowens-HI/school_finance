@@ -8,7 +8,7 @@
 *--- 0. Setup -----------------------------------------------------------------
 clear all
 set more off
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 use clean_cty, clear
 drop year4
 merge 1:m county using county_exp_final
@@ -164,7 +164,7 @@ save jjp_interp, replace
 * Housekeeping
 clear
 set more off
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 
     use jjp_interp, clear
@@ -415,7 +415,7 @@ areg lexp_ma_strict ///
 		   xline(2 7, lcolor(blue) lwidth(medthick)) ///
            ytitle("Change in ln(13-yr rolling avg PPE)") ///
            title("Event Study: High == 1") legend(off)
-    graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_5_25\jack_spend_1.png", replace
+    *graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_5_25\jack_spend_1.png", replace
 
 
 *------------------------------------------
@@ -470,7 +470,7 @@ areg lexp_ma_strict ///
 		   xline(2 7, lcolor(blue) lwidth(medthick)) ///
            ytitle("Change in ln(13-yr rolling avg PPE)") ///
            title("Event Study: Low == 1") legend(off)
-    graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_5_25\jack_spend_low_1.png", replace
+    *graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_5_25\jack_spend_low_1.png", replace
 
 	*------------------------------------------
 * Combine existing 'results' and 'results2'
@@ -510,7 +510,7 @@ twoway ///
 *------------------------------------------
 * Export combined graph
 *------------------------------------------
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_5_25\jack_spend_combined.png", replace
+*graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_5_25\jack_spend_combined.png", replace
 
 
 use pred_spend_ppe_all, clear
@@ -577,4 +577,4 @@ twoway ///
     title("Event Study: School Spending by Predicted Quartiles") ///
     graphregion(color(white))
 
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_5_25\jack_spend_quartiles.png", replace
+*graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_5_25\jack_spend_quartiles.png", replace

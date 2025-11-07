@@ -8,7 +8,7 @@ missing years. It then collapses tracts into countie and assingings treatments.
 *** ---------------------------------------------------------------------------
 clear
 set more off
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 use f33_indfin_grf_canon,clear
 drop if year4 == 9999
@@ -59,7 +59,7 @@ save interp_d, replace
 /*****************************************************************************
 Assign one LEAID to each tract based on allocated population
 *******************************************************************************/
-use "$SchoolSpending\data\grf_tract_canon", clear // list of all tracts
+use "$SchoolSpending/data/grf_tract_canon", clear // list of all tracts
 gen coc70 = substr(tract70,3,3)
 
 * Guard against . sorting to the top
@@ -81,7 +81,7 @@ save `xwalk', replace
 
 ***Merge panel to tracts
 *District Year Spending
-use "$SchoolSpending\data\interp_d.dta", clear
+use "$SchoolSpending/data/interp_d.dta", clear
 
 
 *ExplodeL one row per tract-year
@@ -90,7 +90,7 @@ joinby LEAID using `xwalk', unmatched(both) _merge(join_merge)
 
 *** Clean and Save
 sort tract70 year4
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 keep if join_merge ==3
 save interp_t_temp, replace
 
@@ -170,7 +170,7 @@ keep m cpi_u_all_nsa
 save `cpi_monthly'
 
 *** Load fiscal-year lookup
-import delimited "$SchoolSpending\data\fiscal_year.csv", ///
+import delimited "$SchoolSpending/data/fiscal_year.csv", ///
     varnames(1) clear
 
 *** Make sure state_fips is str2
@@ -209,7 +209,7 @@ order state_fips year4 cpi_fy_avg deflator_2000 inflator_2000
 save `deflators', replace
 
 *** Merge to panel
-use "$SchoolSpending\data\interp_t", clear
+use "$SchoolSpending/data/interp_t", clear
 
 *** Standardize state_fips to str2
 capture confirm string variable state_fips
@@ -230,7 +230,7 @@ gen str13 gisjoin2 = substr(tract70, 1, 2) + "0" + substr(tract70, 3, 3) + "0" +
 *** Save merged panel 
 gen tract_merge = substr(tract70,1,9)
 drop _merge
-save "$SchoolSpending\data\interp_t_real.dta", replace
+save "$SchoolSpending/data/interp_t_real.dta", replace
 
 
 
@@ -244,11 +244,11 @@ clear
 set more off 
 
 *** Set working directory
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 *** Load tract-level NHGIS school school_age_pop data
 *import delimited "$SchoolSpending\data\school_level_1970.csv", clear
-import delimited "$SchoolSpending\data\enroll_age_tract.csv", clear
+import delimited "$SchoolSpending/data/enroll_age_tract.csv", clear
 
 *** Label variables from NHGIS 1970 "Age by school_age_pop Status" table (NT112)
 
@@ -354,7 +354,7 @@ save `grf_no_tract'
 *****************************************************************************
 *** Load county-level school_age_pop file
 import delimited ///
-    "$SchoolSpending\data\enroll_age_county.csv", ///
+    "$SchoolSpending/data/enroll_age_county.csv", ///
     clear
 	
 	
@@ -474,7 +474,7 @@ replace ppe_tract = pp_exp_real3 if missing(ppe_tract) & !missing(pp_exp_real3)
 rename ppe_tract pp_exp_real
 
 *** Reset working directory
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 *** Clean school_age_pop variables
 rename school_age_pop1 school_age_pop
@@ -772,9 +772,9 @@ save interp_c,replace
 *** Housekeeping
 clear
 set more off
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 *** Load JJP reform mapping (first sheet assumed)
-import excel using "$SchoolSpending\data\tabula-tabled2.xlsx", firstrow
+import excel using "$SchoolSpending/data/tabula-tabled2.xlsx", firstrow
 
 
 rename CaseNameLegislationwithout case_name
@@ -878,7 +878,7 @@ drop _merge
 drop long_name sumlev region division state division_name region_name
 keep state_fips reform_year reform_* year4 county_name county_exp county  treatment school_age_pop
 
-save "$SchoolSpending\data\interp_c_treat", replace
+save "$SchoolSpending/data/interp_c_treat", replace
 
 
 
@@ -907,7 +907,7 @@ clear
 set more off
 
 *** Import raw county income data
-import delimited using "$SchoolSpending\data\county2.csv", varnames(1)
+import delimited using "$SchoolSpending/data/county2.csv", varnames(1)
 
 *** Rename column and drop junk rows
 rename v2 median_family_income
@@ -929,7 +929,7 @@ tempfile temp
 save `temp'
 
 *** Import master FIPS state crosswalk
-import delimited using "$SchoolSpending\data\state_fips_master.csv", clear
+import delimited using "$SchoolSpending/data/state_fips_master.csv", clear
 
 *** Merge in the county income data by state abbreviation
 merge 1:m state_abbr using `temp'
@@ -972,7 +972,7 @@ duplicates tag county_name state_fips, gen(dup_tag)
 * Sort so the preferred record comes first (choose asc or desc)
 bysort county_name state_fips (median_family_income): keep if _n == 1
 *** Set working directory 
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 
 *** Merge with county expenditure panel
