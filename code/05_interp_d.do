@@ -560,7 +560,7 @@ restore
 
 
 ********************************************************************************
-* ---- TYPE 3: Two or more untracted areas ----
+/* ---- TYPE 3: Two or more untracted areas ----
 ********************************************************************************
 preserve
 keep if county_type == 3
@@ -593,12 +593,12 @@ tempfile type3
 save `type3'
 summ school_age_pop
 restore
-
+*/
 ********************************************************************************
 * ---- Combine all types back together ----
 ********************************************************************************
 drop if inlist(county_type,3,4)
-append using `type3'
+*append using `type3'
 append using `type4'
 
 save tract_b4_collapse_fixed, replace

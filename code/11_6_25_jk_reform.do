@@ -186,10 +186,10 @@ areg lexp_ma_strict ///
 	i.lag_*##i.inc_q i.lead_*##i.inc_q ///
 	i.lag_*##i.reform_eq i.lead_*##reform_eq ///
 	i.lag_*##i.reform_mfp i.lead_*##reform_mfp ///
-	i.lag_*##i.reform_ep i.lead_*##reform_ep ///
-	i.lag_*##i.reform_le i.lead_*##reform_le ///
-	i.lag_*##i.reform_sl i.lead_*##reform_sl ///
-    i.year_unified##i.pre_q##i.inc_q##reform_eq##reform_mfp##reform_ep##reform_le##reform_sl ///
+	i.lag_*##i.reform_ep i.lead_*##i.reform_ep ///
+	i.lag_*##i.reform_le i.lead_*##i.reform_le ///
+	i.lag_*##i.reform_sl i.lead_*##i.reform_sl ///
+    i.year_unified##(i.pre_q i.inc_q i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
 	 [w = school_age_pop] if (never_treated==1 | reform_year<2000), ///
     absorb(county_id) vce(cluster county_id)
 	

@@ -209,10 +209,12 @@ use "$SchoolSpending/data/f33_indfin_grf_canon.dta", clear
 
 rename good_govid_baseline        good_govid
 rename good_govid_baseline_6771   good_govid_6771
+rename good_govid_baseline_7072   good_govid_7072
+
 
 keep LEAID year4 pp_exp good_govid ///
     good_govid_1967 good_govid_1970 good_govid_1971 ///
-    good_govid_1972 good_govid_6771
+    good_govid_1972 good_govid_6771 good_govid_7072
 
 
 joinby LEAID using `xwalk_multi', unmatched(both)
@@ -222,6 +224,7 @@ keep if _merge==3
 * Aggregate all GOVID-level tags to tract-year level
 bys tract70: egen good_tract          = max(good_govid)
 bys tract70: egen good_tract_6771     = max(good_govid_6771)
+bys tract70: egen good_tract_7072     = max(good_govid_7072)
 bys tract70: egen good_tract_1967     = max(good_govid_1967)
 bys tract70: egen good_tract_1970     = max(good_govid_1970)
 bys tract70: egen good_tract_1971     = max(good_govid_1971)
@@ -230,7 +233,7 @@ bys tract70: egen good_tract_1972     = max(good_govid_1972)
 * Keep ONLY the tract-level flags you just made
 drop if missing(good_tract)
 keep tract70 good_tract good_tract_1967 good_tract_1970 ///
-     good_tract_1971 good_tract_1972 good_tract_6771
+     good_tract_1971 good_tract_1972 good_tract_6771 good_tract_7072
 	duplicates drop
     tempfile tract_flag
     save `tract_flag'
@@ -282,7 +285,7 @@ gen str13 gisjoin2 = substr(tract70, 1, 2) + "0" + substr(tract70, 3, 3) + "0" +
 gen str3 coc70 = substr(tract70, 3, 3)
 keep LEAID GOVID year4 pp_exp good_tract sdtc state_fips gisjoin2 coc70 tract70 ///
     good_tract_1967 good_tract_1970 good_tract_1971 ///
-    good_tract_1972 good_tract_6771
+    good_tract_1972 good_tract_6771 good_tract_7072
 	
 gen str5 county_code = substr(LEAID,1,5)	
 save tracts_panel_canon,replace
@@ -291,7 +294,7 @@ save tracts_panel_canon,replace
 ********************************************************************************
 *Tabulations
 ********************************************************************************
-/*
+
 use grf_id_tractlevel, clear
 keep no_tract tract70 county_code
 duplicates drop no_tract tract70 county_code,force
@@ -378,6 +381,7 @@ label values max_type ctype
 tab max_type
 tab max_type [w= school_age_pop]
 */
+
 /**************************************************************************
 Tabulations of county tracting status (Nick's rule)
 Nick's rule:
@@ -434,24 +438,8 @@ label values county_type ctype
 drop if inlist(county_type, 3)
 
 save tract_no_tract,replace
-* One row per county–year
-bys county year4: keep if _n==1
-keep county year4 county_type
-tempfile county_types
-save `county_types', replace
 
 
-*----------------------------------------------------------*
-* 2) County–year shares (unweighted and pop-weighted)      *
-*----------------------------------------------------------*
-
-
-use county_school_age,  clear
-drop county
-rename county_code county
-merge 1:m county using `county_types'
-tab county_type, missing
-tab county_type [w=school_age_pop], missing
 
 
 

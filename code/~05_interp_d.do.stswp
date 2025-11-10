@@ -560,7 +560,7 @@ restore
 
 
 ********************************************************************************
-* ---- TYPE 3: Two or more untracted areas ----
+/* ---- TYPE 3: Two or more untracted areas ----
 ********************************************************************************
 preserve
 keep if county_type == 3
@@ -593,12 +593,12 @@ tempfile type3
 save `type3'
 summ school_age_pop
 restore
-
+*/
 ********************************************************************************
 * ---- Combine all types back together ----
 ********************************************************************************
 drop if inlist(county_type,3,4)
-append using `type3'
+*append using `type3'
 append using `type4'
 
 save tract_b4_collapse_fixed, replace
@@ -772,9 +772,9 @@ save interp_c,replace
 *** Housekeeping
 clear
 set more off
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 *** Load JJP reform mapping (first sheet assumed)
-import excel using "$SchoolSpending\data\tabula-tabled2.xlsx", firstrow
+import excel using "$SchoolSpending/data/tabula-tabled2.xlsx", firstrow
 
 
 rename CaseNameLegislationwithout case_name
@@ -878,7 +878,7 @@ drop _merge
 drop long_name sumlev region division state division_name region_name
 keep state_fips reform_year reform_* year4 county_name county_exp county  treatment school_age_pop
 
-save "$SchoolSpending\data\interp_c_treat", replace
+save "$SchoolSpending/data/interp_c_treat", replace
 
 
 
@@ -907,7 +907,7 @@ clear
 set more off
 
 *** Import raw county income data
-import delimited using "$SchoolSpending\data\county2.csv", varnames(1)
+import delimited using "$SchoolSpending/data/county2.csv", varnames(1)
 
 *** Rename column and drop junk rows
 rename v2 median_family_income
@@ -929,7 +929,7 @@ tempfile temp
 save `temp'
 
 *** Import master FIPS state crosswalk
-import delimited using "$SchoolSpending\data\state_fips_master.csv", clear
+import delimited using "$SchoolSpending/data/state_fips_master.csv", clear
 
 *** Merge in the county income data by state abbreviation
 merge 1:m state_abbr using `temp'
@@ -972,7 +972,7 @@ duplicates tag county_name state_fips, gen(dup_tag)
 * Sort so the preferred record comes first (choose asc or desc)
 bysort county_name state_fips (median_family_income): keep if _n == 1
 *** Set working directory 
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 
 *** Merge with county expenditure panel

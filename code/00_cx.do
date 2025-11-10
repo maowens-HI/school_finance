@@ -373,6 +373,9 @@ gen byte _present_baseline = (_in_baseline==1 & !missing(pp_exp))
 gen byte _in_baseline_6771 = inlist(year4, 1967, 1970, 1971)
 gen byte _present_baseline_6771 = (_in_baseline_6771==1 & !missing(pp_exp))
 
+gen byte _in_baseline_7072 = inlist(year4, 1970, 1971, 1972)
+gen byte _present_baseline_7072 = (_in_baseline_7072==1 & !missing(pp_exp))
+
 * Master GOVID list
 preserve
     keep GOVID
@@ -397,19 +400,30 @@ preserve
     save `basecnt6771', replace
 restore
 
+* Collapse 1970–72
+preserve
+    keep if _in_baseline_7072==1
+    collapse (sum) n_baseline_years_present_7072 = _present_baseline_7072, by(GOVID)
+    tempfile basecnt7072
+    save `basecnt7072', replace
+restore
+
 * Merge baseline counts
 use `govmaster', clear
 merge 1:1 GOVID using `basecnt'
 drop _merge
 merge 1:1 GOVID using `basecnt6771'
 drop _merge
+merge 1:1 GOVID using `basecnt7072'
+drop _merge
 
 replace n_baseline_years_present = 0 if missing(n_baseline_years_present)
 replace n_baseline_years_present_6771 = 0 if missing(n_baseline_years_present_6771)
+replace n_baseline_years_present_7072 = 0 if missing(n_baseline_years_present_7072)
 
 gen byte good_govid_baseline = (n_baseline_years_present==4)
 gen byte good_govid_baseline_6771 = (n_baseline_years_present_6771==3)
-
+gen byte good_govid_baseline_7072 = (n_baseline_years_present_7072==3)
 ********************************************************************************
 * Add per-year completeness (1967, 1970–72)
 ********************************************************************************
@@ -547,7 +561,7 @@ drop if missing(LEAID)
 rename year year4
 append using "indfin_panel_tagged.dta"
 keep LEAID GOVID year4 pp_exp good_govid_baseline ///
-good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771
+good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
 duplicates drop LEAID GOVID year4 pp_exp, force
 bysort LEAID: egen __g = max(good_govid_baseline)
 replace good_govid_baseline = __g if missing(good_govid_baseline)

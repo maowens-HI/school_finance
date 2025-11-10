@@ -220,7 +220,7 @@ by tract70 year4 sdtc (LEAID), sort: keep if _n == 1
 keep LEAID gisjoin2 tract70 year4 sdtc pp_exp_real school_age_pop ///
 share_primary share_secondary county_name county good_tract ///
 good_tract_1967 good_tract_1970 good_tract_1971 ///
-    good_tract_1972 good_tract_6771
+    good_tract_1972 good_tract_6771 good_tract_7072
 reshape wide LEAID pp_exp_real school_age_pop share_primary share_secondary county_name county, i(tract70 year4) j(sdtc)
 
 /*────────────────────────────────────────────────────────────────────────────
@@ -318,6 +318,7 @@ collapse (sum) school_age_pop ///
          (mean) pp_exp_real ///
          (max)  good_county              = good_tract ///
          (max)  good_county_6771         = good_tract_6771 ///
+		 (max)  good_county_7072         = good_tract_7072 ///
          (max)  good_county_1967         = good_tract_1967 ///
          (max)  good_county_1970         = good_tract_1970 ///
          (max)  good_county_1971         = good_tract_1971 ///
@@ -334,6 +335,7 @@ collapse (sum) school_age_pop ///
          (mean) pp_exp_real ///
          (max)  good_county              = good_tract ///
          (max)  good_county_6771         = good_tract_6771 ///
+		 (max)  good_county_7072         = good_tract_7072 ///
          (max)  good_county_1967         = good_tract_1967 ///
          (max)  good_county_1970         = good_tract_1970 ///
          (max)  good_county_1971         = good_tract_1971 ///
@@ -395,11 +397,13 @@ restore
 * Keep counties present in all 4 baseline years AND zero problems
 preserve
     keep county year4 good_county ///
+     good_county_7072 ///
      good_county_6771 good_county_1967 ///
      good_county_1970 good_county_1971 ///
      good_county_1972
     keep if good_county ==1
     keep county year4 good_county ///
+	good_county_7072 ///
      good_county_6771 good_county_1967 ///
      good_county_1970 good_county_1971 ///
      good_county_1972
