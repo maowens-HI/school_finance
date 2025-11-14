@@ -256,11 +256,14 @@ foreach y of local year{
 
 
 
-
+drop _merge
 save jjp_balance,replace
 
-
-
+use interp_d,clear
+gen county_id = substr(LEAID,1,5)
+collapse (mean) enrollment, by(county)
+merge 1:m county_id using jjp_balance
+save jjp_balance2,replace
 
 /*********************************
 * Split by quartiles of baseline spending
@@ -277,14 +280,14 @@ forvalues i = 1/`n' {
     foreach v of local var {
         forvalues q = 1/4 {
 
-            use jjp_balance, clear
+            use jjp_balance2, clear
 					drop if `g' != 1
 					count
 display "Remaining obs in this iteration: " r(N)
 
             areg `v' ///
                 i.lag_* i.lead_* ///
-                i.year_unified  [w= school_age_pop] if  `y'==`q' & (never_treated==1 | reform_year<2000), ///
+                i.year_unified  [w= enrollment] if  `y'==`q' & (never_treated==1 | reform_year<2000), ///
                 absorb(county_id) vce(cluster county_id)
             *log close
 
@@ -345,11 +348,11 @@ forvalues i = 1/`n' {
 	  local y : word `i' of `years'
       local g : word `i' of `good'
     foreach v of local var {
-	use jjp_balance, clear
+	use jjp_balance2, clear
 	drop if `g' != 1
 areg `v' ///
     i.lag_* i.lead_* ///
-    i.year_unified [w= school_age_pop]   if `y' < 4 & (never_treated==1 | reform_year<2000), ///
+    i.year_unified [w= enrollment]   if `y' < 4 & (never_treated==1 | reform_year<2000), ///
     absorb(county_id) vce(cluster county_id)
 
 *--------------------------------------*

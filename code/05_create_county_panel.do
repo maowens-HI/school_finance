@@ -152,20 +152,21 @@ bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
 * 2)--------------------------------- Interpolate spending (linear, gaps ≤ 3 years)
 bys LEAID_num: ipolate pp_exp year if too_far == 0, gen(exp2)
 // We create exp2 the imputed spending
-
+bys LEAID_num: ipolate enrollment year if too_far == 0, gen(enroll2)
 *--------------------------------------------------------------*
 * C) Save interpolated district panel
 *--------------------------------------------------------------*
 
 * 1)--------------------------------- Replace original with interpolated values
 replace exp2 = pp_exp if !missing(pp_exp)
-
-drop pp_exp gap_next too_far
+replace enroll2 = enrollment if !missing(enrollment)
+drop pp_exp gap_next too_far enrollment
 
 rename exp2 pp_exp
+rename enroll2 enrollment
 
 * 2)--------------------------------- Save district-level interpolated panel
-keep LEAID GOVID  year4 pp_exp LEAID_num
+keep LEAID GOVID  year4 pp_exp LEAID_num enrollment
 save interp_d, replace // This is a district level panel of interpolated spending
 
 
@@ -419,7 +420,8 @@ label var c04014 "25–34 years old — Not enrolled"
 
 *Note: This does not perfectly get the primary secondary split but approximates it.
 ***  total school-age population (approx ages 5–17)
-gen school_age_pop = c04003 + c04004 + c04005 + c04006 + c04007 + c04008 + c04009 + c04010
+gen school_age_pop = c04003  + c04005 + c04007  + c04009 
+*gen school_age_pop = c04003 + c04004 + c04005 + c04006 + c04007 + c04008 + c04009 + c04010
 label var school_age_pop "Estimated school-age population (5–17 years, enrolled + not enrolled)"
 
 *--------------------------------------------------------------*
@@ -525,7 +527,8 @@ label var c04013 "25–34 yrs — Enrolled"
 label var c04014 "25–34 yrs — Not enrolled"
 
 * County school-age total (5–17), and a clean 1970 county FIPS
-gen school_age_pop = c04003 + c04004 + c04005 + c04006 + c04007 + c04008 + c04009 + c04010
+gen school_age_pop = c04003  + c04005 + c04007  + c04009 
+*gen school_age_pop = c04003 + c04004 + c04005 + c04006 + c04007 + c04008 + c04009 + c04010
 label var school_age_pop "School-age population (5–17), 1970"
 
 *** Construct county code using state and county numeric codes
