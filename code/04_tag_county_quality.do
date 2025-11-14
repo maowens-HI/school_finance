@@ -88,7 +88,7 @@ VALIDATION CHECKS TO RUN:
 use tracts_panel_real,clear
 
 *** Rename and construct county identifiers
-rename county county_name
+rename county_code county_name
 gen str5 county = state_fips + coc70
 
 tempfile no_tract_fix
