@@ -177,8 +177,7 @@ The pipeline follows a sequential process:
   - Quality flags for balanced event-study samples
 
 **Analysis Outputs:**
-- Event-study regression estimates (stored via `eststo`)
-- LaTeX tables for publication
+- Event-study regression estimates 
 - Event-study plots showing dynamic treatment effects
 
 ---
@@ -201,7 +200,6 @@ If referencing the original study:
 **For detailed documentation:**
 - See `CLAUDE.md` for comprehensive AI assistant guide and coding conventions
 - Review individual .do file headers for specific implementation details
-- Consult `code/11_12_25/11_12_25.txt` for recent methodological decisions
 
 **Original paper and data sources:**
 - JJP (2016) Online Appendix: Detailed data description and reform coding
@@ -213,10 +211,7 @@ If referencing the original study:
 
 ### **Version History**
 
-| Date | Update |
-|------|--------|
-| 2025-11-14 | Updated README to reflect new descriptive file names and current project structure |
-| 2025-11-14 | Renamed core pipeline files (01-05) with descriptive names; added CLAUDE.md documentation |
+
 
 ---
 
