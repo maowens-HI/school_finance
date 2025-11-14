@@ -69,7 +69,7 @@ school_finance/
 #### **Step 1: Set Up Global Path**
 In Stata, define the project path:
 ```stata
-global SchoolSpending "C:\Users\<user>\OneDrive - Stanford\Documents\share_code"
+global SchoolSpending "C:/Users/maowens/OneDrive - Stanford/school/git"
 ```
 
 #### **Step 2: Run the Full Pipeline**
