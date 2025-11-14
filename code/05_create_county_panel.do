@@ -1,6 +1,6 @@
 /*==============================================================================
 Project    : School Spending – District Interpolation and County Aggregation
-File       : 05_interp_d.do
+File       : 05_create_county_panel.do
 Purpose    : Interpolate missing district-level spending, repeat tract assignment
              and inflation adjustment, import enrollment data, and collapse to
              county-year panel with reform treatment variables.
@@ -23,15 +23,15 @@ WHY THIS MATTERS (Workflow Context):
   
   Why interpolate districts instead of using tract panel from Step 3?
   - Interpolation at district level → more accurate than interpolating aggregates
-  
+
   Why weight by enrollment instead of population?
   - School-age population varies within counties (some areas skew older)
   - Produces county spending measures that match education finance definitions
-  
+
   Output is the MAIN ANALYSIS FILE used in all event-study regressions.
 
 INPUTS (5 Main Inputs):
-  1. f33_indfin_grf_canon.dta  (from 00_cx.do)
+  1. f33_indfin_grf_canon.dta  (from 01_build_district_panel.do)
       └─> District-year panel with spending, quality flags, identifiers
   
   2. grf_tracts.dta  
@@ -69,12 +69,12 @@ KEY ASSUMPTIONS & SENSITIVE STEPS:
      - Preserves original values where available (interpolation fills gaps only)
   
   2. Tract Assignment (Step 2):
-     - Repeats entire 01_tract.do logic but using interpolated district panel
+     - Repeats entire 02_build_tract_panel.do logic but using interpolated district panel
      - Same population-weighted LEAID assignment per tract
      - Ensures tract-district links consistent with interpolated spending
-  
+
   3. Inflation Adjustment (Step 3):
-     - Repeats entire 03_infl.do logic but on interpolated tract panel
+     - Repeats entire 03_adjust_inflation.do logic but on interpolated tract panel
      - Uses same state-FY-specific CPI deflators
      - Creates pp_exp_real in constant 2000 dollars
   
@@ -94,9 +94,9 @@ KEY ASSUMPTIONS & SENSITIVE STEPS:
 
 DEPENDENCIES:
   • Requires: global SchoolSpending "C:\Users\...\path"
-  • Requires: 00_cx.do must run first (district panel input)
+  • Requires: 01_build_district_panel.do must run first (district panel input)
   • Requires: FRED API key set (for CPI data)
-  • Stata packages: 
+  • Stata packages:
       - fred (for CPI download)
       - ipolate (built-in, for interpolation)
   • Excel file: tabula-tabled2.xlsx must be in data directory

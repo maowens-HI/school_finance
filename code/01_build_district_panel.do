@@ -1,6 +1,6 @@
 /*==============================================================================
 Project    : School Spending – District Panel Construction and ID Crosswalks
-File       : 00_cx.do
+File       : 01_build_district_panel.do
 Purpose    : Build the foundation district-year panel by harmonizing NCES F-33
              (1992-2019) and INDFIN (1967-1991) data sources and creating
              canonical crosswalks between incompatible district ID systems.
@@ -62,7 +62,7 @@ KEY ASSUMPTIONS & SENSITIVE STEPS:
 DEPENDENCIES:
   • Requires: global SchoolSpending "C:\Users\...\path"
   • Stata packages: None (uses base Stata only)
-  • Downstream files: 01_tract.do requires f33_indfin_grf_canon.dta
+  • Downstream files: 02_build_tract_panel.do requires f33_indfin_grf_canon.dta
 
 VALIDATION CHECKS TO RUN:
   - Check crosswalk: count if _merge == 3 after LEAID-GOVID merge

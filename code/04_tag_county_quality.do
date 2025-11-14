@@ -1,6 +1,6 @@
 /*==============================================================================
 Project    : School Spending – County Quality Tagging
-File       : 04_cnty.do
+File       : 04_tag_county_quality.do
 Purpose    : Identify counties with complete baseline spending data (1967, 1970-1972)
              and tag as "good" or "bad" for inclusion in event-study analysis.
 Author     : Myles Owens
@@ -30,7 +30,7 @@ WHY THIS MATTERS (Workflow Context):
   with complete baseline data. This conservative approach ensures clean comparisons.
 
 INPUTS:
-  - tracts_panel_real.dta  (from 03_infl.do)
+  - tracts_panel_real.dta  (from 03_adjust_inflation.do)
       └─> Tract-year panel with pp_exp_real and good_tract flags
   - grf_id_tractlevel.dta
       └─> Tract-level metadata including no_tract indicator
@@ -65,9 +65,9 @@ KEY ASSUMPTIONS & SENSITIVE STEPS:
 
 DEPENDENCIES:
   • Requires: global SchoolSpending "C:\Users\...\path"
-  • Requires: 03_infl.do must run first (creates tracts_panel_real.dta)
+  • Requires: 03_adjust_inflation.do must run first (creates tracts_panel_real.dta)
   • Stata packages: None (base Stata only)
-  • Downstream: 05_interp_d.do uses good_county flags for sample restrictions
+  • Downstream: 05_create_county_panel.do uses good_county flags for sample restrictions
 
 VALIDATION CHECKS TO RUN:
   - County construction: assert length(county) == 5

@@ -1,6 +1,6 @@
 /*==============================================================================
 Project    : School Spending – Inflation Adjustment
-File       : 03_infl.do
+File       : 03_adjust_inflation.do
 Purpose    : Convert nominal per-pupil expenditures to real 2000 dollars using
              state-specific fiscal-year CPI-U averages from FRED.
 Author     : Myles Owens
@@ -28,7 +28,7 @@ WHY THIS MATTERS (Workflow Context):
   "percentage change in year-2000 dollars per pupil."
 
 INPUTS:
-  - tracts_panel_canon.dta  (from 01_tract.do)
+  - tracts_panel_canon.dta  (from 02_build_tract_panel.do)
       └─> Tract-year panel with nominal pp_exp
   - fiscal_year.csv
       └─> State FIPS × fiscal year start month (e.g., NY=4, CA=7)
@@ -70,11 +70,11 @@ KEY ASSUMPTIONS & SENSITIVE STEPS:
 
 DEPENDENCIES:
   • Requires: global SchoolSpending "C:\Users\...\path"
-  • Requires: 01_tract.do must run first (creates tracts_panel_canon.dta)
+  • Requires: 02_build_tract_panel.do must run first (creates tracts_panel_canon.dta)
   • Requires: FRED API key set in Stata (line 12: set fredkey ...)
-  • Stata packages: 
+  • Stata packages:
       - fred (install: ssc install fred)
-  • Downstream: 04_cnty.do uses tracts_panel_real.dta
+  • Downstream: 04_tag_county_quality.do uses tracts_panel_real.dta
 
 VALIDATION CHECKS TO RUN:
   - CPI completeness: assert nmonths == 12 (every state-FY has 12 months)
