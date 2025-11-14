@@ -111,34 +111,37 @@ VALIDATION CHECKS TO RUN:
   - Never-treated: tab never_treated (control group size)
   - Sample size: count (should be ~3,000 counties × 50 years ≈ 150,000 obs)
 ==============================================================================*/
-*****************************************************************************
-* I) Repeat Previous .do file steps but with interpolation
-*****************************************************************************
-*****************************************************************************
-* A) Prep for Interpolation of district panel
-*****************************************************************************
+*==============================================================*
+* I) Interpolate district panel (gaps ≤ 3 years)
+*==============================================================*
+
+*--------------------------------------------------------------*
+* A) Prep district panel for interpolation
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Load canonical district-year panel
 clear
 set more off
 cd "$SchoolSpending/data"
 
 use f33_indfin_grf_canon,clear
 
-
-* Convert string LEAID → numeric
+* 2)--------------------------------- Convert LEAID to numeric for time-series operations
 encode LEAID, gen(LEAID_num) // LEAID is a string and needs to be changed for interpolation
 
-* gap detector
+* 3)--------------------------------- Detect gaps in time series
 bysort LEAID (year): gen gap_next = year[_n+1] - year // gap = next year - current year
 gen too_far = gap_next > 3 // We don't want to impute gaps that are too big
 
-* Ensure full county-year panel
+* 4)--------------------------------- Create full panel structure
 tsset LEAID_num year4
 tsfill, full // creates missing values to fill for the whole range of the panel
 
+*--------------------------------------------------------------*
+* B) Interpolate missing values
+*--------------------------------------------------------------*
 
-
-*--- 1. Fill identifiers ------------------------------------------------------
-
+* 1)--------------------------------- Fill stable identifiers
 *Strings // adds back in stable variables for the gaps we created
 foreach var in GOVID LEAID good_govid_baseline{
     bys LEAID_num: egen __fill_`var' = mode(`var'), maxmode
@@ -146,39 +149,45 @@ foreach var in GOVID LEAID good_govid_baseline{
     drop __fill_`var'
 }
 
-
 bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
 
-*--- 2. Interpolate county expenditures --------------------------------------
-bys LEAID_num: ipolate pp_exp year if too_far == 0, gen(exp2) 
-// We create exp2 the imputed spending 
-*****************************************************************************
-* B) Save interpolated district panel
-*****************************************************************************
+* 2)--------------------------------- Interpolate spending (linear, gaps ≤ 3 years)
+bys LEAID_num: ipolate pp_exp year if too_far == 0, gen(exp2)
+// We create exp2 the imputed spending
+
+*--------------------------------------------------------------*
+* C) Save interpolated district panel
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Replace original with interpolated values
 replace exp2 = pp_exp if !missing(pp_exp)
 
 drop pp_exp gap_next too_far
 
 rename exp2 pp_exp
 
+* 2)--------------------------------- Save district-level interpolated panel
 keep LEAID GOVID  year4 pp_exp LEAID_num
 save interp_d, replace // This is a district level panel of interpolated spending
 
 
 
-*****************************************************************************
-* II) Build Tract Panel
-*****************************************************************************
-*****************************************************************************
+*==============================================================*
+* II) Build tract panel from interpolated districts
+*==============================================================*
+
+*--------------------------------------------------------------*
 * A) Assign one LEAID to each tract based on allocated population
-*****************************************************************************
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Load tract-district crosswalk
 use "$SchoolSpending/data/grf_tract_canon", clear // list of all tracts
 gen coc70 = substr(tract70,3,3)
 
 * Guard against . sorting to the top
 gen byte has_alloc = !missing(alloc_pop)
 
-* Pick exactly one LEAID per (tract70 sdtc):
+* 2)--------------------------------- Pick highest-population LEAID per tract-sdtc
 gsort tract70 sdtc -has_alloc -alloc_pop LEAID
 by tract70 sdtc: keep if _n==1
 drop if missing(tract70) // 0 obs deleted
@@ -186,19 +195,18 @@ drop if missing(sdtc)  // 1 case deleted
 * Sanity
 isid tract70 sdtc
 
-* Save crosswalk
+* 3)--------------------------------- Save crosswalk
 tempfile xwalk
 save `xwalk', replace
 
+*--------------------------------------------------------------*
+* B) Merge interpolated district panel to tracts
+*--------------------------------------------------------------*
 
-
-
-***Merge panel to tracts
-*District Year Spending
+* 1)--------------------------------- Load interpolated district-year spending
 use "$SchoolSpending/data/interp_d.dta", clear
 
-
-*ExplodeL one row per tract-year
+* 2)--------------------------------- Explode to tract-year level
 joinby LEAID using `xwalk', unmatched(both) _merge(join_merge)
 // This won't be a perfect join since some LEAIDs dissapear due to assignment
 
@@ -208,7 +216,11 @@ cd "$SchoolSpending/data"
 keep if join_merge ==3
 save interp_t_temp, replace
 
+*--------------------------------------------------------------*
+* C) Merge untracted area flags
+*--------------------------------------------------------------*
 
+* 1)--------------------------------- Load and merge non-tracted flags
 use grf_id_tractlevel, clear // this tells me if an area is non-tracted
 keep no_tract tract70 county_code
 duplicates drop  // want it on the tract level
@@ -218,39 +230,38 @@ rename county_code county
 * ... untracted area or not.
 
 
-/*******************************************************************************
-B) Prep for sorting out untracted areas in the GRF
-********************************************************************************/
-* Count DISTINCT non-tracted areas per county–year
+*--------------------------------------------------------------*
+* D) Classify counties by tracted/untracted status
+*--------------------------------------------------------------*
 
+* 1)--------------------------------- Count distinct non-tracted areas per county-year
 // Is a tract ever considered non-tracted?
-bys county year4 tract70: egen byte any_untr = max(no_tract==1) 
+bys county year4 tract70: egen byte any_untr = max(no_tract==1)
 
 // first row of every tract
-bys county year4 tract70: gen  byte tag_tr   = _n==1 
+bys county year4 tract70: gen  byte tag_tr   = _n==1
 
 // Is this the first row and is this untracted?
-gen byte nt_tag = tag_tr & any_untr 
+gen byte nt_tag = tag_tr & any_untr
 
 // Count of distinct non tracted areas in a county
 bys county year4: egen n_nontr_uniq = total(nt_tag)
 drop any_untr tag_tr nt_tag
 
-* Count DISTINCT tracted areas per county–year (for the "no tracts" test)
+* 2)--------------------------------- Count distinct tracted areas per county-year
 bys county year4 tract70: egen byte any_tr = max(no_tract==0)
 bys county year4 tract70: gen  byte tag_tr2 = _n==1
 gen byte tr_tag = tag_tr2 & any_tr
 bys county year4: egen n_tr_uniq = total(tr_tag)
 drop any_tr tag_tr2 tr_tag
 
-
-*A 4-type that splits based on Nicks's comments
+* 3)--------------------------------- Create 4-type county classification
+*A 4-type that splits based on Nick's comments
 gen byte county_type = .
 replace county_type = 1 if n_nontr_uniq == 0 & n_tr_uniq > 0   // fully tracted
 replace county_type = 2 if n_nontr_uniq == 1 & n_tr_uniq == 0  // fully untracted
 replace county_type = 4 if n_nontr_uniq == 1 & n_tr_uniq > 0   // mixed: 1 untracted + some tracted
 replace county_type = 3 if n_nontr_uniq >= 2     // ≥2 untracted (multi-untracted counties)
-
 
 * Safety: if something weird sneaks through, mark it
 replace county_type = . if n_nontr_uniq==. | n_tr_uniq==.
@@ -261,15 +272,16 @@ label define ctype ///
     3 "Problematic: ≥2 untracted" ///
     4 "Mixed: 1 untracted + some tracted", replace
 label values county_type ctype
-save interp_t, replace // panel of interpolated tracts 
+save interp_t, replace // panel of interpolated tracts
 
 
 use interp_t,clear
 
-/*******************************************************************************
-C) Adjust for Inflation
-********************************************************************************/
+*--------------------------------------------------------------*
+* E) OPTIONAL: Adjust for inflation (commented out)
+*--------------------------------------------------------------*
 /*
+* This section repeats 03_adjust_inflation.do logic but on interpolated tracts
 *** Register FRED key once (no more nagging)
 set fredkey 87d3478358d0f3e781d2657d1aefd1ff, permanently
 
@@ -339,28 +351,31 @@ merge m:1 state_fips year4 using `deflators', keep(match master) nogen
 gen pp_exp_real = pp_exp * inflator_2000
 label var pp_exp_real "Per-pupil expenditure in 2000 dollars (state FY CPI-U avg)"
 */
+
+*--------------------------------------------------------------*
+* F) Save interpolated tract panel
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Construct gisjoin2 and save
 gen str13 gisjoin2 = substr(tract70, 1, 2) + "0" + substr(tract70, 3, 3) + "0" + substr(tract70, 6, 6)
-*** Save merged panel 
+*** Save merged panel
 gen tract_merge = substr(tract70,1,9)
 drop _merge
 rename pp_exp pp_exp_real // remove later
 save "$SchoolSpending/data/interp_t_real.dta", replace
 
+*==============================================================*
+* III) Turn tract panel into county panel
+*==============================================================*
 
+*--------------------------------------------------------------*
+* A) Import school age population for tracts
+*--------------------------------------------------------------*
 
+* 1)--------------------------------- Load tract-level NHGIS enrollment data
+clear
+set more off
 
-
-/*******************************************************************************
-III) Turn tract panel into county panel
-********************************************************************************/
-/*******************************************************************************
-A) Import School Age Population for tracts
-********************************************************************************/
-*** Housekeeping
-clear 
-set more off 
-
-*** Set working directory
 cd "$SchoolSpending/data"
 
 *** Load tract-level NHGIS school school_age_pop data
@@ -409,10 +424,11 @@ label var c04014 "25–34 years old — Not enrolled"
 gen school_age_pop = c04003 + c04004 + c04005 + c04006 + c04007 + c04008 + c04009 + c04010
 label var school_age_pop "Estimated school-age population (5–17 years, enrolled + not enrolled)"
 
-*****************************************************************************
-*B) Clean School Age Population
-*****************************************************************************
+*--------------------------------------------------------------*
+* B) Clean school age population and construct tract IDs
+*--------------------------------------------------------------*
 
+* 1)--------------------------------- Construct state and county strings
 gen str2 state_str  = string(statea,  "%02.0f")
 gen str3 county_str = string(countya, "%03.0f")
 
@@ -425,20 +441,21 @@ replace tract_str = string(tracta*100, "%06.0f") if digits <= 4    // 101 → 01
 replace tract_str = string(tracta, "%06.0f")      if digits == 5 | digits == 6   // 123456 → 123456
 
 
-* Canonical 11-digit tract identifier
+* 2)--------------------------------- Build canonical 11-digit tract identifier
 gen str11 tract70 = state_str + county_str + tract_str
 
 gen tract_merge = substr(tract70,1,9)
-label var tract70 "11-digit Census Tract FIPS (state+county+tract)"  // 
-
+label var tract70 "11-digit Census Tract FIPS (state+county+tract)"  //
 
 *** Create truncated GISJOIN for merging with tract panel
 gen gisjoin2 = substr(gisjoin, 2, 14)
 
-*****************************************************************************
-* C) Merge into tract panel
-*****************************************************************************
-/* I get a better merge when I ingore tract suffixes. */
+*--------------------------------------------------------------*
+* C) Merge school age population into tract panel
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Collapse to tract level
+/* I get a better merge when I ignore tract suffixes. */
 collapse (mean) school_age_pop, by(tract70)
 summ school_age_pop
 save school_age_pop,replace 
@@ -466,10 +483,11 @@ keep if no_tract ==1
 tempfile grf_no_tract
 save `grf_no_tract'
 
-*****************************************************************************
-*D) Import county level school age population data
-*****************************************************************************
-*** Load county-level school_age_pop file
+*--------------------------------------------------------------*
+* D) Import county level school age population data
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Load county-level NHGIS enrollment file
 import delimited "$SchoolSpending/data/enroll_age_county.csv", clear
 	
 	
@@ -555,16 +573,17 @@ duplicates drop gisjoin2 year4 sdtc LEAID tract70, force
 *** If multiple LEAIDs remain for same tract-year-type, keep first
 by tract70 year4 sdtc (LEAID), sort: keep if _n == 1
 
+*--------------------------------------------------------------*
+* E) Reshape dataset wide by district type
+*--------------------------------------------------------------*
 
-
-/*******************************************************************************
-E) Reshape dataset wide by district type
-********************************************************************************/
+* 1)--------------------------------- Prepare for reshape and reshape wide
 keep LEAID gisjoin2 tract70 year4 sdtc pp_exp_real school_age_pop ///
 share_primary share_secondary county_name county county_type no_tract
 reshape wide LEAID pp_exp_real school_age_pop share_primary share_secondary county_name county, i(tract70 year4) j(sdtc)
 
 
+* 2)--------------------------------- Assign tract-level PPE (weighted by shares)
 /******************************************************************************
 Assign tract-level per-pupil expenditure (PPE)
  Combine primary (sdtc==2) and secondary (sdtc==3) PPE weighted by shares.
@@ -627,13 +646,14 @@ duplicates drop county county_name, force
 save county_lookup,replace
 restore
 
-*****************************************************************************
-*F) Collapse into counties
-*****************************************************************************
+*--------------------------------------------------------------*
+* F) Collapse into counties and handle untracted populations
+*--------------------------------------------------------------*
 
 save tract_b4_collapse,replace
 use tract_b4_collapse, clear
 
+* 1)--------------------------------- Handle Type 4 counties (1 untracted + tracted areas)
 /*******************************************************************************
 Handle untracted populations in mixed/problematic counties
 (Type 3 = ≥2 untracted; Type 4 = 1 untracted + some tracted)
@@ -667,12 +687,10 @@ save `type4'
 summ school_age_pop
 restore
 
-
-
+* 2)--------------------------------- Handle Type 3 counties (≥2 untracted areas)
 /*******************************************************************************
  ---- TYPE 3: Two or more untracted areas ----
 *******************************************************************************/
-
 
 preserve
 keep if county_type == 3
@@ -705,6 +723,8 @@ tempfile type3
 save `type3'
 summ school_age_pop
 restore
+
+* 3)--------------------------------- Combine all county types back together
 <<<<<<< HEAD
 =======
 
@@ -725,8 +745,7 @@ append using `type4'
 *keep if county_type == 1 // WARNING test do not keep
 save tract_b4_collapse_fixed, replace
 
-
-
+* 4)--------------------------------- Collapse tracts to county level
 * 0) Build county-year totals of school_age_pop once
 preserve
 collapse (sum) school_age_pop, by(county year4)
@@ -793,6 +812,15 @@ save interp_c,replace
 
 
 
+*==============================================================*
+* IV) Merge reform treatment data (Jackson et al 2016)
+*==============================================================*
+
+*--------------------------------------------------------------*
+* A) Load and clean JJP reform table
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Import reform mapping from Excel
 /*******************************************************************************
 Use JJP reform table instead of Hanushek logic
 *******************************************************************************/

@@ -85,10 +85,18 @@ VALIDATION CHECKS TO RUN:
 ==============================================================================*/
 
 
-*** Register FRED key once (no more nagging)
+*==============================================================*
+* I) Import monthly CPI data from FRED
+*==============================================================*
+
+*--------------------------------------------------------------*
+* A) Download CPI-U series and prepare tempfiles
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Register FRED API key
 set fredkey 87d3478358d0f3e781d2657d1aefd1ff, permanently
 
-*** Import MONTHLY CPI-U (NSA), grab 1966 so FY1967 is complete
+* 2)--------------------------------- Import monthly CPI-U (NSA), 1964-2019
 tempfile cpi_monthly fy_tbl cpi_fy deflators
 import fred CPIAUCNS, daterange(1964-01-01 2019-12-31) clear
 gen m = mofd(daten)
@@ -97,7 +105,15 @@ rename CPIAUCNS cpi_u_all_nsa
 keep m cpi_u_all_nsa
 save `cpi_monthly'
 
-*** Load fiscal-year lookup
+*==============================================================*
+* II) Build state-specific fiscal year CPI averages
+*==============================================================*
+
+*--------------------------------------------------------------*
+* A) Load fiscal year lookup and cross with CPI months
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Load state fiscal year start months
 import delimited "$SchoolSpending/data/fiscal_year.csv", ///
     varnames(1) clear
 
@@ -107,7 +123,7 @@ keep state_fips fy_start_month
 duplicates drop
 save `fy_tbl', replace
 
-*** Cross product of CPI months with states, assign fiscal year end-year
+* 2)--------------------------------- Cross product CPI months with states
 use `cpi_monthly', clear
 cross using `fy_tbl'
 
@@ -117,8 +133,11 @@ gen fy_end_year = cal_y + (cal_m >= fy_start_month)
 
 keep if inrange(fy_end_year, 1967,2019)
 
+*--------------------------------------------------------------*
+* B) Collapse to fiscal-year averages and build deflators
+*--------------------------------------------------------------*
 
-*** Collapse to fiscal-year averages
+* 1)--------------------------------- Collapse to state-FY averages
 *This was messing stuff up
 *collapse (mean) cpi_u_all_nsa (count) nmonths = m, by(state_fips fy_end_year)
 collapse (mean) cpi_u_all_nsa (count) nmonths = cpi_u_all_nsa, by(state_fips fy_end_year)
@@ -128,7 +147,7 @@ rename cpi_u_all_nsa cpi_fy_avg
 label var cpi_fy_avg "CPI-U (NSA) averaged over state fiscal year"
 save `cpi_fy', replace
 
-*** Build 2000-dollar factors
+* 2)--------------------------------- Build 2000-dollar inflation factors
 bys state_fips: egen base2000 = max(cond(year4==2000, cpi_fy_avg, .))
 gen deflator_2000 = cpi_fy_avg / base2000
 gen inflator_2000 = base2000 / cpi_fy_avg
@@ -136,10 +155,18 @@ gen inflator_2000 = base2000 / cpi_fy_avg
 order state_fips year4 cpi_fy_avg deflator_2000 inflator_2000
 save `deflators', replace
 
-*** Merge to panel
+*==============================================================*
+* III) Merge deflators to tract panel
+*==============================================================*
+
+*--------------------------------------------------------------*
+* A) Load tract panel and merge CPI deflators
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Load tract panel
 use "$SchoolSpending/data/tracts_panel_canon", clear
 
-*** Standardize state_fips to str2
+* 2)--------------------------------- Standardize state_fips to str2
 capture confirm string variable state_fips
 if _rc {
     tostring state_fips, gen(state_fips_str) force
@@ -148,13 +175,18 @@ if _rc {
     rename state_fips_str state_fips
 }
 
+* 3)--------------------------------- Merge deflators
 merge m:1 state_fips year4 using `deflators', keep(match master) nogen
 
-*** deflate per-pupil spending to 2000 dollars
+* 4)--------------------------------- Deflate per-pupil spending to 2000 dollars
 gen pp_exp_real = pp_exp * inflator_2000
 label var pp_exp_real "Per-pupil expenditure in 2000 dollars (state FY CPI-U avg)"
 */
-*** Save merged panel 
+
+*--------------------------------------------------------------*
+* B) Save inflation-adjusted tract panel
+*--------------------------------------------------------------*
+
 keep LEAID GOVID year4 pp_exp_real good_tract sdtc state_fips gisjoin2 coc70 tract70 ///
 	good_tract_1967 good_tract_1970 good_tract_1971 ///
     good_tract_1972 good_tract_6771 good_tract_7072 county_code
