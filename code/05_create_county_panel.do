@@ -85,8 +85,6 @@ KEY ASSUMPTIONS & SENSITIVE STEPS:
   
   5. Treatment Assignment (Step 6):
      - Merges state-level reform years from Jackson et al (2016) Table D2
-     - Creates relative_year = year4 - reform_year (event-time variable)
-     - Tags never_treated = 1 for control states (no court-ordered reform)
      - Reform types: equity, adequacy, or mixed (used for heterogeneity analysis)
   
   6. Panel Structure:
@@ -857,6 +855,7 @@ replace state_name = "massachusetts" if state_name == "massachuset ts"
 
 drop if missing(case_name)
 keep if const == "Overturned"
+sort state_name reform_year 
 bysort state_name: keep if _n == 1
 
 gen mfp_pre = "MFP" if regexm(form_pre, "MFP")
