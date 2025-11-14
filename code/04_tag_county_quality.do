@@ -87,9 +87,8 @@ VALIDATION CHECKS TO RUN:
 * 1)--------------------------------- Load inflation-adjusted tract panel
 use tracts_panel_real,clear
 
-*** Rename and construct county identifiers
-rename county_code county_name
-gen str5 county = state_fips + coc70
+*** Rename county_code to county (already correctly defined in File 02)
+rename county_code county
 
 tempfile no_tract_fix
 save `no_tract_fix',replace

@@ -393,7 +393,7 @@ keep LEAID GOVID year4 pp_exp good_tract sdtc state_fips gisjoin2 coc70 tract70 
     good_tract_1967 good_tract_1970 good_tract_1971 ///
     good_tract_1972 good_tract_6771 good_tract_7072
 
-gen str5 county_code = substr(LEAID,1,5)
+gen str5 county_code = state_fips + coc70
 save tracts_panel_canon,replace
 	
 
