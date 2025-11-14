@@ -160,6 +160,24 @@ drop if county_id == "06037"
 **************************************************************************/
 save jjp_interp, replace
 
+use jjp_interp, clear  
+summ school_age_pop, detail
+
+
+collapse (mean) reform_year, by(state_fips)
+list state_fips reform_year, sepby(state_fips) noobs clean
+
+
+* Sort for readability
+sort state_fips
+
+* Display results
+list state_fips reform_year, sepby(state_fips)
+
+* Optionally, export to CSV
+export delimited using "state_reform_years.csv", replace
+
+
 
 * Housekeeping
 clear

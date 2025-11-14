@@ -1,6 +1,5 @@
 **************************************************************************
 *   PREP: INTERPOLATED COUNTY PANEL + BASELINE QUARTILES + STRICT ROLLING
-*   Author: Myles Owens
 *   Purpose: Build clean county-year panel with interpolated exp vars,
 *            baseline quartiles, and rolling mean (13-year strict)
 **************************************************************************/
@@ -9,8 +8,7 @@
 clear all
 set more off
 cd "$SchoolSpending\data"
-use clean_cty, clear
-drop year4
+use county_clean, clear
 merge 1:m county using county_exp_final
 drop _merge
 replace good_county = 0 if missing(good_county)
@@ -24,9 +22,9 @@ gen year_unified = year4-1
 winsor2 county_exp, replace c(1 99) by(year_unified)
 *take the 99% value and any obs that are above the 99% replace with 99%
 
-*keep if good_county == 1
+
 /**************************************************************************
-*   STRICT 13-YEAR ROLLING MEAN
+   STRICT 13-YEAR ROLLING MEAN
 **************************************************************************/
 ***log versions
 *log current
@@ -44,7 +42,7 @@ rangestat (mean) exp_ma_strict = exp (count) n_obs = exp, ///
     interval(year_unified -12 0) by(county_id)
 
 * keep only obs with full 13-year window
-replace exp_ma_strict = . if n_obs < 13
+replace exp_ma_strict = . if n_obs < 13 & year4 < 1979
 gen lexp_ma_strict = log(exp_ma_strict)
 
 *--- 3. Relative year ---------------------------------------------------------
@@ -113,7 +111,7 @@ egen base_exp3 = rowmean( base_69 base_70 base_71)
 bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
 
-**log using "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_7_25_no_wt_wt\q_sum.*log", replace
+**log using "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_12_25_wt\q_sum.*log", replace
 local year 1966 1969 1970 1971
 foreach y of local year{
 	forvalues q = 1/4{
@@ -123,7 +121,7 @@ foreach y of local year{
 }
 **log close
 /**************************************************************************
-*   LEADS AND LAGS
+   LEADS AND LAGS
 **************************************************************************/
 
 forvalues k = 1/17 {
@@ -135,14 +133,14 @@ forvalues k = 1/5 {
     replace lead_`k' = 0 if missing(relative_year)
 }
 
-replace lag_17 = 1 if relative_year >= 17 & !missing(relative_year)
-replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year)
+replace lag_17 = 1 if relative_year >= 17 & !missing(relative_year) // bins
+replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year) //  bins
 
 
 
 drop if county_id == "06037"
 /**************************************************************************
-*   SAVE CLEAN INTERPOLATED DATASET
+   SAVE CLEAN INTERPOLATED DATASET
 **************************************************************************/
 
 rename good_county_1967 good_66
@@ -151,13 +149,115 @@ rename good_county_1971 good_70
 rename good_county_1972 good_71
 rename good_county_6771 good_66_70
 rename good_county good_66_71
+rename good_county_7072 good_69_71
 
 save jjp_interp, replace
 
 
+/*******************************************************************************
+On 11/12/25 Matt requested that I amke a balanced panel based on event time 
+(relative_year) Below is that fix
+*******************************************************************************/
+
+* We first create a temporary file to identify the balanced counties
+preserve
+keep if inrange(relative_year, -5, 17) // Only check within the event window
+
+* Find counties with complete windows
+bys county_id: egen min_rel = min(relative_year)
+bys county_id: egen max_rel = max(relative_year)
+bys county_id: gen n_rel = _N
+
+* Keep only if they have the full window
+keep if min_rel == -5 & max_rel == 17 & n_rel == 23
+
+keep county_id
+duplicates drop
+gen balance = 1
+tempfile balance
+save `balance'
+restore
+
+use `balance',clear
+merge 1:m county_id using jjp_interp
+* Mark unbalanced counties
+replace balance = 0 if missing(balance)
+**************
+*/
+
+* Create balanced-only dataset for analysis
+keep if balance ==1 | never_treated2 ==1 // keep balanced counties & never treateds
 
 
 
+drop pre_q* base_*
+
+/**************************************************************************
+*   BASELINE QUARTILES (1969–1971) + AVERAGE BASELINE
+**************************************************************************/
+
+
+
+local years 1966 1969 1970 1971
+preserve
+foreach y of local years {
+
+    use interp_temp, clear
+    keep if year_unified == `y'
+    keep if !missing(exp, state_fips, county_id)
+
+    count
+    if r(N)==0 {
+        di as error "No observations for year `y' — skipping."
+        continue
+    }
+
+    bysort state_fips: egen pre_q`y' = xtile(exp), n(4)
+    keep state_fips county_id pre_q`y'
+
+    tempfile q`y'
+    save `q`y'', replace
+
+
+}
+restore
+* Merge quartiles back
+foreach y of local years {
+    merge m:1 state_fips county_id using `q`y'', nogen
+}
+
+* Average baseline 1969–1971
+local number 66 69 70 71
+foreach n of local number {
+    gen base_`n' = .
+    replace base_`n' = exp if year_unified == 19`n'
+    bys county_id: egen base_`n'_max = max(base_`n')
+    drop base_`n'
+    rename base_`n'_max base_`n'
+}
+egen base_exp = rowmean( base_66 base_69 base_70 base_71) 
+bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
+
+egen base_exp2 = rowmean( base_66 base_69 base_70) 
+bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
+
+egen base_exp3 = rowmean( base_69 base_70 base_71) 
+bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
+
+
+**log using "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_12_25_wt\q_sum.*log", replace
+local year 1966 1969 1970 1971
+foreach y of local year{
+	forvalues q = 1/4{
+		di "`q' `y'"
+	summ exp if pre_q`y' == `q'
+}
+}
+
+
+
+
+save jjp_balance,replace
 
 
 
@@ -177,14 +277,14 @@ forvalues i = 1/`n' {
     foreach v of local var {
         forvalues q = 1/4 {
 
-            use jjp_interp, clear
+            use jjp_balance, clear
 					drop if `g' != 1
 					count
 display "Remaining obs in this iteration: " r(N)
 
             areg `v' ///
                 i.lag_* i.lead_* ///
-                i.year_unified if `y'==`q' & (never_treated==1 | reform_year<2000), ///
+                i.year_unified  [w= school_age_pop] if  `y'==`q' & (never_treated==1 | reform_year<2000), ///
                 absorb(county_id) vce(cluster county_id)
             *log close
 
@@ -217,12 +317,12 @@ display "Remaining obs in this iteration: " r(N)
                 yline(0, lpattern(dash) lcolor(gs10)) ///
                 xline(0, lpattern(dash) lcolor(gs10)) ///
                 ytitle("Δ ln(13-yr rolling avg PPE)", size(medsmall) margin(medium)) ///
-                title("`v' | Quartile `q' | `y' | `g'", size(medlarge) color("35 45 60")) ///
+                title("Event Study: `v' | Quartile `q' | `y' | `g'", size(medlarge) color("35 45 60")) ///
                 graphregion(color(white)) ///
                 legend(off) ///
                 scheme(s2mono)
 
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_7_25_no_wt\reg_`v'_`q'_`y'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_12_25\reg_`v'_`q'_`y'.png", replace
         }
 	}
     
@@ -238,17 +338,18 @@ local var lexp lexp_ma lexp_ma_strict
 
 local years   pre_q1966  pre_q1969 pre_q1970  pre_q1971 pre_q_66_70 pre_q_66_71 pre_q_69_71
 local good good_66 good_69 good_70 good_71 good_66_70 good_66_71 good_69_71
+
 local n: word count `years'
 
 forvalues i = 1/`n' {
 	  local y : word `i' of `years'
       local g : word `i' of `good'
     foreach v of local var {
-	use jjp_interp, clear
+	use jjp_balance, clear
 	drop if `g' != 1
 areg `v' ///
     i.lag_* i.lead_* ///
-    i.year_unified if `y' < 4 & (never_treated==1 | reform_year<2000), ///
+    i.year_unified [w= school_age_pop]   if `y' < 4 & (never_treated==1 | reform_year<2000), ///
     absorb(county_id) vce(cluster county_id)
 
 *--------------------------------------*
@@ -275,7 +376,6 @@ postclose handle
 * Plot event study
 *--------------------------------------*
 use `results', clear
-keep if inrange(rel_year, -20, 20)
 sort rel_year
 
 gen ci_lo = b - 1.645*se
@@ -288,12 +388,12 @@ gen ci_hi = b + 1.645*se
                 yline(0, lpattern(dash) lcolor(gs10)) ///
                 xline(0, lpattern(dash) lcolor(gs10)) ///
                 ytitle("Δ ln(13-yr rolling avg PPE)", size(medsmall) margin(medium)) ///
-                title("`v' | Quartile 1-3 | `y'| `g'", size(medlarge) color("35 45 60")) ///
+                title("Event Study: `v' | Quartile 1-3 | `y'| `g'", size(medlarge) color("35 45 60")) ///
                 graphregion(color(white)) ///
                 legend(off) ///
                 scheme(s2mono)
 				
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_7_25_no_wt\btm_`v'_`y'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_12_25\btm_`v'_`y'.png", replace
 	
 }
 }

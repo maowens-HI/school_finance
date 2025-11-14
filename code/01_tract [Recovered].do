@@ -33,11 +33,11 @@ Assumptions / Notes:
 ==============================================================================*/
 
 
-*** Housekeeping
+********************************************************************************
+* GEOGRAPHIC REFERENCE FILE (GRF)
+********************************************************************************
 clear 
 set more off
-
-*** File Location
 local dfile "$SchoolSpending/data/raw/GRF69/DS0001/03515-0001-Data.txt"
 
 *** import fixed-width ASCII [ICPSR layout]
@@ -64,7 +64,7 @@ infix ///
     str2  steac  41-42    /* state economic area   */                           ///
     str3  ecosc  43-45    /* economic sub-region   */                           ///
     str1  cebdc  46-46    /* CBD flag              */                           ///
-    str30  arname 47-76    /* area name             */                           ///
+    str30 arnam  47-76    /* area name             */                           ///
     /* back to numeric (ICPSR dropped Gov. ID; BTC starts here) */              ///
     long  btc    77-80    /* basic tract code      */                           ///
     int   tsc    81-82    /* tract suffix code     */                           ///
@@ -101,7 +101,7 @@ label variable uniac  "Universal Area Code"
 label variable steac  "State Economic Area Code"
 label variable ecosc  "Economic Subregion Code"
 label variable cebdc  "Central Business District Code"
-label variable arname  "Area Name"
+label variable arnam  "Area Name"
 label variable btc    "Basic Tract Code"
 label variable tsc    "Tract Suffix Code"
 label variable blgc   "Block Group Code"
@@ -115,14 +115,20 @@ label variable sdc    "School District Code"
 label variable sdtc   "School District Type Code"
 label variable aduc   "Administrative Unit Code"
 
+*export delimited using "grf_raw.csv", replace // For inspecting the GRF
 
+********************************************************************************
+* Clean the GRF
+********************************************************************************
+
+* Clean and construct geographic identifiers
+gen no_tract = 0
+replace no_tract = 1 if missing(btc) 
 
 *** Basic Tract Code (btc) should be 4 digits; if missing, treat as 0000
-*** Tract-Suffix Code (tsc) should be 2 digits; if missing, treat as 00  
-replace btc = 0  if missing(btc) & !missing(trac)
-replace tsc = 0 if tsc == . & !missing(trac)
-gen no_tract = 0
-replace no_tract = 1 if missing(trac)
+*** Tract-Suffix Code (tsc) should be 2 digits; if missing, treat as 00 
+replace btc = 0  if missing(btc) 
+replace tsc = 0 if missing(tsc)
 
 * Build composite identifiers
 gen str4 btc_str = string(btc,"%04.0f")
@@ -130,15 +136,37 @@ gen str2 tsc_str = string(tsc,"%02.0f")
 gen str5 sdc_str = string(sdc,"%05.0f")
 
 
-*** Now build the 11-char tract ID safely
+* Drop special areas 
+gen flag_suffix_special = tsc_str == "99" // Not a true geo area. Includes ships
+drop if tsc_str == "99" 
+drop flag_suffix_special
+
+* Tract revisions which are slivers of the same tract
+gen flag_suffix_change = (tsc >= 70 & tsc <= 98) // tract revisions
+drop if flag_suffix_change == 1 
+drop flag_suffix_change
+
+
+gen flag_special_AIAN     = (btc >= 9400 & btc <= 9499) // Native Land
+gen flag_special_landuse  = (btc >= 9800 & btc <= 9899) // Administrative code
+gen flag_water_only       = (btc >= 9900 & btc <= 9998) // Water
+
+drop if flag_special_AIAN | flag_special_landuse | flag_water_only
+
+
+
+*** Now build the 11-char tract ID 
+* Census 11 digit unique tract identifier
 gen str11 tract70 = ///
     string(stc70,"%02.0f") + string(coc70,"%03.0f") + btc_str + tsc_str
+* For use in GIS
 gen str13 gisjoin2 = ///
 	string(stc70,"%02.0f") + "0" + string(coc70,"%03.0f") + "0" + btc_str + tsc_str 
+*** GIS Fix: Drop the two-digit suffix only when it equals "00"
+replace gisjoin2 = substr(gisjoin2, 1, 11) if substr(gisjoin2, -2, 2) == "00"
+*NCES Local Economic Agency ID
 gen str7 LEAID = string(stc70,"%02.0f") + sdc_str
 	
-*** Drop the two-digit suffix only when it equals "00"
-replace gisjoin2 = substr(gisjoin2, 1, 11) if substr(gisjoin2, -2, 2) == "00"
 
 ***Aggregate block-groups / EDs so (tract70, sdc) is unique
 * Treat missing perc as 0 so they don't offset the sum later */
@@ -153,29 +181,31 @@ gen str9 govid = ///
     substr(sdc_str,1,3)   /* first 3 of sdc */
 	
 	
-* testing stuff
+* Population
 cd "$SchoolSpending/data"
-gen double alloc_pop = popc * (perc/100)
-gen double alloc_hou = houc * (perc/100)
+* the actual number of people from this block assigned to this district
+gen double alloc_pop = popc * (perc/100)  // Need it for assignment
 
 
-
-
-save grf_block,replace
+save grf_block,replace // all block/enumerated districts
 
 *** Housekeeping
-
 use grf_block,clear  
+/********************************************************************************
+OPTIONAL:
 
-collapse (sum) alloc_pop alloc_hou, by(tract70 sdtc LEAID)
+Districts with exactly one tract: 4946 out of 12463 (39.69%)
+
+*******************************************************************************/
+/** Collapse into unique tract x district x district type combos
+collapse (sum) alloc_pop, by(tract70 sdtc LEAID)
 
 
-gen state_fips = substr(LEAID,1,2)
+gen state_fips = substr(LEAID,1,2) // state fip code
 
-save grf_tract_canon,replace
+save grf_tract_canon,replace // set of all tract x district x district type combos
 
-
-/* Unique tract count per district (ignores duplicate tract–district rows)
+* Unique tract count per district (ignores duplicate tract–district rows)
 bysort LEAID: egen tracts_per_district = nvals(tract70)
 
 * Tag one row per district so counts aren't multiplied by number of tracts
@@ -195,10 +225,15 @@ display as text "Districts with exactly one tract: " as result `one' ///
 * Optional: distribution of tracts per district
 *tab tracts_per_district if district_tag
 */
+
+
 /*****************************************************************************
-Tag a tract if ANY of its districts has missing data for that year
+Build a tract x year panel
 *******************************************************************************/
-* Build tag BEFORE assigning a single LEAID per tract
+/*****************************************************************************
+ A) Tag a tract if ANY of its districts has missing data for that year
+*******************************************************************************/
+* Build tag BEFORE assigning LEAIDs to a tract
 preserve
     use grf_tract_canon, clear
     keep LEAID tract70 sdtc alloc_pop
@@ -231,7 +266,6 @@ bys tract70: egen good_tract_1971     = max(good_govid_1971)
 bys tract70: egen good_tract_1972     = max(good_govid_1972)
 
 * Keep ONLY the tract-level flags you just made
-drop if missing(good_tract)
 keep tract70 good_tract good_tract_1967 good_tract_1970 ///
      good_tract_1971 good_tract_1972 good_tract_6771 good_tract_7072
 	duplicates drop
@@ -240,36 +274,36 @@ keep tract70 good_tract good_tract_1967 good_tract_1970 ///
 restore
 use `tract_flag',clear
 
-*/
+
 
 
 
 
 /*****************************************************************************
-Assign one LEAID to each tract based on allocated population
+ B) Assign one LEAID to each tract based on allocated population
 *******************************************************************************/
-
 use grf_tract_canon, clear
+drop if sdtc == 4 // kick out vocational districts
 * Pick exactly one LEAID per (tract70 sdtc):
-gsort tract70 sdtc -alloc_pop LEAID
-drop if missing(tract70)
+gsort tract70 sdtc -alloc_pop LEAID // Highest population per tract-sdtc x LEAID
 drop if missing(sdtc)  
-by tract70 sdtc: keep if _n==1
+by tract70 sdtc: keep if _n==1 // Dropped about 20k observations
 
 * Sanity
 isid tract70 sdtc
 
 * Save crosswalk
 tempfile xwalk
-save `xwalk', replace
+save `xwalk', replace // Crosswalk of LEAID to Districts
 
+/*****************************************************************************
+ C) Merge panel to tract cross walk after assignment
+*******************************************************************************/
 
-***Merge panel to tracts
 *District Year Spending
 use "$SchoolSpending/data/f33_indfin_grf_canon.dta", clear
-drop if year4 == 9999
 
-*ExplodeL one row per tract-year
+*Explode one row per tract-year
 joinby LEAID using `xwalk', unmatched(both)
 tab _merge
 keep if _merge ==3
@@ -277,9 +311,14 @@ keep if _merge ==3
 sort tract70 year4
 cd "$SchoolSpending/data"
 
+/*****************************************************************************
+ C) Merge into the tagged panel
+*******************************************************************************/
+
 drop _merge
 merge m:1 tract70 using `tract_flag'
 tab _merge
+
 keep if _merge==3
 gen str13 gisjoin2 = substr(tract70, 1, 2) + "0" + substr(tract70, 3, 3) + "0" + substr(tract70, 6, 6)
 gen str3 coc70 = substr(tract70, 3, 3)
@@ -292,7 +331,7 @@ save tracts_panel_canon,replace
 	
 
 ********************************************************************************
-*Tabulations
+/*Tabulations
 ********************************************************************************
 
 use grf_id_tractlevel, clear
@@ -389,7 +428,7 @@ Nick's rule:
   - Type 2: exactly 1 non-tracted area AND zero tracted areas in that county–year
   - Type 1: otherwise
 **************************************************************************/
-
+/*
 *----------------------------------------------------------*
 * 1) Build county–year classification (distinct areas)     *
 *----------------------------------------------------------*

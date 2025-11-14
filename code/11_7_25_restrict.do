@@ -9,8 +9,7 @@
 clear all
 set more off
 cd "$SchoolSpending\data"
-use clean_cty, clear
-drop year4
+use county_clean, clear
 merge 1:m county using county_exp_final
 drop _merge
 replace good_county = 0 if missing(good_county)
@@ -140,7 +139,7 @@ replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year)
 
 
 
-drop if county_id == "06037"
+
 /**************************************************************************
 *   SAVE CLEAN INTERPOLATED DATASET
 **************************************************************************/
@@ -155,10 +154,38 @@ rename good_county_7072 good_69_71
 
 save jjp_interp, replace
 
+drop school_age_pop
+use county_school_pop,clear
+rename county_code county_id
+keep county_id school_age_pop
+merge 1:m county_id using jjp_interp
+keep if _merge ==3
+save jjp_interp2,replace
 
 
 
 
+
+
+keep if inrange(relative_year, -5, 17)
+bys county_id: egen min_rel = min(relative_year)
+bys county_id: egen max_rel = max(relative_year)
+bys county_id: gen n_rel = _N
+drop if min_rel > -5 | max_rel < 17 | n_rel != 23
+
+keep county_id
+duplicates drop 
+gen balance = 1
+tempfile balance
+save `balance'
+
+merge 1:m county_id using jjp_interp
+
+**************
+*/
+
+keep if balance ==1
+save jjp_balance,replace
 
 
 
@@ -277,7 +304,6 @@ postclose handle
 * Plot event study
 *--------------------------------------*
 use `results', clear
-keep if inrange(rel_year, -20, 20)
 sort rel_year
 
 gen ci_lo = b - 1.645*se

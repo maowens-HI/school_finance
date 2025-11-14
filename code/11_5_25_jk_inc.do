@@ -399,7 +399,6 @@ forvalues h = 0/1 {
            (line b relative_year, lcolor(black) lwidth(medthick)), ///
            yline(0, lpattern(dash) lcolor(gs8)) ///
            xline(0, lpattern(dash) lcolor(gs8)) ///
-		   xline(2 7, lcolor(blue) lwidth(medthick)) ///
            ytitle("Change in ln(13-yr rolling avg PPE)") ///
            title("Event Study: High == `h'") legend(off)
     graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_5_25\jack_spend_`h'.png", replace
@@ -479,7 +478,6 @@ forvalues h = 0/1 {
            (line b relative_year, lcolor(black) lwidth(medthick)), ///
            yline(0, lpattern(dash) lcolor(gs8)) ///
            xline(0, lpattern(dash) lcolor(gs8)) ///
-		   xline(2 7, lcolor(blue) lwidth(medthick)) ///
            ytitle("Change in ln(13-yr rolling avg PPE)") ///
            title("Event Study: Low == `h'") legend(off)
     graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_5_25\jack_spend_low_`h'.png", replace

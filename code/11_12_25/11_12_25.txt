@@ -1,0 +1,229 @@
+Today we are aiming to complete the restriction Matt detailed on 11/11/25 (See emails below).
+
+Emails for context:
+
+11/11/25 Follow-up
+Matthew Unrath<unrath@usc.edu>
+​
+Myles Alexander Owens;​
+Nick Gebbia​
+Sorry — I forgot you were using all those dummies. No need to cap the actual relative year variable when you’re relying on the indicators. The principle is the same though. We want to keep all the information contained in those earlier and later event times, load those in the binned values (-5 and 17), and still restrict to geographies for which we have complete spending values within our event window.
+
+Thanks!
+
+From: Myles Alexander Owens <myles.owens@stanford.edu>
+Date: Tuesday, November 11, 2025 at 4:53 PM
+To: Matthew Unrath <unrath@usc.edu>, Nick Gebbia <gebbia@stanford.edu>
+Subject: Re: 11/11/25 Follow-up
+
+This Message Is From an External Sender
+USC detected that this message came from outside of USC.
+Report Suspicious
+ 
+Apologies, any relative year ≥18 is coded as lag_17 = 1, and similarly for early leads.
+
+
+From: Myles Alexander Owens <myles.owens@stanford.edu>
+Sent: Tuesday, November 11, 2025 4:52 PM
+To: Matthew Unrath <unrath@usc.edu>; Nick Gebbia <gebbia@stanford.edu>
+Subject: Re: 11/11/25 Follow-up
+
+Hi Matt,
+
+We are currently binning the lead_* and lag_* indicator variables for all regressions, so any relative year ≥18 is coded as lead_17 = 1, and similarly for early lags.  We haven't been binning the relative_year variable itself. I don't think this should change the number of counties I reported earlier though. The full specification is under 10-11-2025 in the meeting notes.
+
+I can cap the relative years as you described and merge them back in.
+
+I will let you know if I have any follow-up questions.
+
+Best,
+Myles
+
+
+From: Matthew Unrath <unrath@usc.edu>
+Sent: Tuesday, November 11, 2025 4:12 PM
+To: Myles Alexander Owens <myles.owens@stanford.edu>; Nick Gebbia <gebbia@stanford.edu>
+Subject: Re: 11/11/25 Follow-up
+
+Hi Myles,
+
+Yes, we want to keep the never treated states.
+
+We’re already binning at those min/max values, right? We should do the same for this exercise. We keep all counties for which we have spending data in relative year -5 or less, relative year 17 or above, and every year in between. Then we cap at those values, replacing  relative_year=-5 for all observations for which relative years <= -6, and replacing relative_year=17 for all observations for which relative_year >= 18. 
+
+Is that what you’re proposing by tagging these counties and merging back on to the full panel? If so, that’s the right strategy.
+
+Let’s stick with +17 for now instead. 
+
+Let me know if you have any other questions.
+
+-Matt
+
+
+From: Myles Alexander Owens <myles.owens@stanford.edu>
+Date: Tuesday, November 11, 2025 at 3:53 PM
+To: Matthew Unrath <unrath@usc.edu>, Nick Gebbia <gebbia@stanford.edu>
+Subject: Re: 11/11/25 Follow-up
+
+This Message Is From an External Sender
+USC detected that this message came from outside of USC.
+Report Suspicious
+ 
+Hi Matt,
+
+I could certainly produce the event studies with this type of restriction. However, I have a couple of questions:
+
+We’ll still want to keep the never-treated states, correct?
+Should I tag the 823 balanced counties and merge them back into the full panel so that it is balanced within the -5 to 17 window, but we also retain the observations outside the −5 to +17 window, or should I narrow the panel strictly to those relative years? 
+
+If I rerun the balance test using a maximum relative year of +14 instead of +17, the number of counties rises from 823 to 847.
+
+Best,
+Myles
+
+
+From: Matthew Unrath <unrath@usc.edu>
+Sent: Tuesday, November 11, 2025 3:27 PM
+To: Myles Alexander Owens <myles.owens@stanford.edu>; Nick Gebbia <gebbia@stanford.edu>
+Subject: Re: 11/11/25 Follow-up
+
+Thanks Myles. Nick can chime in, but I think this restriction is worthwhile, despite the 20 percent drop in the number of counties included in our regressions. Otherwise, the point estimates in our event studies risk comparing different groups of counties.
+
+If we want to try to boost the N, we could consider lowering our max relative year. How many counties would we have if our max relative year was, say, 14 instead of 17?
+
+And would it be difficult to reproduce all our event studies using this restriction, ie, produce a new version of this page but impose this balance restriction? 
+
+From: Myles Alexander Owens <myles.owens@stanford.edu>
+Date: Tuesday, November 11, 2025 at 3:17 PM
+To: Matthew Unrath <unrath@usc.edu>, Nick Gebbia <gebbia@stanford.edu>
+Subject: Re: 11/11/25 Follow-up
+
+This Message Is From an External Sender
+USC detected that this message came from outside of USC.
+Report Suspicious
+ 
+Hi Matt,
+
+I have checked the county level panel. While every county appears in each calendar year, each county does not in every relative year (the first table).
+
+Looking at the tabulation of counties after restricting to the window (−5 to +17), some counties exit before +17 or enter after −5. The tabulation below shows the uneven counts by relative_year, confirming that the panel is unbalanced in event time. When I apply your balance test, requiring each county to have min = −5, max = +17, and 23 total event years, the sample drops from 1,087 to 822 counties (5,083 observations removed) (see the second table). The remaining 822 counties form a fully balanced event-time panel. 
+
+relative_ye |
+         ar |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         -5 |        979        4.09        4.09
+         -4 |        965        4.03        8.11
+         -3 |      1,020        4.26       12.37
+         -2 |      1,026        4.28       16.65
+         -1 |      1,042        4.35       21.00
+          0 |      1,040        4.34       25.34
+          1 |      1,013        4.23       29.57
+          2 |      1,009        4.21       33.78
+          3 |      1,034        4.32       38.10
+          4 |      1,073        4.48       42.58
+          5 |      1,087        4.54       47.11
+          6 |      1,086        4.53       51.65
+          7 |      1,085        4.53       56.18
+          8 |      1,084        4.52       60.70
+          9 |      1,084        4.52       65.22
+         10 |      1,068        4.46       69.68
+         11 |      1,067        4.45       74.13
+         12 |      1,067        4.45       78.59
+         13 |      1,067        4.45       83.04
+         14 |      1,028        4.29       87.33
+         15 |      1,027        4.29       91.62
+         16 |      1,004        4.19       95.81
+         17 |      1,004        4.19      100.00
+------------+-----------------------------------
+      Total |     23,959      100.00
+
+
+
+relative_ye |
+         ar |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         -5 |        822        4.35        4.35
+         -4 |        822        4.35        8.70
+         -3 |        822        4.35       13.04
+         -2 |        822        4.35       17.39
+         -1 |        822        4.35       21.74
+          0 |        822        4.35       26.09
+          1 |        822        4.35       30.43
+          2 |        822        4.35       34.78
+          3 |        822        4.35       39.13
+          4 |        822        4.35       43.48
+          5 |        822        4.35       47.83
+          6 |        822        4.35       52.17
+          7 |        822        4.35       56.52
+          8 |        822        4.35       60.87
+          9 |        822        4.35       65.22
+         10 |        822        4.35       69.57
+         11 |        822        4.35       73.91
+         12 |        822        4.35       78.26
+         13 |        822        4.35       82.61
+         14 |        822        4.35       86.96
+         15 |        822        4.35       91.30
+         16 |        822        4.35       95.65
+         17 |        822        4.35      100.00
+------------+-----------------------------------
+      Total |     18,906      100.00
+
+
+Best,
+Myles
+
+
+
+From: Matthew Unrath <unrath@usc.edu>
+Sent: Tuesday, November 11, 2025 2:42 PM
+To: Myles Alexander Owens <myles.owens@stanford.edu>; Nick Gebbia <gebbia@stanford.edu>
+Subject: Re: 11/11/25 Follow-up
+
+Our analysis is ultimately at the county level. If one of our interpolation or imputation processes correct for districts entering or dropping within our event window, then the fact that some districts exit in year 10 (eg, due to a merger with another district) might not be a problem. The question is whether we address this in a processing step, or whether this attrition affects the county measure too.
+
+If it does, then yes, I vote that we should drop those counties. Just to repeat the test I suggested on our call: Identify the min and max relative year with each county (-5 and 17), count the number of relative year values within each county (23), then drop all counties for which min > -5 or max < 17 or _N!=23.
+
+From: Myles Alexander Owens <myles.owens@stanford.edu>
+Date: Tuesday, November 11, 2025 at 2:21 PM
+To: Nick Gebbia <gebbia@stanford.edu>
+Cc: Matthew Unrath <unrath@usc.edu>
+Subject: Re: 11/11/25 Follow-up
+
+This Message Is From an External Sender
+USC detected that this message came from outside of USC.
+Report Suspicious
+ 
+Hi both,
+
+The assertion that all districts in our district x year interpolated panel contain the minimum event-time is false. It appears that within this range many districts are exiting the sample around event time 10. Should I drop these districts in order to balance the panel?
+
+Best,
+Myles
+
+relative_year |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         -5 |      5,845        4.44        4.44
+         -4 |      5,845        4.44        8.87
+         -3 |      5,845        4.44       13.31
+         -2 |      5,845        4.44       17.74
+         -1 |      5,845        4.44       22.18
+          0 |      5,845        4.44       26.62
+          1 |      5,845        4.44       31.05
+          2 |      5,845        4.44       35.49
+          3 |      5,845        4.44       39.92
+          4 |      5,845        4.44       44.36
+          5 |      5,845        4.44       48.80
+          6 |      5,845        4.44       53.23
+          7 |      5,845        4.44       57.67
+          8 |      5,845        4.44       62.10
+          9 |      5,845        4.44       66.54
+        10 |      5,716        4.34       70.88
+        11 |      5,716        4.34       75.22
+        12 |      5,716        4.34       79.56
+        13 |      5,716        4.34       83.89
+        14 |      5,628        4.27       88.16
+        15 |      5,628        4.27       92.44
+        16 |      4,983        3.78       96.22
+        17 |      4,983        3.78      100.00
+------------+-----------------------------------
+      Total |    131,761      100.00

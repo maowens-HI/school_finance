@@ -60,7 +60,7 @@ order state_fips year4 cpi_fy_avg deflator_2000 inflator_2000
 save `deflators', replace
 
 *** Merge to panel
-use "$SchoolSpending/data/tract_no_tract", clear
+use "$SchoolSpending/data/tracts_panel_canon", clear
 
 *** Standardize state_fips to str2
 capture confirm string variable state_fips
@@ -80,6 +80,6 @@ label var pp_exp_real "Per-pupil expenditure in 2000 dollars (state FY CPI-U avg
 *** Save merged panel 
 keep LEAID GOVID year4 pp_exp_real good_tract sdtc state_fips gisjoin2 coc70 tract70 ///
 	good_tract_1967 good_tract_1970 good_tract_1971 ///
-    good_tract_1972 good_tract_6771 good_tract_7072 county_type
+    good_tract_1972 good_tract_6771 good_tract_7072 county_code
 gen tract_merge = substr(tract70,1,9)
 save "$SchoolSpending/data/tracts_panel_real.dta", replace
