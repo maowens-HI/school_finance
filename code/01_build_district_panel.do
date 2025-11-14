@@ -155,6 +155,10 @@ drop if year < 1992 | year > 2019
 
 * 3)--------------------------------- Extract 9-digit GOVID from 14-digit CENSUSID
 gen str9 GOVID = substr(CENSUSID,1,9)
+
+* 4)--------------------------------- Preserve enrollment variable (V33)
+rename V33 enrollment
+label var enrollment "Student enrollment (F-33)"
 save f33_panel, replace
 
 
@@ -214,6 +218,10 @@ cd "$SchoolSpending\data"
 gen pp_exp = .
 replace pp_exp = totalexpenditure/population
 label var pp_exp "Per-pupil expenditure"
+
+* 4)--------------------------------- Preserve enrollment variable (population)
+rename population enrollment
+label var enrollment "Student enrollment (INDFIN)"
 save indfin_panel, replace
 
 
@@ -648,6 +656,9 @@ merge 1:m GOVID using "indfin_panel.dta"
 drop if _merge ==2
 drop _merge
 
+* Keep enrollment variable from INDFIN
+* (enrollment was created above by renaming population)
+
 * 2)--------------------------------- Fill missing flags with zeros
 replace good_govid_baseline = 0 if missing(good_govid_baseline)
 replace good_govid_baseline_6771 = 0 if missing(good_govid_baseline_6771)
@@ -705,9 +716,9 @@ drop _merge
 rename year year4
 append using "indfin_panel_tagged.dta"
 
-keep LEAID GOVID year4 pp_exp good_govid_baseline ///
+keep LEAID GOVID year4 pp_exp enrollment good_govid_baseline ///
 good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
-duplicates drop LEAID GOVID year4 pp_exp, force
+duplicates drop LEAID GOVID year4 pp_exp enrollment, force
 
 * 2)--------------------------------- Propagate good_govid flags across all years
 bysort LEAID: egen __g = min(good_govid_baseline)
