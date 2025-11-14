@@ -1,39 +1,77 @@
 /*==============================================================================
-Project    : School Spending – F-33 and INDFIN Integration
+Project    : School Spending – District Panel Construction and ID Crosswalks
 File       : 00_cx.do
-Purpose    : Construct unified district panels and crosswalks linking NCES F-33, INDFIN, 
-              and GRF district identifiers.
+Purpose    : Build the foundation district-year panel by harmonizing NCES F-33
+             (1992-2019) and INDFIN (1967-1991) data sources and creating
+             canonical crosswalks between incompatible district ID systems.
 Author     : Myles Owens
 Institution: Hoover Institution, Stanford University
 Date       : 2025-10-27
--------------------------------------------------------------------------------
-Description:
-1. Build and clean F-33 and INDFIN district by year panels.
-2. Generate canonical crosswalks between LEAID, GOVID, and GRF IDs.
-3. Produce merged datasets for downstream event-study and panel analysis.
+───────────────────────────────────────────────────────────────────────────────
 
-Global Path:
-    global SchoolSpending "C:\Users\maowens\OneDrive - Stanford\school\git"
+WHAT THIS FILE DOES (Summary):
+  • Imports and cleans F-33 (SAS) and INDFIN district finance data
+  • Builds 1:1 crosswalk linking LEAID ↔ GOVID ↔ GRF identifiers
+  • Creates quality flags for districts with complete baseline data (1967, 1970-1972)
+  • Produces unified district-year panel spanning 1967-2019
+  • Outputs canonical crosswalk file for all downstream geographic linking
 
-Inputs:
-    - $SchoolSpending\data\raw\nces\build_f33_in_dir\*.sas7bdat
-    - $SchoolSpending\data\raw\indfin\build_indfin_in_dir\
-    - $SchoolSpending\data\raw\GRF69\DS0001\03515-0001-Data.txt
-    - $SchoolSpending\data\ALLids.csv
+WHY THIS MATTERS (Workflow Context):
+  This is Step 1 of the core pipeline. The research design requires tracking
+  school spending over 50+ years, but data sources use incompatible ID systems:
+  - F-33 uses LEAID (7-char NCES codes)
+  - INDFIN uses GOVID (9-char government finance codes)
+  - GRF uses LEAID for tract-district linkage
 
-Outputs:
-    - f33_panel.dta
-    - indfin_panel.dta
-    - canon_crosswalk.dta
-    - f33_indfin_grf_canon.dta
+  Without clean 1:1 mappings, we cannot link districts across time or connect
+  them to Census geographies. The quality flags identify districts suitable for
+  event-study analysis (must have spending data in all baseline years before
+  reforms begin).
 
-Notes:
-    - Flags anomalous values but retains them for traceability.
-    - Canonical ID logic prioritizes valid, non-junk identifiers.
-    - Ensure `$SchoolSpending` global is correctly defined before execution.
+INPUTS:
+  - $SchoolSpending/data/raw/nces/build_f33_in_dir/*.sas7bdat
+      └─> NCES F-33 Finance Survey files (1992-2019), one per year
+  - $SchoolSpending/data/raw/indfin/build_indfin_in_dir/
+      └─> INDFIN historical database files (1967, 1969-1991)
+  - $SchoolSpending/data/raw/GRF69/DS0001/03515-0001-Data.txt
+      └─> 1969 Geographic Reference File (fixed-width ASCII)
+  - $SchoolSpending/data/ALLids.csv
+      └─> Master district ID validation file
+
+OUTPUTS:
+  - f33_panel.dta                  # F-33 district-year panel (1992-2019)
+  - indfin_panel.dta               # INDFIN district-year panel (1967-1991)
+  - canon_crosswalk.dta            # 1:1 LEAID ↔ GOVID mapping
+  - f33_indfin_grf_canon.dta       # UNIFIED panel with quality flags
+      └─> Key vars: LEAID, GOVID, year4, pp_exp, good_govid_*
+
+KEY ASSUMPTIONS & SENSITIVE STEPS:
+  1. Crosswalk Quality: Only keeps 1:1 LEAID ↔ GOVID matches; drops
+     many-to-many relationships (51.21% of raw mappings are 1:1)
+
+  2. Baseline Period: Tags districts as "good_govid" only if they have
+     NON-MISSING spending in ALL of: 1967, 1970, 1971, 1972
+     (This restriction is critical for constructing baseline spending quartiles)
+
+  3. ID Padding: LEAIDs padded to 7 chars, GOVIDs to 9 chars for consistency
+
+  4. Missing Data: Flags but RETAINS anomalous values (negative spending,
+     outliers) for traceability; cleaning happens downstream
+
+  5. GRF Integration: Reads fixed-width file to extract LEAIDs that exist in
+     1969 GRF (these are the only districts we can link to Census tracts)
+
+DEPENDENCIES:
+  • Requires: global SchoolSpending "C:\Users\...\path"
+  • Stata packages: None (uses base Stata only)
+  • Downstream files: 01_tract.do requires f33_indfin_grf_canon.dta
+
+VALIDATION CHECKS TO RUN:
+  - Check crosswalk: count if _merge == 3 after LEAID-GOVID merge
+  - Check baseline flags: tab good_govid_baseline
+  - Check ID uniqueness: duplicates report LEAID year4
+  - Check spending coverage: count if missing(pp_exp) by year4
 ==============================================================================*/
-
-*/
 
 
 *** ---------------------------------------------------------------------------

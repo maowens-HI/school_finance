@@ -1,11 +1,90 @@
-/*-------------------------------------------------------------------------------
-File     : 03_infl.do
-Purpose  : This do-file adjust for inflation
-Inputs   : fiscal_year.csv, tracts_panel
-Outputs  : tracts_panel_real.dta
-Requires : 
-Notes    : 
--------------------------------------------------------------------------------*/
+/*==============================================================================
+Project    : School Spending – Inflation Adjustment
+File       : 03_infl.do
+Purpose    : Convert nominal per-pupil expenditures to real 2000 dollars using
+             state-specific fiscal-year CPI-U averages from FRED.
+Author     : Myles Owens
+Institution: Hoover Institution, Stanford University
+Date       : 2025-10-27
+───────────────────────────────────────────────────────────────────────────────
+
+WHAT THIS FILE DOES (Summary):
+  • Pulls monthly CPI-U data from FRED API (1964-2019)
+  • Constructs state-specific fiscal-year CPI averages (states have different FY definitions)
+  • Merges CPI deflators to tract-year spending panel
+  • Creates pp_exp_real = per-pupil expenditure in constant 2000 dollars
+  • Preserves nominal values for robustness checks
+
+WHY THIS MATTERS (Workflow Context):
+  This is Step 3 of the core pipeline. The event-study analysis compares spending
+  levels ACROSS TIME (1967-2019) and ACROSS STATES. Without inflation adjustment:
+  - $1,000 in 1970 ≠ $1,000 in 2000 (purchasing power differs)
+  - Nominal spending mechanically rises over time (confounds treatment effects)
+
+  Challenge: States use different fiscal years (e.g., NY: April-March, CA: July-June).
+  Solution: Calculate CPI averages specific to each state's 12-month fiscal period.
+
+  Base Year = 2000: Coefficients in event-study regressions are interpretable as
+  "percentage change in year-2000 dollars per pupil."
+
+INPUTS:
+  - tracts_panel_canon.dta  (from 01_tract.do)
+      └─> Tract-year panel with nominal pp_exp
+  - fiscal_year.csv
+      └─> State FIPS × fiscal year start month (e.g., NY=4, CA=7)
+  - FRED API (automatic download)
+      └─> CPIAUCNS series (monthly CPI-U, not seasonally adjusted)
+
+OUTPUTS:
+  - tracts_panel_real.dta  ★ MAIN OUTPUT ★
+      └─> Tract-year panel with:
+          • pp_exp          (nominal dollars, original)
+          • cpi_fy_avg      (state-FY-specific CPI index)
+          • deflator_2000   (CPI_2000 / CPI_fy)
+          • pp_exp_real     (pp_exp × inflator_2000)
+          Coverage: 1967-2019, all tracts
+
+KEY ASSUMPTIONS & SENSITIVE STEPS:
+  1. CPI Series Choice:
+     - Uses CPI-U (urban consumers), not CPI-W (wage earners)
+     - Not seasonally adjusted (NSA) to match fiscal year periods exactly
+     - Source: FRED series CPIAUCNS (St. Louis Fed)
+
+  2. Fiscal Year Logic:
+     - Each state's FY spans 12 months starting from fy_start_month
+     - Fiscal year labeled by END year (e.g., NY FY 1970 = April 1969–March 1970)
+     - Averages all 12 monthly CPI values within the state's fiscal period
+
+  3. Base Year Normalization:
+     - deflator_2000 = (CPI in year t) / (CPI in 2000)
+     - inflator_2000 = (CPI in 2000) / (CPI in year t)
+     - pp_exp_real = pp_exp × inflator_2000
+     - Ensures year 2000 values remain unchanged (deflator_2000 = 1 for year 2000)
+
+  4. Missing CPI:
+     - Assert checks that all states have exactly 12 months of CPI per FY
+     - Should never have missing deflators (FRED data is complete 1964-2019)
+
+  5. State-Level Variation:
+     - All tracts within same state-year get identical CPI adjustment
+     - Does NOT vary by county or tract (CPI-U is metropolitan-area index,
+       but we apply national all-items series for consistency)
+
+DEPENDENCIES:
+  • Requires: global SchoolSpending "C:\Users\...\path"
+  • Requires: 01_tract.do must run first (creates tracts_panel_canon.dta)
+  • Requires: FRED API key set in Stata (line 12: set fredkey ...)
+  • Stata packages:
+      - fred (install: ssc install fred)
+  • Downstream: 04_cnty.do uses tracts_panel_real.dta
+
+VALIDATION CHECKS TO RUN:
+  - CPI completeness: assert nmonths == 12 (every state-FY has 12 months)
+  - Deflator range: summ deflator_2000, detail (should be ~0.3 to 1.5)
+  - Merge success: tab _merge after CPI merge (should be 100% matched)
+  - Spot check: list year4 pp_exp pp_exp_real if year4==2000 & state_fips=="06"
+                (pp_exp should ≈ pp_exp_real for base year)
+==============================================================================*/
 
 
 *** Register FRED key once (no more nagging)

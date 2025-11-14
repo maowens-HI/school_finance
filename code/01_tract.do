@@ -1,35 +1,83 @@
 /*==============================================================================
-Project    : School Spending – GRF Tracts Processing
-File       : 01_tracts.do
-Purpose    : Import 1969 GRF fixed-width file, construct tract/district IDs,
-              build tract→LEAID crosswalk (by allocated population), tag
-              tract-year missing-spend status, and produce a tract-year panel.
-
+Project    : School Spending – Census Tract Panel Construction
+File       : 01_tract.do
+Purpose    : Parse 1969 GRF to link school districts to Census tracts,
+             assign single LEAID per tract based on population allocation,
+             and create tract-year spending panel for geographic aggregation.
 Author     : Myles Owens
 Institution: Hoover Institution, Stanford University
 Date       : 2025-10-27
--------------------------------------------------------------------------------
-Inputs:
-  - $SchoolSpending\data\raw\GRF69\DS0001\03515-0001-Data.txt   // GRF fixed-width
-  - $SchoolSpending\data\grf_tracts.dta                          // prebuilt tract×LEAID (alloc_pop, sdtc)
-  - $SchoolSpending\data\f33_indfin_grf_canon.dta                // canonical district-year (pp_exp, LEAID)
+───────────────────────────────────────────────────────────────────────────────
 
-Outputs:
-  - $SchoolSpending\data\grf_block.dta           // raw GRF-derived IDs (tract70, gisjoin2, LEAID)
-  - $SchoolSpending\data\tracts_panel_canon.dta  // tract×year panel with pp_exp and missing-spend flags
+WHAT THIS FILE DOES (Summary):
+  • Reads 1969 GRF fixed-width file and constructs tract70/gisjoin2 identifiers
+  • Links each Census tract to its serving school district(s) via allocated population
+  • Assigns exactly ONE LEAID per tract (using max population; tie-break by smallest LEAID)
+  • Expands district-year spending data to tract-year level
+  • Tags tracts by data quality (good_tract = linked to good_govid district)
 
-Key Steps:
-  1) Read GRF fixed-width; pad and build tract70, gisjoin2, LEAID; save grf_block.dta.
-  2) From grf_tracts, count tracts per district and compute single-tract stats (qc).
-  3) Join canonical district-year spending; tag tract-year if any linked district has missing pp_exp.
-  4) Assign exactly one LEAID per tract (max alloc_pop; tie-breaker = smallest LEAID).
-  5) Expand district-year to tract-year via crosswalk and merge missing-spend flags; save final panel.
+WHY THIS MATTERS (Workflow Context):
+  This is Step 2 of the core pipeline. The analysis requires county-level spending,
+  but we only have DISTRICT-level finance data. The 1969 GRF provides the crucial
+  link: it maps Census tracts to school districts using population allocation.
 
-Assumptions / Notes:
-  - Missing btc/tsc are treated as 0000/00 before composing IDs.
-  - alloc_pop governs tract→LEAID assignment; missing handled via has_alloc guard.
-  - Suffix "00" in gisjoin2 is dropped to normalize to 11 chars when applicable.
-  - Requires global: global SchoolSpending "C:\Users\maowens\OneDrive - Stanford\school\git"
+  Problem: Multiple districts can serve the same tract (e.g., elementary vs high school).
+  Solution: Assign single "dominant" LEAID per tract based on allocated population share.
+
+  Once we have tract→LEAID mapping, we can:
+  - Expand district spending to tract level
+  - Aggregate tracts to counties (next steps)
+  - Link to Census demographic data by tract
+
+INPUTS:
+  - $SchoolSpending/data/raw/GRF69/DS0001/03515-0001-Data.txt
+      └─> Fixed-width ASCII file with tract-district-population linkage
+  - $SchoolSpending/data/grf_tracts.dta
+      └─> Pre-built tract × LEAID with allocated population weights
+  - $SchoolSpending/data/f33_indfin_grf_canon.dta  (from 00_cx.do)
+      └─> District-year panel with spending (pp_exp) and quality flags
+
+OUTPUTS:
+  - grf_block.dta
+      └─> Raw GRF-derived geographic IDs: tract70, gisjoin2, LEAID
+  - tracts_panel_canon.dta  ★ MAIN OUTPUT ★
+      └─> Tract-year panel with: tract70, LEAID, year4, pp_exp, good_tract
+          Coverage: 1967-2019 for all tracts in 1970 Census
+
+KEY ASSUMPTIONS & SENSITIVE STEPS:
+  1. Population Allocation Logic:
+     - Each tract may be served by multiple districts (different types/grades)
+     - We assign the SINGLE district with highest allocated population
+     - Tie-breaker: smallest LEAID (alphanumeric sort for reproducibility)
+
+  2. Tract Identifier Construction:
+     - tract70 = state(2) + county(3) + basic_tract(4) + tract_suffix(2) [11 chars]
+     - Missing basic tract codes (btc) or suffix (tsc) are filled with "0000"/"00"
+     - gisjoin2 format: state + "0" + county + "0" + tract [13 chars for NHGIS compatibility]
+
+  3. Quality Flag Inheritance:
+     - good_tract = 1 if assigned LEAID has good_govid_baseline = 1
+     - This ensures tracts used in analysis have complete baseline spending data
+
+  4. Special Geographies Handled:
+     - Drops water bodies, Native American lands, and tract revisions
+     - Drops special district codes (e.g., state-level aggregates)
+
+  5. Untracted Areas:
+     - Some counties have "non-tracted" areas (rural, too small for tracts)
+     - These get separate treatment in county aggregation (Step 4)
+
+DEPENDENCIES:
+  • Requires: global SchoolSpending "C:\Users\...\path"
+  • Requires: 00_cx.do must run first (creates f33_indfin_grf_canon.dta)
+  • Stata packages: None (base Stata only)
+  • Downstream: 03_infl.do uses tracts_panel_canon.dta
+
+VALIDATION CHECKS TO RUN:
+  - Uniqueness: duplicates report tract70 year4 (should be 0)
+  - LEAID assignment: tab has_leaid (should be 100%)
+  - Quality flags: tab good_tract (shows % tracts linked to good districts)
+  - Merge success: tab _merge after district-year join (should be _merge==3)
 ==============================================================================*/
 
 

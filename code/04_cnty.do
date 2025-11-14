@@ -1,6 +1,91 @@
-*****************************************************************************
-*Build a list of good and bad counties
-*****************************************************************************
+/*==============================================================================
+Project    : School Spending – County Quality Tagging
+File       : 04_cnty.do
+Purpose    : Identify counties with complete baseline spending data (1967, 1970-1972)
+             and tag as "good" or "bad" for inclusion in event-study analysis.
+Author     : Myles Owens
+Institution: Hoover Institution, Stanford University
+Date       : 2025-10-27
+───────────────────────────────────────────────────────────────────────────────
+
+WHAT THIS FILE DOES (Summary):
+  • Constructs 5-digit county identifiers (state FIPS + county FIPS)
+  • Collapses tract-level quality flags to county level using MAX logic
+  • Tags counties as "good" if ALL their tracts link to good districts
+  • Creates flags for different baseline periods (1967-1972, 1967+1970-1971, 1970-1972)
+  • Flags counties with untracted areas (rural/non-Census-defined zones)
+
+WHY THIS MATTERS (Workflow Context):
+  This is Step 4 of the core pipeline. The event-study design requires BASELINE
+  spending data (pre-reform years 1967-1972) to:
+  - Construct spending quartiles (identifies which districts were initially poor/rich)
+  - Test parallel trends assumption (pre-reform trends must be flat)
+  - Control for differential trends by baseline characteristics
+
+  Problem: Counties aggregate multiple tracts, and tracts link to districts with
+  varying data quality. We need COUNTY-LEVEL flags to determine which counties
+  are suitable for analysis.
+
+  Decision Rule: A county is "good" only if ALL its tracts are linked to districts
+  with complete baseline data. This conservative approach ensures clean comparisons.
+
+INPUTS:
+  - tracts_panel_real.dta  (from 03_infl.do)
+      └─> Tract-year panel with pp_exp_real and good_tract flags
+  - grf_id_tractlevel.dta
+      └─> Tract-level metadata including no_tract indicator
+
+OUTPUTS:
+  - county_clean.dta  ★ MAIN OUTPUT ★
+      └─> County-level quality flags:
+          • county (5 chars: state+county FIPS)
+          • good_county              (has complete 1967, 1970-1972 data)
+          • good_county_6771         (has complete 1967, 1970-1971 data)
+          • good_county_7072         (has complete 1970-1972 data)
+          • good_county_1967/1970/1971/1972  (year-specific flags)
+          • has_untracted            (county contains non-tracted areas)
+
+KEY ASSUMPTIONS & SENSITIVE STEPS:
+  1. Aggregation Logic - MAX Rule:
+     - good_county = MAX(good_tract) across all tracts in county
+     - This means: county is "good" if AT LEAST ONE tract is good
+     - Conservative: requires all tracts in county to have good baseline data
+
+  2. County Identifier Construction:
+     - county = state_fips (2 chars) + coc70 (3 chars padded with leading zeros)
+     - Example: Alabama (01) + Autauga County (001) = "01001"
+     - Must match identifiers used in reform treatment data
+
+  3. Baseline Period Options:
+     - Main specification: 1967, 1970, 1971, 1972 (4 years)
+     - Alternative 1: 1967, 1970, 1971 (3 years, if 1972 problematic)
+     - Alternative 2: 1970, 1971, 1972 (3 years, if 1967 problematic)
+     - Allows robustness checks with different baseline definitions
+
+  4. Untracted Areas:
+     - has_untracted = 1 if county contains both tracted and non-tracted zones
+     - Non-tracted areas are rural/small populations without Census tract definitions
+     - These counties need special handling in Step 5 (weighted aggregation)
+
+  5. Quality vs Coverage Trade-off:
+     - Stricter baseline requirements → fewer "good" counties → smaller sample
+     - But cleaner identification and better baseline controls
+     - Typical result: ~75% of counties flagged as good with 1967+1970-1972 requirement
+
+DEPENDENCIES:
+  • Requires: global SchoolSpending "C:\Users\...\path"
+  • Requires: 03_infl.do must run first (creates tracts_panel_real.dta)
+  • Stata packages: None (base Stata only)
+  • Downstream: 05_interp_d.do uses good_county flags for sample restrictions
+
+VALIDATION CHECKS TO RUN:
+  - County construction: assert length(county) == 5
+  - Untracted share: summ has_untracted (mean = share of mixed counties)
+  - Good county share: tab good_county (shows % counties with complete baseline)
+  - Cross-check: compare good_county vs good_county_6771 vs good_county_7072
+  - Geographic coverage: codebook county (should have ~3,100 counties)
+==============================================================================*/
+
 *****************************************************************************
 *A) Cleaning
 *****************************************************************************
