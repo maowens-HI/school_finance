@@ -32,22 +32,27 @@ school_finance/
     ├── 00_cx.do                       # District crosswalks & panel construction
     ├── 01_tract.do                    # Tract-level panel construction
     ├── 03_infl.do                     # Inflation adjustment (CPI-U)
-    ├── 04_cnty.do                     # County-level aggregation
-    ├── 05_interp_d.do                 # Interpolate missing district spending
+    ├── 04_cnty.do                     # Tag counties as good/bad (baseline data)
+    ├── 05_interp_d.do                 # Interpolate districts, repeat 01+03, collapse to counties
     ├── balance.do                     # Panel balance testing
-    ├── district_only.do               # District-level analysis
-    ├── test_reg.do                    # Regression specification testing
-    ├── 11_4_25*.do                    # Event-study variants (Nov 4, 2025)
-    ├── 11_5_25*.do                    # Figure reproduction & jackknife
-    ├── 11_6_25_jk_reform.do           # Jackknife by reform type
-    ├── 11_7_25*.do                    # Balanced panel restrictions
+    ├── district_only.do               # [Experimental] District-level regressions
+    ├── test_reg.do                    # [Experimental] Regression specification testing
+    ├── 11_4_25*.do                    # [Experimental] Event-study variants (Nov 4, 2025)
+    ├── 11_5_25*.do                    # [Experimental] Figure reproduction & jackknife
+    ├── 11_6_25_jk_reform.do           # [Experimental] Jackknife by reform type
+    ├── 11_7_25*.do                    # [Experimental] Balanced panel restrictions
     ├── 11_12_25/                      # Latest analysis (Nov 12, 2025)
-    │   ├── fig1_bal_wt_rest.do        # Figure 1 with balancing weights
+    │   ├── fig1_bal_wt_rest.do        # [Experimental] Figure 1 with balancing weights
     │   └── 11_12_25.txt               # Meeting notes and decisions
     └── Graph.png                      # Example output visualization
 ```
 
 **Total Code:** ~7,500 lines across 22 Stata .do files
+
+**Pipeline Organization:**
+- **Core Pipeline (00, 01, 03, 04, 05):** Sequential data construction and preparation
+- **Balance Testing (balance.do):** Quality check for event-study readiness
+- **Experimental Files (11_*.do, district_only.do, test_reg.do):** Various regression specifications testing different samples, weights, and robustness checks. All follow similar patterns: creating leads/lags, baseline quartiles, and running event-study regressions.
 
 ---
 
@@ -103,7 +108,7 @@ Raw Data Sources
 - Assign single LEAID per tract based on population weights
 - Create quality flags for districts with complete baseline data (1967, 1970-1972)
 
-### Phase II: Data Enhancement
+### Phase II: Data Enhancement - First Pass (Tract-Level)
 
 ```
 tracts_panel_canon.dta
@@ -115,19 +120,40 @@ tracts_panel_canon.dta
     tracts_panel_real.dta (pp_exp_real in 2000 dollars)
         │
         v
-    04_cnty.do ──> Aggregate tracts to counties
-        │
+    04_cnty.do ──> Create list of counties tagged as good/bad
+        │              (based on missing spending in baseline years)
         v
     county_clean.dta (with good_county flags)
-        │
-        v
-    05_interp_d.do ──> Interpolate missing years (gaps ≤ 3 years)
-        │
-        v
-    interp_d.dta (complete district-year panel)
 ```
 
-### Phase III: Analysis
+**Key Operations:**
+- Adjust tract-level spending for inflation using state-level CPI-U
+- Tag counties as "good" or "bad" based on baseline year data availability
+- This identifies counties suitable for analysis
+
+### Phase II Continuation: District Interpolation & County Collapse
+
+```
+District Panel from 00_cx.do
+        │
+        v
+    05_interp_d.do
+        │
+        ├──> 1. Interpolate district panel (gaps ≤ 3 years)
+        │
+        ├──> 2. Repeat Step 01: Assign districts to tracts
+        │
+        ├──> 3. Repeat Step 03: Inflation adjustment
+        │
+        ├──> 4. Import school enrollment data
+        │
+        └──> 5. Weighted collapse to counties (using enrollment weights)
+        │
+        v
+    interp_d.dta (county-year panel ready for analysis)
+```
+
+### Phase III: Analysis & Experimentation
 
 ```
 interp_d.dta + Reform Data (tabula-tabled2.xlsx)
@@ -139,12 +165,19 @@ interp_d.dta + Reform Data (tabula-tabled2.xlsx)
     Balanced Panel: 823 counties (from 1,087 total)
         │
         v
-    Analysis Files (11_*.do)
-        ├── Create lead/lag indicators
-        ├── Generate baseline quartiles
-        ├── Compute 13-year rolling means
-        └── Run event-study regressions
+    Experimental Analysis Files (11_*.do, district_only.do, test_reg.do)
+        │
+        └──> All files follow similar processes:
+             ├── Create lead/lag indicators (relative to reform year)
+             ├── Generate baseline spending quartiles
+             ├── Compute rolling means (13-year strict windows)
+             ├── Set up event-study specifications
+             └── Run regressions with various specifications
+                 (weighted vs unweighted, different samples,
+                  jackknife robustness, reform type heterogeneity)
 ```
+
+**Note:** Files not numbered 00, 01, 03, 04, or 05 are experimental regression analyses testing different specifications, samples, and robustness checks. Each implements similar data preparation steps tailored to specific analytical questions.
 
 ---
 
@@ -436,15 +469,15 @@ The codebase includes extensive quality validation:
 **Phase I (Data Construction):**
 1. `00_cx.do` - Creates F33 panel, INDFIN panel, crosswalks
 2. `01_tract.do` - Creates tract panel (depends on output from 00_cx.do)
+3. `03_infl.do` - Inflation adjustment (depends on tract panel from 01)
+4. `04_cnty.do` - Tags counties as good/bad based on baseline data (depends on 03)
 
-**Phase II (Enhancement):**
-3. `03_infl.do` - Inflation adjustment (depends on tract panel)
-4. `04_cnty.do` - County aggregation (depends on inflation-adjusted data)
-5. `05_interp_d.do` - Interpolation (depends on county data)
+**Phase II (District Interpolation & County Panel):**
+5. `05_interp_d.do` - Interpolates district panel from 00_cx, repeats steps 01 & 03, imports enrollment data, collapses to counties
 
-**Phase III (Analysis):**
+**Phase III (Analysis & Experimentation):**
 6. `balance.do` - Balance testing (optional but recommended)
-7. Analysis files (`11_*.do`) - Can run in any order (independent)
+7. Experimental files (`11_*.do`, `test_reg.do`, `district_only.do`) - Various regression specifications (can run in any order, independent)
 
 ### External Dependencies
 
@@ -612,9 +645,9 @@ list LEAID year if good_govid==0 & _n<=20
 |------|---------|
 | `run.do` | Master runner - start here to understand pipeline |
 | `00_cx.do` | District ID crosswalks - critical for linking data |
-| `05_interp_d.do` | Interpolation logic - handles missing years |
+| `05_interp_d.do` | Interpolates districts, assigns to tracts, collapses to counties |
 | `balance.do` | Panel balance - determines final sample |
-| `11_7_25_restrict.do` | Main specification with balanced panel |
+| `11_7_25_restrict.do` | Example experimental specification with balanced panel |
 
 ### Most Important Variables
 
