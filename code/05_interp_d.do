@@ -1,8 +1,116 @@
-/*-------------------------------------------------------------------------------
-File     : 05_interp_d
-Purpose  : This file assigns district spending to tracts it imputes spending for
-missing years. It then collapses tracts into countie and assingings treatments.
--------------------------------------------------------------------------------*/
+/*==============================================================================
+Project    : School Spending – District Interpolation and County Aggregation
+File       : 05_interp_d.do
+Purpose    : Interpolate missing district-level spending, repeat tract assignment
+             and inflation adjustment, import enrollment data, and collapse to
+             county-year panel with reform treatment variables.
+Author     : Myles Owens
+Institution: Hoover Institution, Stanford University  
+Date       : 2025-10-27
+───────────────────────────────────────────────────────────────────────────────
+
+WHAT THIS FILE DOES (Summary):
+  • Step 1: Interpolate district-level spending for missing years (gaps ≤ 3 years)
+  • Step 2: Repeat 01_tract.do logic (assign interpolated districts to tracts)
+  • Step 3: Repeat 03_infl.do logic (adjust interpolated spending for inflation)
+  • Step 4: Import school enrollment data (used as aggregation weights)
+  • Step 5: Collapse tracts to counties using enrollment-weighted averages
+  • Step 6: Merge reform treatment data (reform_year, relative_year indicators)
+
+WHY THIS MATTERS (Workflow Context):
+  This is Step 5 (FINAL data construction) of the core pipeline. It produces the
+  analysis-ready county-year panel that feeds into all event-study regressions.
+  
+  Why interpolate districts instead of using tract panel from Step 3?
+  - Interpolation at district level → more accurate than interpolating aggregates
+  
+  Why weight by enrollment instead of population?
+  - School-age population varies within counties (some areas skew older)
+  - Produces county spending measures that match education finance definitions
+  
+  Output is the MAIN ANALYSIS FILE used in all event-study regressions.
+
+INPUTS (5 Main Inputs):
+  1. f33_indfin_grf_canon.dta  (from 00_cx.do)
+      └─> District-year panel with spending, quality flags, identifiers
+  
+  2. grf_tracts.dta  
+      └─> Tract-district crosswalk with allocated population weights
+  
+  3. fiscal_year.csv + FRED CPI
+      └─> State fiscal year definitions and CPI-U monthly data
+  
+  4. Enrollment data files
+      └─> School enrollment by district-year (used for weighting)
+  
+  5. tabula-tabled2.xlsx  (Jackson et al 2016 Online Appendix)
+      └─> State-level reform years and reform types (equity/adequacy/mixed)
+
+OUTPUTS:
+  - interp_d.dta  ★★ PRIMARY ANALYSIS FILE ★★
+      └─> County-year panel (1967-2019) with:
+          • county (5-char identifier)
+          • year4 (End year of fy)
+		  • state_fips
+          • pp_exp_real (enrollment-weighted average, 2000 dollars)
+          • school_age_pop (aggregated enrollment - weighting variable)
+          • reform_year (year court-ordered reform took effect)
+          • relative_year (year - reform_year, for event-time indicators)
+          • good_county flags (baseline data completeness)
+          • never_treated (=1 for states without reform, control group)
+          
+      Ready for: lead/lag creation, quartile assignment, event-study regressions
+
+KEY ASSUMPTIONS & SENSITIVE STEPS:
+  1. Interpolation Rules (Step 1):
+     - Uses LINEAR interpolation for missing district spending
+     - Only interpolates gaps of ≤ 3 consecutive years
+     - Gaps > 3 years suggest district reorganization/merger → do NOT interpolate
+     - Preserves original values where available (interpolation fills gaps only)
+  
+  2. Tract Assignment (Step 2):
+     - Repeats entire 01_tract.do logic but using interpolated district panel
+     - Same population-weighted LEAID assignment per tract
+     - Ensures tract-district links consistent with interpolated spending
+  
+  3. Inflation Adjustment (Step 3):
+     - Repeats entire 03_infl.do logic but on interpolated tract panel
+     - Uses same state-FY-specific CPI deflators
+     - Creates pp_exp_real in constant 2000 dollars
+  
+  4. Enrollment Weighting (Step 4-5):
+     - Imports school enrollment data by district-year
+     - Collapses tract spending to county level using enrollment as weight
+     - Formula: county_pp_exp = Σ(tract_pp_exp × tract_enrollment) / Σ(tract_enrollment)
+  
+  5. Treatment Assignment (Step 6):
+     - Merges state-level reform years from Jackson et al (2016) Table D2
+     - Creates relative_year = year4 - reform_year (event-time variable)
+     - Tags never_treated = 1 for control states (no court-ordered reform)
+     - Reform types: equity, adequacy, or mixed (used for heterogeneity analysis)
+  
+  6. Panel Structure:
+     - Balanced in years: every county-year from 1967-2019 (if county exists)
+
+DEPENDENCIES:
+  • Requires: global SchoolSpending "C:\Users\...\path"
+  • Requires: 00_cx.do must run first (district panel input)
+  • Requires: FRED API key set (for CPI data)
+  • Stata packages: 
+      - fred (for CPI download)
+      - ipolate (built-in, for interpolation)
+  • Excel file: tabula-tabled2.xlsx must be in data directory
+  • Downstream: ALL analysis files (11_*.do, balance.do, etc.) use interp_d.dta
+
+VALIDATION CHECKS TO RUN:
+  - Interpolation: tab too_far (shows % gaps NOT interpolated, should be small)
+  - County uniqueness: duplicates report county year4 (should be 0)
+  - Treatment merge: tab _merge after reform merge (should be 100% matched)
+  - Enrollment weights: summ school_age_pop, detail (check for negatives/outliers)
+  - Reform coverage: tab reform_year if !missing(reform_year) (shows reform timing)
+  - Never-treated: tab never_treated (control group size)
+  - Sample size: count (should be ~3,000 counties × 50 years ≈ 150,000 obs)
+==============================================================================*/
 *****************************************************************************
 * I) Repeat Previous .do file steps but with interpolation
 *****************************************************************************
