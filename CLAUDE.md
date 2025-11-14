@@ -29,11 +29,11 @@ school_finance/
 ├── CLAUDE.md                          # This file - AI assistant guide
 ├── run.do                             # Master pipeline runner
 └── code/                              # All Stata scripts
-    ├── 00_cx.do                       # District crosswalks & panel construction
-    ├── 01_tract.do                    # Tract-level panel construction
-    ├── 03_infl.do                     # Inflation adjustment (CPI-U)
-    ├── 04_cnty.do                     # Tag counties as good/bad (baseline data)
-    ├── 05_interp_d.do                 # Interpolate districts, repeat 01+03, collapse to counties
+    ├── 01_build_district_panel.do     # Build district panels & ID crosswalks
+    ├── 02_build_tract_panel.do        # Build tract panel from GRF
+    ├── 03_adjust_inflation.do         # Adjust tract spending for inflation
+    ├── 04_tag_county_quality.do       # Tag counties as good/bad (baseline data)
+    ├── 05_create_county_panel.do      # Interpolate districts & create county panel
     ├── balance.do                     # Panel balance testing
     ├── district_only.do               # [Experimental] District-level regressions
     ├── test_reg.do                    # [Experimental] Regression specification testing
@@ -50,7 +50,8 @@ school_finance/
 **Total Code:** ~7,500 lines across 22 Stata .do files
 
 **Pipeline Organization:**
-- **Core Pipeline (00, 01, 03, 04, 05):** Sequential data construction and preparation
+- **Core Pipeline (01-05):** Sequential data construction and preparation
+  - 01_build_district_panel.do → 02_build_tract_panel.do → 03_adjust_inflation.do → 04_tag_county_quality.do → 05_create_county_panel.do
 - **Balance Testing (balance.do):** Quality check for event-study readiness
 - **Experimental Files (11_*.do, district_only.do, test_reg.do):** Various regression specifications testing different samples, weights, and robustness checks. All follow similar patterns: creating leads/lags, baseline quartiles, and running event-study regressions.
 
@@ -88,14 +89,14 @@ school_finance/
 ```
 Raw Data Sources
 ├── F-33 (NCES Finance Survey, 1992-2019) ──┐
-├── INDFIN (Historical Database, 1967-1991) ├──> 00_cx.do
+├── INDFIN (Historical Database, 1967-1991) ├──> 01_build_district_panel.do
 └── GRF69 (1969 Geographic Reference File) ─┘
                                               │
                                               v
                         District-Year Panel with Quality Flags
                                               │
                                               v
-                                         01_tract.do
+                                    02_build_tract_panel.do
                                               │
                                               v
                             Tract-Year Panel (tracts_panel_canon.dta)
@@ -114,14 +115,14 @@ Raw Data Sources
 tracts_panel_canon.dta
         │
         v
-    03_infl.do ──> Adjust for inflation using FRED CPI-U
+    03_adjust_inflation.do ──> Adjust for inflation using FRED CPI-U
         │
         v
     tracts_panel_real.dta (pp_exp_real in 2000 dollars)
         │
         v
-    04_cnty.do ──> Create list of counties tagged as good/bad
-        │              (based on missing spending in baseline years)
+    04_tag_county_quality.do ──> Create list of counties tagged as good/bad
+        │                         (based on missing spending in baseline years)
         v
     county_clean.dta (with good_county flags)
 ```
@@ -134,14 +135,14 @@ tracts_panel_canon.dta
 ### Phase II Continuation: District Interpolation & County Collapse
 
 ```
-District Panel from 00_cx.do
+District Panel from 01_build_district_panel.do
         │
         v
-    05_interp_d.do
+    05_create_county_panel.do
         │
         ├──> 1. Interpolate district panel (gaps ≤ 3 years)
         │
-        ├──> 2. Repeat Step 01: Assign districts to tracts
+        ├──> 2. Repeat Step 02: Assign districts to tracts
         │
         ├──> 3. Repeat Step 03: Inflation adjustment
         │
@@ -177,7 +178,7 @@ interp_d.dta + Reform Data (tabula-tabled2.xlsx)
                   jackknife robustness, reform type heterogeneity)
 ```
 
-**Note:** Files not numbered 00, 01, 03, 04, or 05 are experimental regression analyses testing different specifications, samples, and robustness checks. Each implements similar data preparation steps tailored to specific analytical questions.
+**Note:** Files not numbered 01-05 are experimental regression analyses testing different specifications, samples, and robustness checks. Each implements similar data preparation steps tailored to specific analytical questions.
 
 ---
 
@@ -368,7 +369,7 @@ eststo
 
 ### Task 2: Add New Quality Checks
 
-**Location:** Data construction files (`00_cx.do`, `01_tract.do`)
+**Location:** Data construction files (`01_build_district_panel.do`, `02_build_tract_panel.do`)
 
 **Pattern to follow:**
 ```stata
@@ -467,15 +468,13 @@ The codebase includes extensive quality validation:
 ### Must Run in Order
 
 **Phase I (Data Construction):**
-1. `00_cx.do` - Creates F33 panel, INDFIN panel, crosswalks
-2. `01_tract.do` - Creates tract panel (depends on output from 00_cx.do)
-3. `03_infl.do` - Inflation adjustment (depends on tract panel from 01)
-4. `04_cnty.do` - Tags counties as good/bad based on baseline data (depends on 03)
+1. `01_build_district_panel.do` - Creates F33 panel, INDFIN panel, crosswalks
+2. `02_build_tract_panel.do` - Creates tract panel (depends on output from 01)
+3. `03_adjust_inflation.do` - Inflation adjustment (depends on tract panel from 02)
+4. `04_tag_county_quality.do` - Tags counties as good/bad based on baseline data (depends on 03)
+5. `05_create_county_panel.do` - Interpolates district panel from 01, repeats steps 02 & 03, imports enrollment data, collapses to counties
 
-**Phase II (District Interpolation & County Panel):**
-5. `05_interp_d.do` - Interpolates district panel from 00_cx, repeats steps 01 & 03, imports enrollment data, collapses to counties
-
-**Phase III (Analysis & Experimentation):**
+**Phase II (Analysis & Experimentation):**
 6. `balance.do` - Balance testing (optional but recommended)
 7. Experimental files (`11_*.do`, `test_reg.do`, `district_only.do`) - Various regression specifications (can run in any order, independent)
 
@@ -644,8 +643,8 @@ list LEAID year if good_govid==0 & _n<=20
 | File | Purpose |
 |------|---------|
 | `run.do` | Master runner - start here to understand pipeline |
-| `00_cx.do` | District ID crosswalks - critical for linking data |
-| `05_interp_d.do` | Interpolates districts, assigns to tracts, collapses to counties |
+| `01_build_district_panel.do` | District ID crosswalks - critical for linking data |
+| `05_create_county_panel.do` | Interpolates districts, assigns to tracts, collapses to counties |
 | `balance.do` | Panel balance - determines final sample |
 | `11_7_25_restrict.do` | Example experimental specification with balanced panel |
 
@@ -713,6 +712,7 @@ Jackson, C. K., Johnson, R. C., & Persico, C. (2016). *The Effects of School Spe
 
 | Date | Update |
 |------|--------|
+| 2025-11-14 | Renamed core pipeline files (01-05) with descriptive names; updated all documentation |
 | 2025-11-14 | Initial CLAUDE.md creation with comprehensive codebase documentation |
 
 ---

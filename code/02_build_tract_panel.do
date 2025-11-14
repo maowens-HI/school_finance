@@ -1,6 +1,6 @@
 /*==============================================================================
-Project    : School Spending – Census Tract Panel Construction  
-File       : 01_tract.do
+Project    : School Spending – Census Tract Panel Construction
+File       : 02_build_tract_panel.do
 Purpose    : Parse 1969 GRF to link school districts to Census tracts,
              assign single LEAID per tract based on population allocation,
              and create tract-year spending panel for geographic aggregation.
@@ -34,7 +34,7 @@ INPUTS:
       └─> Fixed-width ASCII file with tract-district-population linkage
   - $SchoolSpending/data/grf_tracts.dta
       └─> Pre-built tract × LEAID with allocated population weights
-  - $SchoolSpending/data/f33_indfin_grf_canon.dta  (from 00_cx.do)
+  - $SchoolSpending/data/f33_indfin_grf_canon.dta  (from 01_build_district_panel.do)
       └─> District-year panel with spending (pp_exp) and quality flags
 
 OUTPUTS:
@@ -68,9 +68,9 @@ KEY ASSUMPTIONS & SENSITIVE STEPS:
 
 DEPENDENCIES:
   • Requires: global SchoolSpending "C:\Users\...\path"
-  • Requires: 00_cx.do must run first (creates f33_indfin_grf_canon.dta)
+  • Requires: 01_build_district_panel.do must run first (creates f33_indfin_grf_canon.dta)
   • Stata packages: None (base Stata only)
-  • Downstream: 03_infl.do uses tracts_panel_canon.dta
+  • Downstream: 03_adjust_inflation.do uses tracts_panel_canon.dta
 
 VALIDATION CHECKS TO RUN:
   - Uniqueness: duplicates report tract70 year4 (should be 0)

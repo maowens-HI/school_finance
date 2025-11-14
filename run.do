@@ -35,19 +35,16 @@ log using "`logfile'", text
 
 
 ********************************************************************************
-* Phase I
+* Phase I: Build District and Tract Panels
 ********************************************************************************
-do "`ProjectDir'/code/00_cx.do" // Build district panels
-do "`ProjectDir'/code/01_tract.do" // Build tract panel
+do "`ProjectDir'/code/01_build_district_panel.do"  // Build district panels & ID crosswalks
+do "`ProjectDir'/code/02_build_tract_panel.do"     // Build tract panel from GRF
+do "`ProjectDir'/code/03_adjust_inflation.do"      // Adjust tract spending for inflation
+do "`ProjectDir'/code/04_tag_county_quality.do"    // Tag counties as good/bad
+do "`ProjectDir'/code/05_create_county_panel.do"   // Interpolate districts & create county panel
 
 ********************************************************************************
-* Phase II - Repeats Phase I but with interpolation then restriction
-********************************************************************************
-
-
-
-********************************************************************************
-* Phase III - Gets data into the format for first stage regressions
+* Phase II: Analysis (add analysis scripts here)
 ********************************************************************************
 
 
