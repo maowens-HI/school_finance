@@ -116,13 +116,13 @@ display "Share of counties fully tracted: " 1 - r(mean)
 * Weighting doesnt matter since we just care about good tags
 preserve
 collapse ///
-         (max)  good_county              = good_tract ///
-         (max)  good_county_6771         = good_tract_6771 ///
-		 (max)  good_county_7072         = good_tract_7072 ///
-         (max)  good_county_1967         = good_tract_1967 ///
-         (max)  good_county_1970         = good_tract_1970 ///
-         (max)  good_county_1971         = good_tract_1971 ///
-         (max)  good_county_1972         = good_tract_1972, ///
+         (min)  good_county              = good_tract ///
+         (min)  good_county_6771         = good_tract_6771 ///
+		 (min)  good_county_7072         = good_tract_7072 ///
+         (min)  good_county_1967         = good_tract_1967 ///
+         (min)  good_county_1970         = good_tract_1970 ///
+         (min)  good_county_1971         = good_tract_1971 ///
+         (min)  good_county_1972         = good_tract_1972, ///
          by(county year4)
 
 		 
