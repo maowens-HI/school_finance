@@ -138,7 +138,7 @@ replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year) //  bins
 
 
 
-drop if county_id == "06037"
+
 /**************************************************************************
    SAVE CLEAN INTERPOLATED DATASET
 **************************************************************************/
