@@ -76,12 +76,15 @@ VALIDATION CHECKS TO RUN:
   - Cross-check: compare good_county vs good_county_6771 vs good_county_7072
   - Geographic coverage: codebook county (should have ~3,100 counties)
 ==============================================================================*/
-*****************************************************************************
-*Build a list of good and bad counties
-*****************************************************************************
-*****************************************************************************
-*A) Cleaning
-*****************************************************************************
+*==============================================================*
+* I) Load and clean tract panel
+*==============================================================*
+
+*--------------------------------------------------------------*
+* A) Load tract panel and merge untracted flags
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Load inflation-adjusted tract panel
 use tracts_panel_real,clear
 
 *** Rename and construct county identifiers
@@ -91,11 +94,13 @@ gen str5 county = state_fips + coc70
 tempfile no_tract_fix
 save `no_tract_fix',replace
 
+* 2)--------------------------------- Merge untracted area flags
 use grf_id_tractlevel,clear
 keep tract70 no_tract
 duplicates drop tract70,force
 merge 1:m tract70 using `no_tract_fix'
 
+* 3)--------------------------------- Identify counties with untracted areas
 * 1. For each county, check if any of its tracts are untracted
 bys county: egen has_untracted = max(no_tract)
 
@@ -108,11 +113,15 @@ summ has_untracted
 display "Share of counties with untracted areas: " r(mean)
 display "Share of counties fully tracted: " 1 - r(mean)
 
+*==============================================================*
+* II) Collapse to county level and tag quality
+*==============================================================*
 
+*--------------------------------------------------------------*
+* A) Collapse tract-level quality flags to county level
+*--------------------------------------------------------------*
 
-*****************************************************************************
-*B) Collapse into counties
-*****************************************************************************
+* 1)--------------------------------- Aggregate using MIN (conservative approach)
 * Weighting doesnt matter since we just care about good tags
 preserve
 collapse ///
@@ -125,8 +134,7 @@ collapse ///
          (min)  good_county_1972         = good_tract_1972, ///
          by(county year4)
 
-		 
-*Clean collapse 
+* 2)--------------------------------- Clean and save county quality tags
 gen state_fips = substr(county,1,2)
 keep county good_county good_county_6771 good_county_7072 good_county_1967 ///
 	good_county_1970 good_county_1971 good_county_1972

@@ -72,33 +72,42 @@ VALIDATION CHECKS TO RUN:
 ==============================================================================*/
 
 
-*** ---------------------------------------------------------------------------
-*** 1. Build f33 panel (NCES Data)
-*** ---------------------------------------------------------------------------
+*==============================================================*
+* I) Build F-33 NCES panel (1992-2019)
+*==============================================================*
 
+*--------------------------------------------------------------*
+* A) Import SAS files and convert to Stata format
+*--------------------------------------------------------------*
 
 clear
 set more off
 cd "$SchoolSpending/data/raw/nces/build_f33_in_dir"
 
-* Identify all F-33 raw SAS files
+* 1)--------------------------------- Identify all F-33 raw SAS files
 local files : dir "." files "*.sas7bdat"
 
-* Loop through and convert each SAS file to Stata format
+* 2)--------------------------------- Convert each SAS file to .dta format
 foreach f of local files {
     disp "Processing `f'"
-    
+
     import sas using "`f'", clear
 
     local outname = subinstr("`f'", ".sas7bdat", ".dta", .)
     save "`outname'", replace
 }
 
-*** Append all F-33 files into one panel
+*--------------------------------------------------------------*
+* B) Append all yearly files into unified panel
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Prepare list of converted .dta files
 local files : dir "." files "*.dta"
 tempfile base
 
 local first = 1
+
+* 2)--------------------------------- Extract year from filename and load variables
 foreach f of local files {
     disp "Processing `f'"
 
@@ -119,12 +128,16 @@ foreach f of local files {
     }
 }
 
+* 3)--------------------------------- Load unified tempfile
 use `base', clear
 
+*--------------------------------------------------------------*
+* C) Clean and construct per-pupil expenditure
+*--------------------------------------------------------------*
 
 cd "$SchoolSpending\data"
 
-* Flag anomalies (keep for later inspection)
+* 1)--------------------------------- Flag anomalous values (keep for inspection)
 gen bad_pop   = (V33 < 0)        // negative pop
 label var bad_pop "Zero or negative pop"
 label var bad_pop "Flag: zero or negative population"
@@ -133,26 +146,29 @@ label var bad_exp "Flag: negative expenditure"
 drop if bad_exp ==1
 drop if bad_pop ==1
 
-
-* Calculate per-pupil expenditure (in #1000s)
+* 2)--------------------------------- Calculate per-pupil expenditure (in #1000s)
 gen pp_exp = .
 replace pp_exp = (TOTALEXP/1000) / V33
 
 label var pp_exp "Per-pupil expenditure"
 drop if year < 1992 | year > 2019
-* Extract 9-digit GOVID from 14-digit CENSUSID
+
+* 3)--------------------------------- Extract 9-digit GOVID from 14-digit CENSUSID
 gen str9 GOVID = substr(CENSUSID,1,9)
 save f33_panel, replace
 
 
 
 
-*** ---------------------------------------------------------------------------
-*** 2. Build indifn panel 
-*** ---------------------------------------------------------------------------
+*==============================================================*
+* II) Build INDFIN historical panel (1967-1991)
+*==============================================================*
 
-***Settings
+*--------------------------------------------------------------*
+* A) Load and clean yearly INDFIN datasets
+*--------------------------------------------------------------*
 
+* 1)--------------------------------- Define year range and directory paths
 local years 67 70 71 72 73 74 75 76 77 78 79 ///
             80 81 82 83 84 85 86 87 88 89   ///
             90 91   // 68 & 69 skipped
@@ -160,12 +176,12 @@ local years 67 70 71 72 73 74 75 76 77 78 79 ///
 local inDir  "$SchoolSpending/data/raw/indfin/build_indfin_in_dir"
 local outDir "$SchoolSpending/data/raw/indfin/build_indfin_out_dir"
 
-*Variables to retain
+* 2)--------------------------------- Define variables to retain
 local keepvars ///
     sortcode year4 id idchanged statecode typecode county name ///
     population elemeductotalexp totalexpenditure totaleductotalexp
-	
-* Clean and standardize each yearly INDFIN dataset
+
+* 3)--------------------------------- Filter to school districts and keep essential vars
 foreach y of local years {
     di as txt "→ trimming `y'"
     use "`inDir'/indfin`y'a.dta", clear
@@ -174,7 +190,11 @@ foreach y of local years {
     save "`outDir'/f`y'.dta", replace
 }
 
-* Stack all cleaned years into one panel
+*--------------------------------------------------------------*
+* B) Stack all years into unified panel
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Append all cleaned years
 local first : word 1 of `years'
 use "`outDir'/f`first'.dta", clear
 
@@ -186,10 +206,11 @@ foreach y of local years {
 save "`outDir'/indfin_panel_1967_1991_clean.dta", replace
 di as result "✓ INDFIN panel (1967‑1991) complete."
 
-* Create standard 9-digit GOVID
+* 2)--------------------------------- Create standard 9-digit GOVID
 gen str9 GOVID = string(id, "%09.0f")
 cd "$SchoolSpending\data"
 
+* 3)--------------------------------- Calculate per-pupil expenditure
 gen pp_exp = .
 replace pp_exp = totalexpenditure/population
 label var pp_exp "Per-pupil expenditure"
@@ -198,31 +219,41 @@ save indfin_panel, replace
 
 
 
-*** ---------------------------------------------------------------------------
-*** 3. Import Master ID Files (F33 IDs, GRF)
-*** ---------------------------------------------------------------------------
+*==============================================================*
+* III) Import Geographic Reference File (GRF) and Master IDs
+*==============================================================*
 
-*** --- F33 ID crosswalk
+*--------------------------------------------------------------*
+* A) Load F-33 ID crosswalk files
+*--------------------------------------------------------------*
+
 clear
 set more off
 cd "$SchoolSpending\data\raw\nces\build_f33_in_dir"
 
+* 1)--------------------------------- Convert SAS files to Stata
 local files : dir "." files "*.sas7bdat"
 
 foreach f of local files {
     disp "Processing `f'"
-    
+
     import sas using "`f'", clear
 
     local outname = subinstr("`f'", ".sas7bdat", ".dta", .)
     save "`outname'", replace
 }
 
-* Append all yearly ID files
+*--------------------------------------------------------------*
+* B) Append all yearly ID files
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Prepare list of .dta files
 local files : dir "." files "*.dta"
 tempfile base
 
 local first = 1
+
+* 2)--------------------------------- Extract year and stack ID files
 foreach f of local files {
     disp "Processing `f'"
 
@@ -245,8 +276,7 @@ foreach f of local files {
 
 use `base', clear
 
-
-*Data
+* 3)--------------------------------- Extract GOVID and save crosswalk
 cd "$SchoolSpending\data"
 gen str9 GOVID = substr(CENSUSID,1,9)
 save f33_id, replace
@@ -254,14 +284,15 @@ save f33_id, replace
 
 
 
-********************************************************************************
-* GEOGRAPHIC REFERENCE FILE (GRF)
-********************************************************************************
-clear 
+*--------------------------------------------------------------*
+* C) Import fixed-width GRF ASCII file
+*--------------------------------------------------------------*
+
+clear
 set more off
 local dfile "$SchoolSpending/data/raw/GRF69/DS0001/03515-0001-Data.txt"
 
-*** import fixed-width ASCII [ICPSR layout]
+* 1)--------------------------------- Define field positions and variable types
 infix ///
     /* numeric codes */                                                        ///
     byte  stc70  1-2      /* 1970 state code 01–56  */                         ///
@@ -302,8 +333,7 @@ infix ///
     int   perc   117-119  /* percent equivalent    */                           ///
 using "`dfile'", clear
 
-
-*** Labels
+* 2)--------------------------------- Apply variable labels
 label variable stc70  "1970 State Code"
 label variable stc60  "1960 State Code"
 label variable coc70  "1970 County Code"
@@ -338,33 +368,33 @@ label variable aduc   "Administrative Unit Code"
 
 *export delimited using "grf_raw.csv", replace // For inspecting the GRF
 
-********************************************************************************
-* Clean the GRF
-********************************************************************************
+*--------------------------------------------------------------*
+* D) Clean GRF geographic identifiers
+*--------------------------------------------------------------*
 
-* Clean and construct geographic identifiers
+* 1)--------------------------------- Handle missing tract codes
 gen no_tract = 0
-replace no_tract = 1 if missing(btc) 
+replace no_tract = 1 if missing(btc)
 
 *** Basic Tract Code (btc) should be 4 digits; if missing, treat as 0000
-*** Tract-Suffix Code (tsc) should be 2 digits; if missing, treat as 00 
-replace btc = 0  if missing(btc) 
+*** Tract-Suffix Code (tsc) should be 2 digits; if missing, treat as 00
+replace btc = 0  if missing(btc)
 replace tsc = 0 if missing(tsc)
 
-* Build composite identifiers
+* 2)--------------------------------- Build composite ID strings
 gen str4 btc_str = string(btc,"%04.0f")
 gen str2 tsc_str = string(tsc,"%02.0f")
 gen str5 sdc_str = string(sdc,"%05.0f")
 
-
-* Drop special areas 
+* 3)--------------------------------- Drop special geographic areas
+* Drop special areas
 gen flag_suffix_special = tsc_str == "99" // Not a true geo area. Includes ships
-drop if tsc_str == "99" 
+drop if tsc_str == "99"
 drop flag_suffix_special
 
 * Tract revisions which are slivers of the same tract
 gen flag_suffix_change = (tsc >= 70 & tsc <= 98) // tract revisions
-drop if flag_suffix_change == 1 
+drop if flag_suffix_change == 1
 drop flag_suffix_change
 
 drop if btc >= 9500
@@ -374,31 +404,29 @@ gen flag_water_only       = (btc >= 9900 & btc <= 9998) // Water
 
 drop if flag_special_AIAN | flag_special_landuse | flag_water_only
 
-
-
-*** Now build the 11-char tract ID 
+* 4)--------------------------------- Construct 11-char tract70 and 7-char LEAID
+*** Now build the 11-char tract ID
 * Census 11 digit unique tract identifier
 gen str11 tract70 = ///
     string(stc70,"%02.0f") + string(coc70,"%03.0f") + btc_str + tsc_str
 * For use in GIS
 gen str13 gisjoin2 = ///
-	string(stc70,"%02.0f") + "0" + string(coc70,"%03.0f") + "0" + btc_str + tsc_str 
+	string(stc70,"%02.0f") + "0" + string(coc70,"%03.0f") + "0" + btc_str + tsc_str
 *** GIS Fix: Drop the two-digit suffix only when it equals "00"
 replace gisjoin2 = substr(gisjoin2, 1, 11) if substr(gisjoin2, -2, 2) == "00"
 *NCES Local Economic Agency ID
 gen str7 LEAID = string(stc70,"%02.0f") + sdc_str
-	
 
-
+* 5)--------------------------------- Save GRF ID files
 *** SAVE tract-level GRF IDs which indicate non-tract area (keep on the side)
 preserve
 	gen str5 county_code = string(stc70,"%02.0f") + string(coc70,"%03.0f")
-    keep LEAID tract70 county_code no_tract 
+    keep LEAID tract70 county_code no_tract
     save grf_id_tractlevel, replace
 restore
 
 *** one row per LEAID with its school district type code (sdtc)
-keep LEAID 
+keep LEAID
 duplicates tag LEAID, gen(dup)
 bysort LEAID: keep if _n == 1
 drop if missing(LEAID)
@@ -406,19 +434,19 @@ drop dup
 save grf_id, replace // a master list of all LEAIDs in the GRF
 
 
-********************************************************************************
-* Label Good Basline Years and Create District Panel
-********************************************************************************
-********************************************************************************
-* A) HYGIENE
-********************************************************************************
+*==============================================================*
+* IV) Create quality flags and build district panel
+*==============================================================*
+
+*--------------------------------------------------------------*
+* A) Tag baseline year completeness at GOVID level
+*--------------------------------------------------------------*
+
 cd "$SchoolSpending/data"
 use "indfin_panel.dta", clear
 assert !missing(GOVID) & strlen(GOVID)==9
 
-********************************************************************************
-* B) BASELINE YEAR RANGES (GOVID level)
-********************************************************************************
+* 1)--------------------------------- Define baseline year sets (1967, 1970-1972)
 * Is the observation in the set of baseline years?
 gen byte _in_baseline = inlist(year4, 1967, 1970, 1971, 1972)
 *Is the observation in the set of baseline spending not missing spending?
@@ -432,6 +460,7 @@ gen byte _present_baseline_6771 = (_in_baseline_6771==1 & !missing(pp_exp))
 gen byte _in_baseline_7072 = inlist(year4, 1970, 1971, 1972)
 gen byte _present_baseline_7072 = (_in_baseline_7072==1 & !missing(pp_exp))
 
+* 2)--------------------------------- Count baseline years present per GOVID
 * Master GOVID list
 preserve
     keep GOVID
@@ -465,6 +494,7 @@ preserve
     save `basecnt7072', replace
 restore
 
+* 3)--------------------------------- Create good_govid flags for complete baseline data
 * Merge baseline counts into list of GOVIDs so every ID is tagged
 use `govmaster', clear
 merge 1:1 GOVID using `basecnt'
@@ -484,9 +514,11 @@ gen byte good_govid_baseline = (n_baseline_years_present==4)
 gen byte good_govid_baseline_6771 = (n_baseline_years_present_6771==3)
 gen byte good_govid_baseline_7072 = (n_baseline_years_present_7072==3)
 
-********************************************************************************
-* Indv Baseline Years (1967, 1970–72)
-********************************************************************************
+*--------------------------------------------------------------*
+* B) Tag individual baseline years (1967, 1970-1972)
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Flag each year separately
 preserve
     use "indfin_panel.dta", clear
     local years 1967 1970 1971 1972
@@ -500,6 +532,7 @@ preserve
     save `govyeartags', replace
 restore
 
+* 2)--------------------------------- Merge tags back to GOVID master list
 merge 1:1 GOVID using `govyeartags', nogen
 
 label var good_govid_baseline        "Nonmissing spending all 4 baseline years (1967,1970–72)"
@@ -509,7 +542,7 @@ tempfile govtag
 save `govtag', replace // GOVIDs tagged with ids labeled as good(1) or bad (0)
 
 ********************************************************************************
-/* REDUNDANT to SECTION E Propagate tags to INDFIN district (GOVID) x year panel
+/* OPTIONAL: REDUNDANT to SECTION E Propagate tags to INDFIN district (GOVID) x year panel
 ********************************************************************************
 use "indfin_panel.dta", clear
 merge m:1 GOVID using `govtag', nogen // All should match
@@ -519,15 +552,19 @@ gen byte has_indfin = 1
 tempfile indfin_work
 save `indfin_work', replace // Panel of INDFIN (GOVID) x year properly tagged
 */
-********************************************************************************
-* C) STRICT 1:1 LEAID↔GOVID MAP FROM NCES F-33 (non-junk only)
-********************************************************************************
+
+*--------------------------------------------------------------*
+* C) Build strict 1:1 LEAID↔GOVID crosswalk
+*--------------------------------------------------------------*
 
 use "f33_id.dta", clear
+
+* 1)--------------------------------- Identify unique LEAID-GOVID pairs
 // Reduce to unique LEAID–GOVID pairs across all years
-keep LEAID GOVID 
+keep LEAID GOVID
 bysort LEAID GOVID: keep if _n==1 // Keeps every unique pair
 
+* 2)--------------------------------- Count relationships (1:1, 1:M, M:M)
 keep LEAID GOVID
     drop if missing(LEAID) // No LEAID means no GRF link so it is useless
 	drop if LEAID == "M" // Junk
@@ -541,6 +578,8 @@ keep LEAID GOVID
     replace rel_type = 4 if n_govid>1  & n_leaid>1     // M:M
     label define rel 1 "1:1" 2 "1:M (LEAID→GOVID)" 3 "1:M (GOVID→LEAID)" 4 "M:M"
     label values rel_type rel
+
+* 3)--------------------------------- Keep only 1:1 matches (~51% of pairs)
 keep if rel_type == 1 
 
 /*
@@ -561,20 +600,23 @@ Note: We could authenticate some of these 1:M or M:1 but as Greg has shared this
 
 isid LEAID  // should be unique now
 tempfile map1to1
-save `map1to1', replace // Crosswalk 1:1 LEAID to GOVID 
+save `map1to1', replace // Crosswalk 1:1 LEAID to GOVID
 save "f33_1to1_map.dta", replace // Hard save for inspection on the side.
 
-********************************************************************************
-* D) MAP INDFIN to LEAID VIA 1:1 MAP; CAPTURE UNMAPPED
-********************************************************************************
-use `govtag', clear 
+*--------------------------------------------------------------*
+* D) Map INDFIN to LEAID via 1:1 crosswalk
+*--------------------------------------------------------------*
+
+use `govtag', clear
 merge m:1 GOVID using `map1to1' // GOVIDs in INDFIN which overlap with crosswalk
 
+* 1)--------------------------------- Flag unmapped GOVIDs
 gen byte mapped_1to1   = !missing(LEAID)
 gen byte fail_unmapped = (mapped_1to1==0)
 label var mapped_1to1   "INDFIN GOVID mapped to LEAID via F-33 1:1"
 label var fail_unmapped "GOVID had no 1:1 LEAID map (excluded from main panel)"
 
+* 2)--------------------------------- Ensure LEAID uniqueness
 drop if _merge == 1 // Dropping GOVIDs that could never effect tracts' goodness
 replace good_govid_baseline = 0 if missing(good_govid_baseline) & _merge == 2
 replace good_govid_baseline_6771 = 0 if missing(good_govid_baseline_6771) & _merge == 2
@@ -583,27 +625,30 @@ replace good_govid_1967 = 0 if missing(good_govid_1967) & _merge == 2
 replace good_govid_1970 = 0 if missing(good_govid_1970) & _merge == 2
 replace good_govid_1971 = 0 if missing(good_govid_1971) & _merge == 2
 replace good_govid_1972 = 0 if missing(good_govid_1972) & _merge == 2
-assert !missing(LEAID) 
-
-
+assert !missing(LEAID)
 
 // Post-join uniqueness at LEAID×year4 (must pass)
-isid LEAID 
+isid LEAID
 drop _merge
 
-// Order 
+// Order
 order LEAID GOVID good_govid_baseline good_govid_baseline_6771 good_govid_baseline_7072 ///
       good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 ///
       n_baseline_years_present n_baseline_years_present_6771 n_baseline_years_present_7072 ///
       mapped_1to1 fail_unmapped
-********************************************************************************
-* E) ATTACH has_f33 PRESENCE AND FINAL TAGS
-********************************************************************************
+
+*--------------------------------------------------------------*
+* E) Propagate quality tags to district-year panel
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Merge tags to INDFIN panel
 /* We are taking all the quality indicators created at the district level and spreading them across all years of data for each district, creating a panel dataset where every district-year observation is properly tagged with whether that district had good baseline spending data.
 */
 merge 1:m GOVID using "indfin_panel.dta"
 drop if _merge ==2
 drop _merge
+
+* 2)--------------------------------- Fill missing flags with zeros
 replace good_govid_baseline = 0 if missing(good_govid_baseline)
 replace good_govid_baseline_6771 = 0 if missing(good_govid_baseline_6771)
 replace good_govid_baseline_7072 = 0 if missing(good_govid_baseline_7072)
@@ -612,13 +657,15 @@ replace good_govid_1970 = 0 if missing(good_govid_1970)
 replace good_govid_1971 = 0 if missing(good_govid_1971)
 replace good_govid_1972 = 0 if missing(good_govid_1972)
 drop rel_type
+
+* 3)--------------------------------- Save tagged INDFIN panel
 save "indfin_panel_tagged.dta", replace
 
+*--------------------------------------------------------------*
+* F) Merge with F-33 and create unified panel
+*--------------------------------------------------------------*
 
-********************************************************************************
-* F) FINAL TAGS
-********************************************************************************
-/*Redundant
+/*OPTIONAL: Redundant
 use "f33_panel.dta", clear // Spending data is cleaned 
 // Reduce to unique LEAID–GOVID pairs across all years
 bysort LEAID GOVID: keep if _n==1
@@ -644,11 +691,13 @@ restore
 use f33_11, clear
 merge 1:m LEAID GOVID using f33_panel
 keep if _merge ==3
-	drop if missing(LEAID) 
+	drop if missing(LEAID)
 	drop if LEAID == "M"
 	drop if LEAID == "N"
 */
-use "f33_1to1_map.dta", clear  
+
+* 1)--------------------------------- Append F-33 and INDFIN panels
+use "f33_1to1_map.dta", clear
 merge 1:m LEAID GOVID using "f33_panel.dta"
 keep if _merge == 3
 drop _merge
@@ -656,11 +705,11 @@ drop _merge
 rename year year4
 append using "indfin_panel_tagged.dta"
 
-
 keep LEAID GOVID year4 pp_exp good_govid_baseline ///
 good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
 duplicates drop LEAID GOVID year4 pp_exp, force
 
+* 2)--------------------------------- Propagate good_govid flags across all years
 bysort LEAID: egen __g = min(good_govid_baseline)
 replace good_govid_baseline = __g if missing(good_govid_baseline)
 drop __g
@@ -689,6 +738,7 @@ bysort LEAID: egen __g6 = min(good_govid_1972)
 replace good_govid_1972 = __g6 if missing(good_govid_1972)
 drop __g6
 
+* 3)--------------------------------- Remove duplicates
 drop if missing(year4)
 save "district_panel_tagged.dta", replace
 
@@ -698,14 +748,19 @@ drop if missing(good_govid_baseline)
 collapse (mean) pp_exp, by(year4)
 twoway line pp_exp year4
 
-********************************************************************************
-* G) GRF) Merge GRF -> Tagged District Panel
-********************************************************************************
+*--------------------------------------------------------------*
+* G) Merge with GRF to create canonical district panel
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Join GRF IDs to district panel
 use grf_id,clear
 merge 1:m LEAID using "district_panel_tagged.dta"
 keep if _merge ==3
 
+* 2)--------------------------------- Keep only matched records
 isid LEAID year4
 drop _merge
+
+* 3)--------------------------------- Save final canonical panel
 save f33_indfin_grf_canon, replace
 
