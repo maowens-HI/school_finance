@@ -725,8 +725,6 @@ summ school_age_pop
 restore
 
 * 3)--------------------------------- Combine all county types back together
-<<<<<<< HEAD
-=======
 
 ********************************************************************************
 * ---- Combine all types back together ----
@@ -734,7 +732,6 @@ restore
 drop if inlist(county_type,3,4)
 *append using `type3'
 append using `type4'
->>>>>>> 2048fe8d597ea3108320bca498875b6ca4b82bba
 
 /*******************************************************************************
  ---- Combine all types back together ----
