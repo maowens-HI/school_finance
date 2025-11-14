@@ -304,13 +304,13 @@ tab _merge
 keep if _merge==3
 
 * Aggregate all GOVID-level tags to tract-year level
-bys tract70: egen good_tract          = max(good_govid)
-bys tract70: egen good_tract_6771     = max(good_govid_6771)
-bys tract70: egen good_tract_7072     = max(good_govid_7072)
-bys tract70: egen good_tract_1967     = max(good_govid_1967)
-bys tract70: egen good_tract_1970     = max(good_govid_1970)
-bys tract70: egen good_tract_1971     = max(good_govid_1971)
-bys tract70: egen good_tract_1972     = max(good_govid_1972)
+bys tract70: egen good_tract          = min(good_govid)
+bys tract70: egen good_tract_6771     = min(good_govid_6771)
+bys tract70: egen good_tract_7072     = min(good_govid_7072)
+bys tract70: egen good_tract_1967     = min(good_govid_1967)
+bys tract70: egen good_tract_1970     = min(good_govid_1970)
+bys tract70: egen good_tract_1971     = min(good_govid_1971)
+bys tract70: egen good_tract_1972     = min(good_govid_1972)
 
 * Keep ONLY the tract-level flags you just made
 keep tract70 good_tract good_tract_1967 good_tract_1970 ///

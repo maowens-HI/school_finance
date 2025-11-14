@@ -661,31 +661,31 @@ keep LEAID GOVID year4 pp_exp good_govid_baseline ///
 good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
 duplicates drop LEAID GOVID year4 pp_exp, force
 
-bysort LEAID: egen __g = max(good_govid_baseline)
+bysort LEAID: egen __g = min(good_govid_baseline)
 replace good_govid_baseline = __g if missing(good_govid_baseline)
 drop __g
 
-bysort LEAID: egen __g1 = max(good_govid_baseline_6771)
+bysort LEAID: egen __g1 = min(good_govid_baseline_6771)
 replace good_govid_baseline_6771 = __g1 if missing(good_govid_baseline_6771)
 drop __g1
 
-bysort LEAID: egen __g2 = max(good_govid_baseline_7072)
+bysort LEAID: egen __g2 = min(good_govid_baseline_7072)
 replace good_govid_baseline_7072 = __g2 if missing(good_govid_baseline_7072)
 drop __g2
 
-bysort LEAID: egen __g3 = max(good_govid_1967)
+bysort LEAID: egen __g3 = min(good_govid_1967)
 replace good_govid_1967 = __g3 if missing(good_govid_1967)
 drop __g3
 
-bysort LEAID: egen __g4 = max(good_govid_1970)
+bysort LEAID: egen __g4 = min(good_govid_1970)
 replace good_govid_1970 = __g4 if missing(good_govid_1970)
 drop __g4
 
-bysort LEAID: egen __g5 = max(good_govid_1971)
+bysort LEAID: egen __g5 = min(good_govid_1971)
 replace good_govid_1971 = __g5 if missing(good_govid_1971)
 drop __g5
 
-bysort LEAID: egen __g6 = max(good_govid_1972)
+bysort LEAID: egen __g6 = min(good_govid_1972)
 replace good_govid_1972 = __g6 if missing(good_govid_1972)
 drop __g6
 
