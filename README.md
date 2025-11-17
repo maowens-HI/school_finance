@@ -45,9 +45,9 @@ school_finance/
     ├── district_only.do               # [Experimental] District-level regressions
     ├── test_reg.do                    # [Experimental] Regression specification testing
     ├── 11_4_25*.do                    # [Experimental] Event-study variants (Nov 4, 2025)
-    ├── 11_5_25*.do                    # [Experimental] Figure reproduction & jackknife
+    ├── 11_5_25*.do                    # [Experimental] Basic jackknife
     ├── 11_6_25_jk_reform.do           # [Experimental] Jackknife by reform type
-    ├── 11_7_25*.do                    # [Experimental] Balanced panel restrictions
+    ├── 11_7_25*.do                    # [Experimental] Weighted Figure 1 Panel
     └── 11_12_25/                      # Latest analysis (Nov 12, 2025)
         ├── fig1_bal_wt_rest.do        # [Experimental] Figure 1 with balancing weights
         └── 11_12_25.txt               # Meeting notes and decisions
