@@ -64,9 +64,9 @@ school_finance/
 ### **How to Reproduce**
 
 #### **Step 1: Set Up Global Path**
-In Stata, define the project path:
+In Stata run.do , define the project path:
 ```stata
-global SchoolSpending "C:/Users/maowens/OneDrive - Stanford/school/git"
+global SchoolSpending "[your file path]"
 ```
 
 #### **Step 2: Run the Full Pipeline**
@@ -146,8 +146,7 @@ The pipeline follows a sequential process:
 5. **05_create_county_panel.do** - Interpolates district panel, re-assigns to tracts, imports enrollment data, collapses to county-year panel
 
 **Phase II: Analysis & Testing**
-6. **balance.do** - Identifies counties with complete event windows (-5 to +17 years)
-7. **Experimental files** - Event-study regressions with various specifications, samples, and robustness checks
+6. **Experimental files** - Event-study regressions with various specifications, samples, and robustness checks
 
 ---
 
