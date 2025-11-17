@@ -24,9 +24,8 @@ The original JJP (2016) paper and its Online Appendix describe the following key
 
 Specifically, we aim to:
 1. Develop crosswalks linking **F-33 (District) ↔ INDFIN (District) ↔ Tract (GRF) ↔ County (GRF) ** identifiers.
-2. Handle **mixed counties** that contain both tracted and non-tracted areas by combining untracted units within each county.
-3. Reconstruct consistent annual per-pupil spending at the county level.
-4. Use this data to estimate event studies akin to figures 1 and 2 in JJP 2016.
+2. Reconstruct consistent annual per-pupil spending at the county level.
+3. Use this data to estimate event studies akin to figures 1 and 2 in JJP 2016.
 
 ---
 
