@@ -329,7 +329,6 @@ On 11/12/25 Matt requested that I amke a balanced panel based on event time
 (relative_year) Below is that fix
 *******************************************************************************/
 
-* We first create a temporary file to identify the balanced counties
 preserve
 keep if inrange(relative_year, -5, 17) // Only check within the event window
 
@@ -341,6 +340,13 @@ bys LEAID: gen n_rel = _N
 * Keep only if they have the full window
 keep if min_rel == -5 & max_rel == 17 & n_rel == 23
 
+* NEW: count nonmissing lexp_ma_strict in the window
+bys LEAID: gen n_nonmiss = sum(!missing(lexp_ma_strict))
+bys LEAID: replace n_nonmiss = n_nonmiss[_N]
+
+* Keep only if they have the full window AND full nonmissingness
+keep if min_rel == -5 & max_rel == 17 & n_rel == 23 & n_nonmiss == 23
+
 keep LEAID
 duplicates drop
 gen balance = 1
@@ -349,22 +355,22 @@ save `balance'
 restore
 
 use `balance',clear
-merge 1:m LEAID using jjp_interp
+merge 1:m LEAID using jjp_district
 * Mark unbalanced counties
 replace balance = 0 if missing(balance)
 **************
-*/
+
 
 * Create balanced-only dataset for analysis
 keep if balance ==1 | never_treated2 ==1 // keep balanced counties & never treateds
-save jjp_balance,replace
 
 
 
+drop pre_q* base_*
 
-/*********************************
-* Split by quartiles of baseline spending
-**********************************/
+/**************************************************************************
+*   BASELINE QUARTILES (1969–1971) + AVERAGE BASELINE
+**************************************************************************/
 local var lexp lexp_ma lexp_ma_strict
 
 local years   pre_q1971 
@@ -385,7 +391,7 @@ display "Remaining obs in this iteration: " r(N)
             areg `v' ///
                 i.lag_* i.lead_* ///
                 i.year_unified if `y'==`q' & (never_treated==1 | reform_year<2000), ///
-                absorb(LEAID) vce(cluster state_fips)
+                absorb(LEAID) vce(cluster LEAID)
 
 
             tempfile results
@@ -422,6 +428,7 @@ display "Remaining obs in this iteration: " r(N)
                 legend(off) ///
                 scheme(s2mono)
 
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_19_25\district_only\reg_`v'_`q'_`y'.png", replace	
 *graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_12_25\reg_`v'_`q'_`y'.png", replace
         }
 	}
@@ -447,11 +454,11 @@ forvalues i = 1/`n' {
     foreach v of local var {
 
             use jjp_balance, clear
-					*drop if `g' != 1
+					drop if `g' != 1
 areg `v' ///
     i.lag_* i.lead_* ///
     i.year_unified  if `y' < 4 & (never_treated==1 | reform_year<2000), ///
-    absorb(LEAID) vce(cluster state_fips)
+    absorb(LEAID) vce(cluster LEAID)
 
 *--------------------------------------*
 * Extract coefficients
@@ -493,7 +500,9 @@ gen ci_hi = b + 1.645*se
                 graphregion(color(white)) ///
                 legend(off) ///
                 scheme(s2mono)
-				
+
+
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_19_25\district_only\btm_`v'_`y'.png", replace			
 *graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_12_25\btm_`v'_`y'.png", replace
 	
 }
