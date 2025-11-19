@@ -708,7 +708,7 @@ drop _merge
 rename year year4
 append using "indfin_panel_tagged.dta"
 
-keep LEAID GOVID year4 pp_exp good_govid_baseline enrollment ///
+keep LEAID GOVID year4 pp_exp good_govid_baseline enrollment level ///
 good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
 duplicates drop LEAID GOVID year4 pp_exp, force
 
@@ -740,6 +740,11 @@ drop __g5
 bysort LEAID: egen __g6 = min(good_govid_1972)
 replace good_govid_1972 = __g6 if missing(good_govid_1972)
 drop __g6
+
+* Propagate school level across all years for each district
+bysort LEAID: egen __level = mode(level), maxmode
+replace level = __level if missing(level)
+drop __level
 
 * 3)--------------------------------- Remove duplicates
 drop if missing(year4)
