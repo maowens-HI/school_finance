@@ -146,6 +146,12 @@ label var bad_exp "Flag: negative expenditure"
 drop if bad_exp ==1
 drop if bad_pop ==1
 
+rename SCHLEV level
+drop if level == "06"
+drop if level == "07"
+drop if level == "05"
+drop if level == "N"
+
 * 2)--------------------------------- Calculate per-pupil expenditure (in #1000s)
 gen pp_exp = .
 replace pp_exp = (TOTALEXP/1000) / V33
@@ -156,7 +162,7 @@ drop if year < 1992 | year > 2019
 * 3)--------------------------------- Extract 9-digit GOVID from 14-digit CENSUSID
 gen str9 GOVID = substr(CENSUSID,1,9)
 rename V33 enrollment
-rename SCHLEV level
+
 save f33_panel, replace
 
 
@@ -708,7 +714,7 @@ drop _merge
 rename year year4
 append using "indfin_panel_tagged.dta"
 
-keep LEAID GOVID year4 pp_exp good_govid_baseline enrollment ///
+keep LEAID GOVID year4 pp_exp good_govid_baseline enrollment level ///
 good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
 duplicates drop LEAID GOVID year4 pp_exp, force
 

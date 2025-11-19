@@ -4,7 +4,6 @@ set more off
 cd "$SchoolSpending/data"
 use district_panel_tagged,clear
 
-
 *Clean
 drop if missing(year4) // drop values with missing years
 gen state_fips = substr(LEAID,1,2)
@@ -371,7 +370,7 @@ drop pre_q* base_*
 /**************************************************************************
 *   BASELINE QUARTILES (1969–1971) + AVERAGE BASELINE
 **************************************************************************/
-local var lexp lexp_ma lexp_ma_strict
+local var lexp lexp_ma_strict
 
 local years   pre_q1971 
 local good good_71 
@@ -390,7 +389,7 @@ display "Remaining obs in this iteration: " r(N)
 
             areg `v' ///
                 i.lag_* i.lead_* ///
-                i.year_unified if `y'==`q' & (never_treated==1 | reform_year<2000), ///
+                i.year_unified [w = enrollment] if `y'==`q' & (never_treated==1 | reform_year<2000), ///
                 absorb(LEAID) vce(cluster LEAID)
 
 
@@ -441,7 +440,7 @@ graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\not
 * Regression: exclude top quartile (q == 4)
 *--------------------------------------*
 **********************************/
-local var lexp lexp_ma lexp_ma_strict
+local var lexp lexp_ma_strict
 
 local years    pre_q1971 
 local good  good_71 
@@ -457,7 +456,7 @@ forvalues i = 1/`n' {
 					drop if `g' != 1
 areg `v' ///
     i.lag_* i.lead_* ///
-    i.year_unified  if `y' < 4 & (never_treated==1 | reform_year<2000), ///
+    i.year_unified  [w = enrollment] if `y' < 4 & (never_treated==1 | reform_year<2000), ///
     absorb(LEAID) vce(cluster LEAID)
 
 *--------------------------------------*
