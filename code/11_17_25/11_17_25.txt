@@ -1,0 +1,332 @@
+11/17/25 School finance reform work
+
+Today I plant to update the README to be more accurate along with updating the research hub and auditing any code. However, the main task of today is to complete a memo regarding what I believe is behind our problematic looking weighted figure 1 charts.
+---------------------------------------------------------------------------------------
+
+Plan of attack:
+
+I have a memo draft that I wrote on 11/14 which is what i should start with. I think the best thing would be to review the memo for clarity and any mistakes. Secondly I can create the charts that I want to showcase in stata. Then export them to a quarto document for upload. Last thing would be to review and then share.
+
+Memo draft:
+
+11/14/25 
+
+Assessing the Influence of Population Weights on Our Estimates
+
+# Overview
+
+The event-study results in Figure 1 show weak and confusing effects. We suspect that the weight, specifically the school-age population, is driving the problem. I think the weights still function correctly, but they likely reflect a heterogeneous treatment effect.
+
+Previous evidence suggests that the weight is the source of the problem. Figure 1 produces clear results when the regressions are unweighted, but the effects become small and hard to interpret once we apply the weights. One possibility is that the weights are broken. I reviewed my code and found no clear errors in how I constructed the weights. I did find other bugs and made minor fixes unrelated to weighting, but none of them change the weighted Figure 1 results we keep seeing. My GitHub is up to date with instructions to download if a code review is needed.
+
+Another possibility is that an underlying relationship exists that we have not yet identified. Below, I explain why I think this is the case. In short, several large urban counties did not respond to the treatment as we expected, which created a heterogeneous treatment effect.
+
+# Analysis
+
+
+			Table 1: County statistics
+
+                 group   n_counties   pct_counties   total_weight   cum_weight  
+                 Top 1            1          0.044          4.587        4.587  
+                 Top 5            4          0.176          7.587       12.174  
+                Top 10            5          0.220          4.672       16.846  
+                Top 20           10          0.439          6.956       23.803  
+                Top 50           30          1.318         12.367       36.169  
+    Remaining counties         2226         97.803         63.831      100.000  
+
+
+
+			Table 2: County-year statistics
+
+       county_id   county_name   weight_share_pct   obs_share_pct  
+  1.       06037   los angeles               4.59            0.05  
+  2.       17031          cook               3.93            0.05  
+  3.       48201        harris               1.33            0.05  
+  4.       36059        nassau               1.19            0.05  
+  5.       39035      cuyahoga               1.14            0.05  
+  6.       06059        orange               1.04            0.05  
+  7.       25017     middlesex               1.03            0.05  
+  8.       36103       suffolk               0.91            0.05  
+  9.       06085   santa clara               0.86            0.05  
+ 10.       53033          king               0.83            0.05  
+
+
+
+Table 1 shows that Los Angeles County accounts for 0.4 percent of all counties but 4.4 percent of the total sample weight. The top 50 counties make up about 36 percent of the weight. This distribution is not a problem, since the weights should emphasize counties with larger populations. Still, these mega-counties may be pushing us toward the conclusion that our effects are wrong, when we may simply be capturing a rural–urban divide.
+
+I investigate the rural–urban divide by grouping counties based on their share of total weights. Rank 1 is the county with the highest weight share out of all 2,226 counties in the panel. The left-side column displays the effects for quartiles 1 through 3, and the right panels display the effects for quartile 4. As we move down the rows, we exclude the top 10, top 50, top 100, and top 150 counties. 
+
+Once we remove a small set of large counties, the results begin to resemble the unweighted regressions we already know. The charts that exclude the top 150 counties show large jumps at t = 1 across both the bottom three and top four quartiles. This pattern suggests that court-ordered reforms did not affect only the bottom three quartiles of baseline spending. Instead, we may be seeing genuine heterogeneous effects across urban and rural counties.
+
+
+
+## Influence of California
+
+California accounts for 12 percent of the school age population. Because California reformed early in 1971, it has only a small number of pre-treatment years compared to most states in the sample. I am not sure what the econometric implications are, but if California’s limited pre-treatment period produces unusual effects, the weights would likely amplify them.
+
+
+    state_fips   state_perc  
+            06     12.07868  
+            17     7.513144  
+            39     6.679388  
+            36     6.548028  
+            48     6.312163  
+            42     6.071245  
+            26     4.953609  
+            12     3.918419  
+            18     3.694218  
+            34      3.60406  
+            55     3.194689  
+            13     2.907954  
+            22     2.516008  
+            29     2.440169  
+            53     2.316423  
+            01     2.156608  
+            27     2.155933  
+            19     1.939695  
+            25     1.676951  
+            45      1.61024  
+            28     1.468577  
+            40     1.430238  
+            21     1.418546  
+            20     1.364358  
+            54     1.164342  
+            08     1.046425  
+            41     .9141318  
+            49     .9052445  
+            05     .7777004  
+            35     .7212182  
+            09     .7077997  
+            04     .6317471  
+            31     .6034498  
+            16     .5128545  
+            46     .4211993  
+            33     .3712384  
+            32     .2865557  
+            50     .2324789  
+            23     .1757219  
+            38     .1496809  
+            10     .1247095  
+            56     .1151536  
+            30     .0926032  
+            47     .0536609  
+            44     .0183371  
+            37     .0044128  
+
+
+
+[No California Figure]
+
+## A note on other potential weights
+
+We currently weight counties by their 1970 school-age population, but another option, following JJP (2016), is to weight by average enrollment. In Figure D3 of their appendix, where they present event studies using district-year observations rather than person-year, they note that each district is weighted by average enrollment for the full sample. We may want to consider adopting a similar approach rather than relying only on the 1970 weights.
+
+## A note on aggregation
+
+The weak effects relative to JJP may also stem from aggregation. The Urban Institute found that its progressivity index, which measures the funding gap between low-income and non-low-income students, produced very different results at different levels of aggregation. Rhode Island appeared progressive at the district level but regressive at the county level. This precedent shows that county-level effects can be weaker than district-level effects.
+
+Current draft:
+
+---
+title: "Assessing the Influence of Population Weights on Our Estimates"
+author: "Myles Owens"
+date: "2025-11-12"
+format:
+  html:
+    theme: lux # or lumen, flatly, yeti, minty, etc.
+    page-layout: full
+    css: styles.css
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    number-sections: false
+    link-external-newwindow: true
+
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Overview
+
+The Figure 1 results estimated over the past several weeks have shown weak and confusing effects. Previous evidence suggests that the weight is the source of our problem. Figure 1 produces clear results when the regressions are unweighted, but the effects become small and hard to interpret once we apply the weights. 
+
+One possibility is that the weights are broken. I reviewed my code and found no clear errors in how I constructed the weights. I did find other bugs and made minor fixes unrelated to weighting, but none of them change the weighted Figure 1 results in any significant way. My [GitHub](https://github.com/maowens-HI/school_finance) is up to date with instructions to download if a code review is needed.
+
+Another possibility is that there exists  an underlying relationship or problematic feature of the data that we have not yet identified. 
+
+I investigated the following areas:
+
+1. Balance
+2. California
+3. Heterogenous effects of high school-age population areas.
+
+Out of the three, heterogenous treatment effects seems to have the largest impact on our event-studies. Below, I explain why I think this is the case. 
+
+# Balance
+
+# California
+
+California accounts for 12 percent of the school age population. Because California reformed early in 1971, it has only a small number of pre-treatment years compared to most states in the sample. Mt thought is that if California’s limited pre-treatment period produces unusual effects, the weights would likely amplify them.
+
+Below are  charts for quartile 4 and quartiles 1-3 with and without california in the estimation. 
+
+## With California
+
+:::::::::: columns
+::: {.column width="50%"}
+[![](w_cal/btm_lexp_ma_strict_pre_q1971.png){fig-alt="Bottom 3 Quartiles (1971)" width="100%"}](w_cal/btm_lexp_ma_strict_pre_q1971.png)
+:::
+
+::: {.column width="50%"}
+[![](w_cal/reg_lexp_ma_strict_4_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/reg_lexp_ma_strict_4_pre_q1971.png)
+:::
+::::::::::
+
+## Without California
+:::::::::: columns
+::: {.column width="50%"}
+[![](btm_lexp_ma_strict_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/btm_lexp_ma_strict_pre_q1971.png)
+:::
+
+::: {.column width="50%"}
+[![](reg_lexp_ma_strict_4_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/reg_lexp_ma_strict_4_pre_q1971.png)
+:::
+::::::::::
+
+
+# Heterogenous effects
+
+Table 1 shows that Los Angeles County accounts for 0.05 percent of all counties but 4.59 percent of the total sample weight. The top 50 counties make up about 36 percent of the weight (Table 2). This distribution is not a problem, since the weights should emphasize counties with larger populations. Still, these mega-counties may be pushing us toward the conclusion that our effects are wrong, when we may simply be capturing an idiosyncrasy with high population counties.
+
+```stata
+			Table 1: County-year statistics
+
+       county_id   county_name   weight_share_pct   obs_share_pct  
+  1.       06037   los angeles               4.59            0.05  
+  2.       17031          cook               3.93            0.05  
+  3.       48201        harris               1.33            0.05  
+  4.       36059        nassau               1.19            0.05  
+  5.       39035      cuyahoga               1.14            0.05  
+  6.       06059        orange               1.04            0.05  
+  7.       25017     middlesex               1.03            0.05  
+  8.       36103       suffolk               0.91            0.05  
+  9.       06085   santa clara               0.86            0.05  
+ 10.       53033          king               0.83            0.05  
+ 
+```
+
+```stata
+			Table 2: County statistics
+
+                 group   n_counties   pct_counties   total_weight   cum_weight  
+                 Top 1            1          0.044          4.587        4.587  
+                 Top 5            4          0.176          7.587       12.174  
+                Top 10            5          0.220          4.672       16.846  
+                Top 20           10          0.439          6.956       23.803  
+                Top 50           30          1.318         12.367       36.169  
+    Remaining counties         2226         97.803         63.831      100.000  
+```
+
+
+
+I investigate the possibilty of any idiosyncrasies in high population areas in the figures below by grouping counties based on their share of total weights. Rank 1 is the county with the highest weight share out of all 2,226 counties in the panel. The left-side column displays the effects for quartiles 1 through 3, and the right-side panels display the effects for quartile 4. As we move down the columns, we exclude the top 100 ranked counties to show the effect that we find after removing the most populous counties.
+
+Once we remove a small set of large counties, the results begin to resemble the unweighted regressions we are familiar with. 
+
+
+## Weighted
+
+### Log Expenditure
+
+:::::::::: columns
+::: {.column width="50%"}
+[![](w_cal/btm_lexp_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/btm_lexp_ma_strict_pre_q1971.png)
+:::
+
+::: {.column width="50%"}
+[![](w_cal/reg_lexp_4_pre_q1971.png){fig-alt="1971 Q4" width="100%"}](w_cal/reg_lexp_ma_strict_4_pre_q1971.png)
+:::
+::::::::::
+
+### Log Strict Moving Average Expenditure
+
+:::::::::: columns
+::: {.column width="50%"}
+[![](w_cal/btm_lexp_ma_strict_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/btm_lexp_ma_strict_pre_q1971.png)
+:::
+
+::: {.column width="50%"}
+[![](w_cal/reg_lexp_ma_strict_4_pre_q1971.png){fig-alt="1971 Q4" width="100%"}](w_cal/reg_lexp_ma_strict_4_pre_q1971.png)
+:::
+::::::::::
+
+## Exclude top 100
+
+### Log Expenditure
+
+:::::::::: columns
+::: {.column width="50%"}
+[![](rank\btm_lexp_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/btm_lexp_ma_strict_pre_q1971.png)
+:::
+
+::: {.column width="50%"}
+[![](rank\reg_lexp_4_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/reg_lexp_ma_strict_4_pre_q1971.png)
+:::
+::::::::::
+
+### Log Strict Moving Average Expenditure
+
+:::::::::: columns
+::: {.column width="50%"}
+[![](rank\btm_lexp_ma_strict_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/btm_lexp_ma_strict_pre_q1971.png)
+:::
+
+::: {.column width="50%"}
+[![](rank\reg_lexp_ma_strict_4_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/reg_lexp_ma_strict_4_pre_q1971.png)
+:::
+::::::::::
+
+## Unweighted
+
+### Log Expenditure
+
+:::::::::: columns
+::: {.column width="50%"}
+[![](no_wt\btm_lexp_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/btm_lexp_ma_strict_pre_q1971.png)
+:::
+
+::: {.column width="50%"}
+[![](no_wt\reg_lexp_4_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/reg_lexp_ma_strict_4_pre_q1971.png)
+:::
+::::::::::
+
+### Log Strict Moving Average Expenditure
+
+:::::::::: columns
+::: {.column width="50%"}
+[![](no_wt\btm_lexp_ma_strict_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/btm_lexp_ma_strict_pre_q1971.png)
+:::
+
+::: {.column width="50%"}
+[![](no_wt\reg_lexp_ma_strict_4_pre_q1971.png){fig-alt="1969 Q1" width="100%"}](w_cal/reg_lexp_ma_strict_4_pre_q1971.png)
+:::
+::::::::::
+
+# More Considerations
+
+## Other potential weights
+
+We currently weight counties by their 1970 school-age population, but another option, following JJP (2016), is to weight by average enrollment. In Figure D3 of their appendix, where they present event studies using district-year observations rather than person-year, they note that each district is weighted by average enrollment for the full sample. We may want to consider adopting a similar approach rather than relying only on the 1970 weights.
+
+## A note on aggregation
+
+The weak effects relative to JJP may also stem from aggregation. The Urban Institute found that its progressivity index, which measures the funding gap between low-income and non-low-income students, produced very different results at different levels of aggregation. Rhode Island appeared progressive at the district level but regressive at the county level. This precedent shows that county-level effects can be weaker than district-level effects.
+
+
+
+3:45 PM
+
+After refining the memo and reflecting I am not so convinced that these high population counties are the culprit. While, the figure 1 event-studies look cleaner after removing the top 100 counties the difference isn't so striking that I would consider the impact heterogenous. I'm not sure why removing these counties would decrease the standard errors though? Perhaps there is more variance within large population areas.
+

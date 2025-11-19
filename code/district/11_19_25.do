@@ -1,59 +1,29 @@
-*Testing our no GRF hunch
+/* The purpose of this file is to run the figure 1 event-studies we have been 
+running except on the district level instead of the county level. This was
+inspired by our 11/18/25 meting where we considered the Urban Institutes point
+that county level results may be less progressive than district level results.
+*/
+
+
+* I am taking the tract level data from do file 05 just before we collapse to counties.
+* This data has been processed for primary/secondary schools 
+* This data needs tags for good and bad tracts though...
+
 clear
 set more off
-cd "$SchoolSpending/data"
-use district_panel_tagged,clear
-
-
-*Clean
-drop if missing(year4) // drop values with missing years
+cd "$SchoolSpending\data"
+use "district_panel_tagged.dta", clear
 gen state_fips = substr(LEAID,1,2)
+save district,replace
+*==============================================================*
+* IV) Merge reform treatment data (Jackson et al 2016)
+*==============================================================*
 
+*--------------------------------------------------------------*
+* A) Load and clean JJP reform table
+*--------------------------------------------------------------*
 
-
-* Convert string LEAID → numeric
-encode LEAID, gen(LEAID_num) // LEAID is a string and needs to be changed for interpolation
-
-* gap detector
-bysort LEAID (year4): gen gap_next = year[_n+1] - year4 // gap = next year - current year
-gen too_far = gap_next > 3 // We don't want to impute gaps that are too big
-
-* Ensure full county-year panel
-tsset LEAID_num year4
-tsfill, full // creates missing values to fill for the whole range of the panel
-
-
-
-*--- 1. Fill identifiers ------------------------------------------------------
-
-*Strings // adds back in stable variables for the gaps we created
-foreach var in GOVID LEAID good_govid_baseline state_fips{
-    bys LEAID_num: egen __fill_`var' = mode(`var'), maxmode
-    replace `var' = __fill_`var' if missing(`var')
-    drop __fill_`var'
-}
-
-
-bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
-
-*--- 2. Interpolate county expenditures --------------------------------------
-bys LEAID_num: ipolate pp_exp year4 if too_far == 0, gen(exp2) 
-// We create exp2 the imputed spending 
-
-replace exp2 = pp_exp if !missing(pp_exp)
-
-drop pp_exp gap_next too_far
-
-rename exp2 pp_exp
-*/
-*** ---------------------------------------------------------------------------
-*** Save final panel
-*** ---------------------------------------------------------------------------
-
-
-save no_grf_district_panel,replace
-
-
+* 1)--------------------------------- Import reform mapping from Excel
 /*******************************************************************************
 Use JJP reform table instead of Hanushek logic
 *******************************************************************************/
@@ -99,6 +69,7 @@ replace state_name = "massachusetts" if state_name == "massachuset ts"
 
 drop if missing(case_name)
 keep if const == "Overturned"
+sort state_name reform_year 
 bysort state_name: keep if _n == 1
 
 gen mfp_pre = "MFP" if regexm(form_pre, "MFP")
@@ -160,17 +131,15 @@ tostring fips, gen(state_fips) format(%02.0f)
 drop fips
 
 *** Save final panel with JJP treatment
-merge 1:m state_fips using no_grf_district_panel
+merge 1:m state_fips using district
 replace treatment = 0 if missing(treatment)
 keep if _merge ==3
 drop _merge
-drop long_name sumlev region division state division_name region_name
+drop long_name sumlev region division state division_name region_name 
+keep state_name state_fips reform_year year4 LEAID county pp_exp_real school_age_pop treatment tract70
 
-
-save "$SchoolSpending/data/no_grf_district_panel_treat", replace
-
-
-
+save "$SchoolSpending/data/district_treat", replace
+*/
 **************************************************************************
 *   PREP: INTERPOLATED COUNTY PANEL + BASELINE QUARTILES + STRICT ROLLING
 *   Purpose: Build clean county-year panel with interpolated exp vars,
@@ -178,17 +147,20 @@ save "$SchoolSpending/data/no_grf_district_panel_treat", replace
 **************************************************************************/
 
 *--- 0. Setup -----------------------------------------------------------------
-clear 
+clear all
 set more off
 cd "$SchoolSpending\data"
-use no_grf_district_panel_treat,clear
+use county_clean, clear
+merge 1:m county using district_treat
+drop _merge
+replace good_county = 0 if missing(good_county)
+rename county county_id
 gen never_treated = treatment == 0
-bysort LEAID: egen ever_treated = max(treatment)
+bysort county_id: egen ever_treated = max(treatment)
 gen never_treated2 = ever_treated == 0
 gen year_unified = year4-1
-*keep if good_county ==1
-winsor2 pp_exp, replace c(1 99) by(year_unified)
-*take the 99% value and any obs that are above the 99% replace with 99%
+winsor2 pp_exp_real, replace c(1 99) by(year_unified)
+
 
 
 /**************************************************************************
@@ -196,21 +168,21 @@ winsor2 pp_exp, replace c(1 99) by(year_unified)
 **************************************************************************/
 ***log versions
 *log current
-rename pp_exp exp
+rename pp_exp_real exp
 
 gen lexp = log(exp)
 
 **log moving average
-rangestat (mean) exp, interval(year_unified -12 -0) by(LEAID)
+rangestat (mean) exp, interval(year_unified -12 -0) by(tract70)
 rename exp_mean exp_ma
 gen lexp_ma = log(exp_ma)
 
 **log moving average STRICT
 rangestat (mean) exp_ma_strict = exp (count) n_obs = exp, ///
-    interval(year_unified -12 0) by(LEAID)
+    interval(year_unified -12 0) by(tract70)
 
 * keep only obs with full 13-year window
-replace exp_ma_strict = . if n_obs < 13
+replace exp_ma_strict = . if n_obs < 13 & year4 < 1979
 gen lexp_ma_strict = log(exp_ma_strict)
 
 *--- 3. Relative year ---------------------------------------------------------
@@ -219,10 +191,10 @@ gen relative_year = year_unified - reform_year
 replace relative_year = . if missing(reform_year)
 
 * Convert string LEAID → numeric
-encode LEAID, gen(county_num)
+encode tract70, gen(tract70_num)
 
-drop if missing(exp)
-save interp_temp, replace
+*drop if missing(exp)
+save district_temp, replace
 
 
 
@@ -236,9 +208,9 @@ local years 1966 1969 1970 1971
 preserve
 foreach y of local years {
 
-    use interp_temp, clear
+    use district_temp, clear
     keep if year_unified == `y'
-    keep if !missing(exp, state_fips, LEAID)
+    keep if !missing(exp, state_fips, tract70)
 
     count
     if r(N)==0 {
@@ -247,7 +219,7 @@ foreach y of local years {
     }
 
     bysort state_fips: egen pre_q`y' = xtile(exp), n(4)
-    keep state_fips LEAID pre_q`y'
+    keep state_fips tract70 pre_q`y'
 
     tempfile q`y'
     save `q`y'', replace
@@ -257,7 +229,7 @@ foreach y of local years {
 restore
 * Merge quartiles back
 foreach y of local years {
-    merge m:1 state_fips LEAID using `q`y'', nogen
+    merge m:1 state_fips tract70 using `q`y'', nogen
 }
 
 * Average baseline 1969–1971
@@ -265,7 +237,7 @@ local number 66 69 70 71
 foreach n of local number {
     gen base_`n' = .
     replace base_`n' = exp if year_unified == 19`n'
-    bys LEAID: egen base_`n'_max = max(base_`n')
+    bys tract70: egen base_`n'_max = max(base_`n')
     drop base_`n'
     rename base_`n'_max base_`n'
 }
@@ -277,7 +249,6 @@ bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
 
 egen base_exp3 = rowmean( base_69 base_70 base_71) 
 bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
-
 
 
 local year 1966 1969 1970 1971
@@ -306,22 +277,22 @@ replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year) //  bins
 
 
 
-drop if LEAID == "06037"
+
 /**************************************************************************
    SAVE CLEAN INTERPOLATED DATASET
 **************************************************************************/
 
-rename good_govid_1967          good_66
-rename good_govid_1970          good_69
-rename good_govid_1971          good_70
-rename good_govid_1972          good_71
+rename good_county_1967 good_66
+rename good_county_1970 good_69
+rename good_county_1971 good_70
+rename good_county_1972 good_71
+rename good_county_6771 good_66_70
+rename good_county good_66_71
+rename good_county_7072 good_69_71
 
-rename good_govid_baseline_6771 good_66_70
-rename good_govid_baseline      good_66_71
-rename good_govid_baseline_7072 good_69_71
+drop if missing(LEAID)
 
-
-save jjp_interp, replace
+save jjp_district, replace
 
 
 /*******************************************************************************
@@ -329,19 +300,25 @@ On 11/12/25 Matt requested that I amke a balanced panel based on event time
 (relative_year) Below is that fix
 *******************************************************************************/
 
-* We first create a temporary file to identify the balanced counties
 preserve
 keep if inrange(relative_year, -5, 17) // Only check within the event window
 
 * Find counties with complete windows
-bys LEAID: egen min_rel = min(relative_year)
-bys LEAID: egen max_rel = max(relative_year)
-bys LEAID: gen n_rel = _N
+bys tract70: egen min_rel = min(relative_year)
+bys tract70: egen max_rel = max(relative_year)
+bys tract70: gen n_rel = _N
 
 * Keep only if they have the full window
 keep if min_rel == -5 & max_rel == 17 & n_rel == 23
 
-keep LEAID
+* NEW: count nonmissing lexp_ma_strict in the window
+bys tract70: gen n_nonmiss = sum(!missing(lexp_ma_strict))
+bys tract70: replace n_nonmiss = n_nonmiss[_N]
+
+* Keep only if they have the full window AND full nonmissingness
+keep if min_rel == -5 & max_rel == 17 & n_rel == 23 & n_nonmiss == 23
+
+keep tract70
 duplicates drop
 gen balance = 1
 tempfile balance
@@ -349,26 +326,83 @@ save `balance'
 restore
 
 use `balance',clear
-merge 1:m LEAID using jjp_interp
+merge 1:m tract70 using jjp_district
 * Mark unbalanced counties
 replace balance = 0 if missing(balance)
 **************
-*/
+
 
 * Create balanced-only dataset for analysis
 keep if balance ==1 | never_treated2 ==1 // keep balanced counties & never treateds
-save jjp_balance,replace
+
+
+
+drop pre_q* base_*
+
+/**************************************************************************
+*   BASELINE QUARTILES (1969–1971) + AVERAGE BASELINE
+**************************************************************************/
+
+
+
+local years 1966 1969 1970 1971
+preserve
+foreach y of local years {
+
+    use district_temp, clear
+    keep if year_unified == `y'
+    keep if !missing(exp, state_fips, tract70)
+
+    count
+    if r(N)==0 {
+        di as error "No observations for year `y' — skipping."
+        continue
+    }
+
+    bysort state_fips: egen pre_q`y' = xtile(exp), n(4)
+    keep state_fips tract70 pre_q`y'
+
+    tempfile q`y'
+    save `q`y'', replace
+
+
+}
+restore
+* Merge quartiles back
+foreach y of local years {
+    merge m:1 state_fips tract70 using `q`y'', nogen
+}
+
+* Average baseline 1969–1971
+local number 66 69 70 71
+foreach n of local number {
+    gen base_`n' = .
+    replace base_`n' = exp if year_unified == 19`n'
+    bys tract70: egen base_`n'_max = max(base_`n')
+    drop base_`n'
+    rename base_`n'_max base_`n'
+}
+egen base_exp = rowmean( base_66 base_69 base_70 base_71) 
+bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
+
+egen base_exp2 = rowmean( base_66 base_69 base_70) 
+bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
+
+egen base_exp3 = rowmean( base_69 base_70 base_71) 
+bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
 
 
 
+save jjp_district_balance,replace
+*/
 /*********************************
 * Split by quartiles of baseline spending
 **********************************/
 local var lexp lexp_ma lexp_ma_strict
 
-local years   pre_q1971 
-local good good_71 
+local years   pre_q1966  pre_q1969 pre_q1970  pre_q1971 pre_q_66_70 pre_q_66_71 pre_q_69_71
+local good good_66 good_69 good_70 good_71 good_66_70 good_66_71 good_69_71
 local n: word count `years'
 
 forvalues i = 1/`n' {
@@ -377,16 +411,16 @@ forvalues i = 1/`n' {
     foreach v of local var {
         forvalues q = 1/4 {
 
-            use jjp_balance, clear
+            use jjp_district_balance, clear
 					drop if `g' != 1
 					count
 display "Remaining obs in this iteration: " r(N)
 
             areg `v' ///
                 i.lag_* i.lead_* ///
-                i.year_unified if `y'==`q' & (never_treated==1 | reform_year<2000), ///
-                absorb(LEAID) vce(cluster state_fips)
-
+                i.year_unified  [w= school_age_pop] if  `y'==`q' & (never_treated==1 | reform_year<2000), ///
+                absorb(LEAID) vce(cluster LEAID)
+            *log close
 
             tempfile results
             postfile handle str15 term float rel_year b se using `results', replace
@@ -417,12 +451,14 @@ display "Remaining obs in this iteration: " r(N)
                 yline(0, lpattern(dash) lcolor(gs10)) ///
                 xline(0, lpattern(dash) lcolor(gs10)) ///
                 ytitle("Δ ln(13-yr rolling avg PPE)", size(medsmall) margin(medium)) ///
-                title("Event Study: `v' | Quartile `q' | `y' | `g'", size(medlarge) color("35 45 60")) ///
+                title("`v' | Quartile `q' | `y' ", size(medlarge) color("35 45 60")) ///
                 graphregion(color(white)) ///
                 legend(off) ///
                 scheme(s2mono)
 
-*graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_12_25\reg_`v'_`q'_`y'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_19_25\reg_`v'_`q'_`y'.png", replace
+
+*graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_18_25\balance\reg_`v'_`q'_`y'.png", replace
         }
 	}
     
@@ -436,8 +472,8 @@ display "Remaining obs in this iteration: " r(N)
 **********************************/
 local var lexp lexp_ma lexp_ma_strict
 
-local years    pre_q1971 
-local good  good_71 
+local years   pre_q1966  pre_q1969 pre_q1970  pre_q1971 pre_q_66_70 pre_q_66_71 pre_q_69_71
+local good good_66 good_69 good_70 good_71 good_66_70 good_66_71 good_69_71
 
 local n: word count `years'
 
@@ -445,13 +481,12 @@ forvalues i = 1/`n' {
 	  local y : word `i' of `years'
       local g : word `i' of `good'
     foreach v of local var {
-
-            use jjp_balance, clear
-					*drop if `g' != 1
+	use jjp_district_balance, clear
+	drop if `g' != 1
 areg `v' ///
     i.lag_* i.lead_* ///
-    i.year_unified  if `y' < 4 & (never_treated==1 | reform_year<2000), ///
-    absorb(LEAID) vce(cluster state_fips)
+    i.year_unified [w= school_age_pop]   if `y' < 4 & (never_treated==1 | reform_year<2000), ///
+    absorb(LEAID) vce(cluster LEAID)
 
 *--------------------------------------*
 * Extract coefficients
@@ -489,49 +524,13 @@ gen ci_hi = b + 1.645*se
                 yline(0, lpattern(dash) lcolor(gs10)) ///
                 xline(0, lpattern(dash) lcolor(gs10)) ///
                 ytitle("Δ ln(13-yr rolling avg PPE)", size(medsmall) margin(medium)) ///
-                title("Event Study: `v' | Quartile 1-3 | `y'| `g'", size(medlarge) color("35 45 60")) ///
+                title("`v' | Quartile 1-3 | `y'", size(medlarge) color("35 45 60")) ///
                 graphregion(color(white)) ///
                 legend(off) ///
                 scheme(s2mono)
 				
-*graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_12_25\btm_`v'_`y'.png", replace
-	
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_19_25\btm_`v'_`y'.png", replace
+*graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_18_25\balance\btm_`v'_`y'.png", replace	
 }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-*Run some regressions
