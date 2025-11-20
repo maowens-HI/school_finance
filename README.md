@@ -41,23 +41,22 @@ school_finance/
     ├── 03_adjust_inflation.do         # Adjust tract spending for inflation
     ├── 04_tag_county_quality.do       # Tag counties as good/bad (baseline data)
     ├── 05_create_county_panel.do      # Interpolate districts & create county panel
-    ├── district_only.do               # [Experimental] District-level regressions
-    ├── test_reg.do                    # [Experimental] Regression specification testing
-    ├── 11_4_25*.do                    # [Experimental] Event-study variants (Nov 4, 2025)
-    ├── 11_5_25*.do                    # [Experimental] Basic jackknife
-    ├── 11_6_25_jk_reform.do           # [Experimental] Jackknife by reform type
-    ├── 11_7_25*.do                    # [Experimental] Weighted Figure 1 Panel
-    └── 11_12_25/                      # Latest analysis (Nov 12, 2025)
-        ├── fig1_bal_wt_rest.do        # [Experimental] Figure 1 with balancing weights
-        └── 11_12_25.txt               # Meeting notes and decisions
+    ├── 06_A_county_balanced_figure1.do    # County-level balanced panel Figure 1
+    ├── 06_B_district_balanced_figure1.do  # District-level balanced panel Figure 1
+    └── experimental_archive/          # Archived experimental analysis files
 ```
-
-**Total Code:** ~7,500 lines across 22 Stata .do files
 
 **Pipeline Organization:**
 - **Core Pipeline (01-05):** Sequential data construction and preparation
-  - Creates district panels → Builds tract panel → Adjusts for inflation → Tags county quality → Creates final county panel
-- **Experimental Files (11_*.do, district_only.do, test_reg.do):** Various regression specifications testing different samples, weights, and robustness checks
+  - 01: Build district panels & ID crosswalks
+  - 02: Build tract panel from GRF
+  - 03: Adjust tract spending for inflation
+  - 04: Tag county quality (baseline data completeness)
+  - 05: Interpolate districts & create county panel
+- **Analysis Scripts (06):** Main event-study specifications for Figure 1 replication
+  - 06_A: County-level balanced panel analysis
+  - 06_B: District-level balanced panel analysis
+- **Experimental Archive:** Historical analysis files, robustness checks, and alternative specifications
 
 ---
 
@@ -85,10 +84,13 @@ do code/05_create_county_panel.do
 ```
 
 #### **Step 3: Run Analysis**
-Execute experimental analysis files as needed:
+Execute main analysis scripts:
 ```stata
-do code/11_7_25_restrict.do  
+do code/06_A_county_balanced_figure1.do
+do code/06_B_district_balanced_figure1.do
 ```
+
+Or explore archived experimental specifications in `code/experimental_archive/`
 
 ---
 
@@ -145,8 +147,12 @@ The pipeline follows a sequential process:
 4. **04_tag_county_quality.do** - Tags counties as "good" or "bad" based on baseline year data completeness (1967, 1970-1972)
 5. **05_create_county_panel.do** - Interpolates district panel, re-assigns to tracts, imports enrollment data, collapses to county-year panel
 
-**Phase II: Analysis & Testing**
-6. **Experimental files** - Event-study regressions with various specifications, samples, and robustness checks
+**Phase II: Main Analysis**
+6. **06_A_county_balanced_figure1.do** - County-level event-study analysis (Figure 1 replication)
+7. **06_B_district_balanced_figure1.do** - District-level event-study analysis (Figure 1 replication)
+
+**Phase III: Archived Experiments**
+- `experimental_archive/` contains historical robustness checks, alternative specifications, and exploratory analyses
 
 ---
 
@@ -201,7 +207,10 @@ If referencing the original study:
 
 ### **Version History**
 
-
+| Date | Update |
+|------|--------|
+| 2025-11-20 | Updated README to reflect new file naming (06_A, 06_B) and experimental_archive/ folder structure |
+| 2025-11-14 | Renamed core pipeline files (01-05) with descriptive names |
 
 ---
 
