@@ -23,9 +23,10 @@ The original JJP (2016) paper and its Online Appendix describe the following key
 
 
 Specifically, we aim to:
-1. Develop crosswalks linking **F-33 (District) ↔ INDFIN (District) ↔ Tract (GRF) ↔ County (GRF) ** identifiers.
+1. Develop crosswalks linking **F-33 (District) ↔ INDFIN (District) ↔ Tract (GRF) ↔ County (GRF)** identifiers.
 2. Reconstruct consistent annual per-pupil spending at the county level.
 3. Use this data to estimate event studies akin to figures 1 and 2 in JJP 2016.
+4. Extend the analysis with **jackknife heterogeneity analysis** to identify which counties experienced the largest spending increases from school finance reforms.
 
 ---
 
@@ -43,6 +44,7 @@ school_finance/
     ├── 05_create_county_panel.do      # Interpolate districts & create county panel
     ├── 06_A_county_balanced_figure1.do    # County-level balanced panel Figure 1
     ├── 06_B_district_balanced_figure1.do  # District-level balanced panel Figure 1
+    ├── 07_jackknife_heterogeneity.do      # Full jackknife heterogeneity analysis
     └── experimental_archive/          # Archived experimental analysis files
 ```
 
@@ -53,9 +55,10 @@ school_finance/
   - 03: Adjust tract spending for inflation
   - 04: Tag county quality (baseline data completeness)
   - 05: Interpolate districts & create county panel
-- **Analysis Scripts (06):** Main event-study specifications for Figure 1 replication
-  - 06_A: County-level balanced panel analysis
-  - 06_B: District-level balanced panel analysis
+- **Analysis Scripts (06-07):** Main event-study specifications and robustness checks
+  - 06_A: County-level balanced panel analysis (Figure 1 replication)
+  - 06_B: District-level balanced panel analysis (Figure 1 replication)
+  - 07: Full jackknife heterogeneity analysis (treatment effect heterogeneity)
 - **Experimental Archive:** Historical analysis files, robustness checks, and alternative specifications
 
 ---
@@ -88,6 +91,7 @@ Execute main analysis scripts:
 ```stata
 do code/06_A_county_balanced_figure1.do
 do code/06_B_district_balanced_figure1.do
+do code/07_jackknife_heterogeneity.do
 ```
 
 Or explore archived experimental specifications in `code/experimental_archive/`
@@ -149,9 +153,27 @@ The pipeline follows a sequential process:
 
 **Phase II: Main Analysis**
 6. **06_A_county_balanced_figure1.do** - County-level event-study analysis (Figure 1 replication)
-7. **06_B_district_balanced_figure1.do** - District-level event-study analysis (Figure 1 replication)
+   - Creates balanced panel with complete event windows (-5 to +17 years)
+   - Runs weighted event-study regressions by baseline spending quartile
+   - Produces Figure 1 style plots showing dynamic treatment effects
 
-**Phase III: Archived Experiments**
+7. **06_B_district_balanced_figure1.do** - District-level event-study analysis (Figure 1 replication)
+   - District-level counterpart to county analysis
+   - Uses district panel instead of county aggregation
+
+**Phase III: Heterogeneity Analysis**
+8. **07_jackknife_heterogeneity.do** - Leave-one-state-out jackknife to identify treatment effect heterogeneity
+   - **Purpose:** Identifies which counties experienced larger spending increases from reforms
+   - **Method:** For each state, estimates treatment effects excluding that state's data, then predicts spending increases for excluded state
+   - **Why jackknife?** Avoids mechanical correlation between a state's data and its predicted effects
+   - **Panel:** Uses balanced panel (complete -5 to +17 event windows)
+   - **Heterogeneity dimensions:** Baseline spending quartiles + median family income quartiles
+   - **Outputs:**
+     - High vs low predicted spending group comparisons
+     - Quartile analysis showing differential treatment effects
+     - Combined plots for publication
+
+**Phase IV: Archived Experiments**
 - `experimental_archive/` contains historical robustness checks, alternative specifications, and exploratory analyses
 
 ---
@@ -164,7 +186,7 @@ The pipeline follows a sequential process:
 - `tracts_panel_real.dta` - Inflation-adjusted tract panel (from 03)
 - `county_clean.dta` - County quality flags (from 04)
 
-**Final Analysis Dataset:**
+**Final Analysis Datasets:**
 - `interp_d.dta` - County-year panel (1967, 1969-2019) with:
   - Per-pupil spending (nominal and real 2000 dollars)
   - School-age population weights
@@ -172,9 +194,23 @@ The pipeline follows a sequential process:
   - Baseline spending quartiles
   - Quality flags for balanced event-study samples
 
+- `jjp_interp.dta` / `jjp_balance.dta` - Processed panels for Figure 1 analysis (from 06_A/06_B)
+
+- `jjp_interp_jk.dta` / `jjp_balance_jk.dta` - Processed panels for jackknife analysis (from 07)
+
+- `pred_spend_ppe_all_jk.dta` - Jackknife predicted spending classifications with:
+  - Predicted spending increase for each county (leave-one-state-out)
+  - High/low treatment group indicators
+  - Quartile classifications
+  - Baseline spending and income quartiles
+
 **Analysis Outputs:**
-- Event-study regression estimates 
+- Event-study regression estimates
 - Event-study plots showing dynamic treatment effects
+- Heterogeneity analysis plots:
+  - High vs low predicted spending group comparisons
+  - Four-quartile differential treatment effects
+  - Combined plots showing treatment effect variation
 
 ---
 
