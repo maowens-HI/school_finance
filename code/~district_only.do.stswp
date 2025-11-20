@@ -6,6 +6,7 @@ use district_panel_tagged,clear
 
 *Clean
 drop if missing(year4) // drop values with missing years
+drop if missing(county_id)
 gen state_fips = substr(LEAID,1,2)
 
 
@@ -368,7 +369,7 @@ keep if balance ==1 | never_treated2 ==1 // keep balanced counties & never treat
 /**************************************************************************
 *   BASELINE QUARTILES (1969–1971) + AVERAGE BASELINE
 **************************************************************************/
-/*
+
 drop pre_q* base_*
 
 
@@ -419,7 +420,7 @@ bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
 egen base_exp3 = rowmean( base_69 base_70 base_71) 
 bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
-*/
+
 
 
 save jjp_balance,replace
@@ -446,7 +447,7 @@ display "Remaining obs in this iteration: " r(N)
             areg `v' ///
                 i.lag_* i.lead_* ///
                 i.year_unified [w = enrollment] if `y'==`q' & (never_treated==1 | reform_year<2000), ///
-                absorb(LEAID) vce(cluster LEAID)
+                absorb(LEAID) vce(cluster county_id)
 
 
             tempfile results
@@ -513,7 +514,7 @@ forvalues i = 1/`n' {
 areg `v' ///
     i.lag_* i.lead_* ///
     i.year_unified  [w = enrollment] if `y' < 4 & (never_treated==1 | reform_year<2000), ///
-    absorb(LEAID) vce(cluster LEAID)
+    absorb(LEAID) vce(cluster county_id)
 
 *--------------------------------------*
 * Extract coefficients

@@ -738,37 +738,6 @@ save "indfin_panel_tagged.dta", replace
 * F) Merge with F-33 and create unified panel
 *--------------------------------------------------------------*
 
-/*OPTIONAL: Redundant
-use "f33_panel.dta", clear // Spending data is cleaned 
-// Reduce to unique LEAID–GOVID pairs across all years
-bysort LEAID GOVID: keep if _n==1
-preserve
-keep LEAID GOVID
-    drop if missing(LEAID) 
-	drop if LEAID == "M"
-	drop if LEAID == "N"
-    bysort LEAID: gen n_govid = _N       // distinct GOVIDs for this LEAID
-    bysort GOVID: gen n_leaid = _N       // distinct LEAIDs for this GOVID
-    gen byte rel_type = .
-    replace rel_type = 1 if n_govid==1 & n_leaid==1
-    replace rel_type = 2 if n_govid>1  & n_leaid==1    // 1:M (LEAID→GOVID)
-    replace rel_type = 3 if n_govid==1 & n_leaid>1     // 1:M (GOVID→LEAID)
-    replace rel_type = 4 if n_govid>1  & n_leaid>1     // M:M
-    label define rel 1 "1:1" 2 "1:M (LEAID→GOVID)" 3 "1:M (GOVID→LEAID)" 4 "M:M"
-    label values rel_type rel
-keep if rel_type == 1
-drop rel_type
-save f33_11,replace
-
-restore
-use f33_11, clear
-merge 1:m LEAID GOVID using f33_panel
-keep if _merge ==3
-	drop if missing(LEAID)
-	drop if LEAID == "M"
-	drop if LEAID == "N"
-*/
-
 * 1)--------------------------------- Append F-33 and INDFIN panels
 use "f33_1to1_map.dta", clear
 merge 1:m LEAID GOVID using "f33_panel.dta"
@@ -778,7 +747,7 @@ drop _merge
 rename year year4
 append using "indfin_panel_tagged.dta"
 
-keep LEAID GOVID year4 pp_exp good_govid_baseline enrollment level FIPSCO///
+keep LEAID GOVID county_id year4 pp_exp good_govid_baseline enrollment level ///
 good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
 duplicates drop LEAID GOVID year4 pp_exp, force
 
