@@ -115,29 +115,12 @@ foreach f of local files {
     local shortyr = substr("`f'", 4, 2)
     local year = cond(real("`shortyr'") < 50, 2000 + real("`shortyr'"), 1900 + real("`shortyr'"))
 
-    * Capture all available variables (some years have FIPSCO, others have CONUM)
-    quietly describe using "`f'"
-    local has_conum = 0
-    local has_fipsco = 0
-    local has_fipst = 0
-
-    * Check which county variables exist in this year
-    capture confirm variable CONUM using "`f'"
-    if !_rc local has_conum = 1
-
-    capture confirm variable FIPSCO using "`f'"
-    if !_rc local has_fipsco = 1
-
-    capture confirm variable FIPST using "`f'"
-    if !_rc local has_fipst = 1
-
-    * Build variable list based on what's available
-    local varlist "LEAID CENSUSID NAME V33 TOTALEXP SCHLEV"
-    if `has_fipst' local varlist "`varlist' FIPST"
-    if `has_conum' local varlist "`varlist' CONUM"
-    if `has_fipsco' local varlist "`varlist' FIPSCO"
-
-    use `varlist' using "`f'", clear
+    * Load core variables, county variables if they exist
+    capture use LEAID CENSUSID NAME V33 TOTALEXP SCHLEV FIPST CONUM FIPSCO using "`f'", clear
+    if _rc {
+        * If some vars missing, load what we can
+        use LEAID CENSUSID NAME V33 TOTALEXP SCHLEV using "`f'", clear
+    }
     gen year = `year'
 
     if `first' {
@@ -154,13 +137,9 @@ foreach f of local files {
 use `base', clear
 
 * 4)--------------------------------- Create county_code from FIPST + CONUM/FIPSCO
-* CONUM appears in newer years, FIPSCO in older years
 gen str5 county_code_f33 = ""
-* Try FIPST + CONUM first (newer years)
-replace county_code_f33 = FIPST + CONUM if !missing(FIPST) & !missing(CONUM)
-* Fall back to FIPST + FIPSCO (older years)
-replace county_code_f33 = FIPST + FIPSCO if missing(county_code_f33) & !missing(FIPST) & !missing(FIPSCO)
-label var county_code_f33 "5-digit county code from F33 (FIPST+CONUM or FIPST+FIPSCO)"
+replace county_code_f33 = FIPST + CONUM if !missing(CONUM)
+replace county_code_f33 = FIPST + FIPSCO if county_code_f33=="" & !missing(FIPSCO)
 
 *--------------------------------------------------------------*
 * C) Clean and construct per-pupil expenditure
@@ -250,9 +229,7 @@ gen str9 GOVID = string(id, "%09.0f")
 cd "$SchoolSpending\data"
 
 * 3)--------------------------------- Create county_code from statecode + county
-* INDFIN has statecode (2-digit) and county (3-digit)
 gen str5 county_code_indfin = string(statecode, "%02.0f") + string(county, "%03.0f")
-label var county_code_indfin "5-digit county code from INDFIN (statecode+county)"
 
 * 4)--------------------------------- Calculate per-pupil expenditure
 gen pp_exp = .
@@ -755,13 +732,9 @@ good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_basel
 county_code_f33 county_code_indfin
 duplicates drop LEAID GOVID year4 pp_exp, force
 
-* 2)--------------------------------- Create unified county_code
-* Prefer F33 county code (1992-2019), fall back to INDFIN (1967-1991)
-gen str5 county_code = ""
-replace county_code = county_code_f33 if !missing(county_code_f33)
-replace county_code = county_code_indfin if missing(county_code) & !missing(county_code_indfin)
-label var county_code "5-digit county code (FIPS state + county)"
-* Drop the source-specific variables
+* 2)--------------------------------- Create unified county_code (prefer F33, use INDFIN if missing)
+gen str5 county_code = county_code_f33
+replace county_code = county_code_indfin if county_code==""
 drop county_code_f33 county_code_indfin
 
 * 3)--------------------------------- Propagate good_govid flags and county_code across all years
@@ -793,10 +766,10 @@ bysort LEAID: egen __g6 = min(good_govid_1972)
 replace good_govid_1972 = __g6 if missing(good_govid_1972)
 drop __g6
 
-* Propagate county_code across all years for each LEAID
-bysort LEAID: egen __county = mode(county_code), maxmode
-replace county_code = __county if missing(county_code)
-drop __county
+* Propagate county_code across years
+bysort LEAID: egen __c = mode(county_code), maxmode
+replace county_code = __c if county_code==""
+drop __c
 
 * 4)--------------------------------- Remove duplicates
 drop if missing(year4)
