@@ -275,10 +275,23 @@ bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
 egen base_exp2 = rowmean( base_66 base_69 base_70) 
 bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
 
-egen base_exp3 = rowmean( base_69 base_70 base_71) 
+egen base_exp3 = rowmean( base_69 base_70 base_71)
 bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
+/**************************************************************************
+   ENROLLMENT WEIGHTS
+**************************************************************************/
 
+* Weight option 1: Average enrollment over all years
+bys LEAID: egen enr_avg_all = mean(enrollment)
+
+* Weight option 2: Average enrollment for 1969-1971
+gen enr_temp = enrollment if inrange(year_unified, 1969, 1971)
+bys LEAID: egen enr_avg_6971 = mean(enr_temp)
+drop enr_temp
+
+label variable enr_avg_all "Average enrollment over all years"
+label variable enr_avg_6971 "Average enrollment 1969-1971"
 
 local year 1966 1969 1970 1971
 foreach y of local year{
@@ -417,11 +430,23 @@ bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
 egen base_exp2 = rowmean( base_66 base_69 base_70) 
 bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
 
-egen base_exp3 = rowmean( base_69 base_70 base_71) 
+egen base_exp3 = rowmean( base_69 base_70 base_71)
 bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
+/**************************************************************************
+   ENROLLMENT WEIGHTS (recalculated for balanced panel)
+**************************************************************************/
 
+* Weight option 1: Average enrollment over all years
+bys LEAID: egen enr_avg_all = mean(enrollment)
 
+* Weight option 2: Average enrollment for 1969-1971
+gen enr_temp = enrollment if inrange(year_unified, 1969, 1971)
+bys LEAID: egen enr_avg_6971 = mean(enr_temp)
+drop enr_temp
+
+label variable enr_avg_all "Average enrollment over all years"
+label variable enr_avg_6971 "Average enrollment 1969-1971"
 
 save jjp_balance,replace
 /**************************************************************************
