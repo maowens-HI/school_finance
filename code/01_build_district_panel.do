@@ -778,7 +778,7 @@ drop _merge
 rename year year4
 append using "indfin_panel_tagged.dta"
 
-keep LEAID GOVID year4 pp_exp good_govid_baseline enrollment level FIPSCO///
+keep LEAID GOVID county_id year4 pp_exp good_govid_baseline enrollment level FIPSCO///
 good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
 duplicates drop LEAID GOVID year4 pp_exp, force
 
@@ -810,6 +810,11 @@ drop __g5
 bysort LEAID: egen __g6 = min(good_govid_1972)
 replace good_govid_1972 = __g6 if missing(good_govid_1972)
 drop __g6
+
+* 2.1)--------------------------------- Propagate county_id across all years
+bysort LEAID: egen county_id_fill = mode(county_id), maxmode
+replace county_id = county_id_fill if missing(county_id)
+drop county_id_fill
 
 * 3)--------------------------------- Remove duplicates
 drop if missing(year4)
