@@ -25,8 +25,8 @@ The original JJP (2016) paper and its Online Appendix describe the following key
 Specifically, we aim to:
 1. Develop crosswalks linking **F-33 (District) ↔ INDFIN (District) ↔ Tract (GRF) ↔ County (GRF)** identifiers.
 2. Reconstruct consistent annual per-pupil spending at the county level.
-3. Use this data to estimate event studies akin to figures 1 and 2 in JJP 2016.
-4. Extend the analysis with **jackknife heterogeneity analysis** to identify which counties experienced the largest spending increases from school finance reforms.
+3. Use this data to estimate event studies akin to figure 1 JJP 2016.
+4. Extend the analysis with **jackknife regressions** to identify which counties experienced the largest spending increases from school finance reforms akin to figure 2 in JJP 2016.
 
 ---
 
@@ -44,7 +44,7 @@ school_finance/
     ├── 05_create_county_panel.do      # Interpolate districts & create county panel
     ├── 06_A_county_balanced_figure1.do    # County-level balanced panel Figure 1
     ├── 06_B_district_balanced_figure1.do  # District-level balanced panel Figure 1
-    ├── 07_jackknife_heterogeneity.do      # Full jackknife heterogeneity analysis
+    ├── 07_jackknife.do      # Full jackknife analysis
     └── experimental_archive/          # Archived experimental analysis files
 ```
 
@@ -58,7 +58,7 @@ school_finance/
 - **Analysis Scripts (06-07):** Main event-study specifications and robustness checks
   - 06_A: County-level balanced panel analysis (Figure 1 replication)
   - 06_B: District-level balanced panel analysis (Figure 1 replication)
-  - 07: Full jackknife heterogeneity analysis (treatment effect heterogeneity)
+  - 07: Full jackknife analysis 
 - **Experimental Archive:** Historical analysis files, robustness checks, and alternative specifications
 
 ---
@@ -91,7 +91,7 @@ Execute main analysis scripts:
 ```stata
 do code/06_A_county_balanced_figure1.do
 do code/06_B_district_balanced_figure1.do
-do code/07_jackknife_heterogeneity.do
+do code/07_jackknife.do
 ```
 
 Or explore archived experimental specifications in `code/experimental_archive/`
@@ -161,17 +161,14 @@ The pipeline follows a sequential process:
    - District-level counterpart to county analysis
    - Uses district panel instead of county aggregation
 
-**Phase III: Heterogeneity Analysis**
+**Phase III: Jacknife**
 8. **07_jackknife_heterogeneity.do** - Leave-one-state-out jackknife to identify treatment effect heterogeneity
    - **Purpose:** Identifies which counties experienced larger spending increases from reforms
    - **Method:** For each state, estimates treatment effects excluding that state's data, then predicts spending increases for excluded state
-   - **Why jackknife?** Avoids mechanical correlation between a state's data and its predicted effects
    - **Panel:** Uses balanced panel (complete -5 to +17 event windows)
-   - **Heterogeneity dimensions:** Baseline spending quartiles + median family income quartiles
    - **Outputs:**
      - High vs low predicted spending group comparisons
      - Quartile analysis showing differential treatment effects
-     - Combined plots for publication
 
 **Phase IV: Archived Experiments**
 - `experimental_archive/` contains historical robustness checks, alternative specifications, and exploratory analyses
