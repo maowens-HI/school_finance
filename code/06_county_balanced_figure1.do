@@ -126,25 +126,6 @@ foreach y of local years {
     merge m:1 state_fips county_id using `q`y'', nogen
 }
 
-*--- Create average baseline spending across multiple years
-local number 66 69 70 71
-foreach n of local number {
-    gen base_`n' = .
-    replace base_`n' = exp if year_unified == 19`n'
-    bys county_id: egen base_`n'_max = max(base_`n')
-    drop base_`n'
-    rename base_`n'_max base_`n'
-}
-
-*--- Create quartiles based on multi-year averages
-egen base_exp = rowmean(base_66 base_69 base_70 base_71)
-bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
-
-egen base_exp2 = rowmean(base_66 base_69 base_70)
-bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
-
-egen base_exp3 = rowmean(base_69 base_70 base_71)
-bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
 *** ---------------------------------------------------------------------------
 *** Section 5: Create Lead and Lag Indicators
@@ -248,25 +229,6 @@ foreach y of local years {
     merge m:1 state_fips county_id using `q`y'', nogen
 }
 
-*--- Recreate multi-year baseline averages
-local number 66 69 70 71
-foreach n of local number {
-    gen base_`n' = .
-    replace base_`n' = exp if year_unified == 19`n'
-    bys county_id: egen base_`n'_max = max(base_`n')
-    drop base_`n'
-    rename base_`n'_max base_`n'
-}
-
-egen base_exp = rowmean(base_66 base_69 base_70 base_71)
-bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
-
-egen base_exp2 = rowmean(base_66 base_69 base_70)
-bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
-
-egen base_exp3 = rowmean(base_69 base_70 base_71)
-bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
-
 drop _merge
 save jjp_balance, replace
 
@@ -275,8 +237,8 @@ save jjp_balance, replace
 *** ---------------------------------------------------------------------------
 
 local var lexp lexp_ma lexp_ma_strict
-local years   pre_q1966  pre_q1969 pre_q1970  pre_q1971 pre_q_66_70 pre_q_66_71 pre_q_69_71
-local good good_66 good_69 good_70 good_71 good_66_70 good_66_71 good_69_71
+local years   pre_q1966  pre_q1969 pre_q1970  pre_q1971
+local good good_66 good_69 good_70 good_71
 local n: word count `years'
 
 forvalues i = 1/`n' {
@@ -343,8 +305,8 @@ forvalues i = 1/`n' {
 *** ---------------------------------------------------------------------------
 
 local var lexp lexp_ma lexp_ma_strict
-local years   pre_q1966  pre_q1969 pre_q1970  pre_q1971 pre_q_66_70 pre_q_66_71 pre_q_69_71
-local good good_66 good_69 good_70 good_71 good_66_70 good_66_71 good_69_71
+local years   pre_q1966  pre_q1969 pre_q1970  pre_q1971
+local good good_66 good_69 good_70 good_71
 local n: word count `years'
 
 forvalues i = 1/`n' {

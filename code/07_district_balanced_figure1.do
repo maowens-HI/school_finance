@@ -267,24 +267,6 @@ foreach y of local years {
     merge m:1 state_fips LEAID using `q`y'', nogen
 }
 
-*--- Create multi-year baseline averages
-local number 66 69 70 71
-foreach n of local number {
-    gen base_`n' = .
-    replace base_`n' = exp if year_unified == 19`n'
-    bys LEAID: egen base_`n'_max = max(base_`n')
-    drop base_`n'
-    rename base_`n'_max base_`n'
-}
-
-egen base_exp = rowmean(base_66 base_69 base_70 base_71)
-bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
-
-egen base_exp2 = rowmean(base_66 base_69 base_70)
-bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
-
-egen base_exp3 = rowmean(base_69 base_70 base_71)
-bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
 *** ---------------------------------------------------------------------------
 *** Section 6: Create Enrollment Weights
@@ -401,25 +383,6 @@ restore
 foreach y of local years {
     merge m:1 state_fips LEAID using `q`y'', nogen
 }
-
-*--- Recreate multi-year baseline averages
-local number 66 69 70 71
-foreach n of local number {
-    gen base_`n' = .
-    replace base_`n' = exp if year_unified == 19`n'
-    bys LEAID: egen base_`n'_max = max(base_`n')
-    drop base_`n'
-    rename base_`n'_max base_`n'
-}
-
-egen base_exp = rowmean(base_66 base_69 base_70 base_71)
-bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
-
-egen base_exp2 = rowmean(base_66 base_69 base_70)
-bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
-
-egen base_exp3 = rowmean(base_69 base_70 base_71)
-bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
 save jjp_balance, replace
 
