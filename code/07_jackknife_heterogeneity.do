@@ -24,8 +24,10 @@ WHY THIS MATTERS:
   This jackknife approach addresses potential endogeneity in heterogeneity analysis.
   By excluding each state when predicting its treatment effects, we avoid
   mechanical correlation between the state's data and its predicted effects.
-  This provides more credible estimates of which counties benefited most from
-  school finance reforms.
+  The balanced panel restriction ensures all treated counties have complete data
+  coverage from 5 years pre-reform to 17 years post-reform, strengthening the
+  parallel trends assumption. This provides more credible estimates of which
+  counties benefited most from school finance reforms.
 
 METHODOLOGICAL NOTES:
   - Predicted spending = avg_main + avg_ppe_q2 + avg_ppe_q3 + avg_ppe_q4 + avg_inc_q
@@ -39,8 +41,9 @@ INPUTS:
   - tabula-tabled2.xlsx       (reform data from JJP 2016)
 
 OUTPUTS:
-  - jjp_interp.dta                  (Full county panel with all variables)
-  - pred_spend_ppe_all.dta          (Dataset with predicted spending classifications)
+  - jjp_interp_jk.dta               (Full county panel with all variables)
+  - jjp_balance_jk.dta              (Balanced county panel)
+  - pred_spend_ppe_all_jk.dta       (Dataset with predicted spending classifications)
   - Event-study graphs:
       * High predicted spending group
       * Low predicted spending group
@@ -109,7 +112,7 @@ replace relative_year = . if missing(reform_year)
 encode county_id, gen(county_num)
 
 drop if missing(exp)
-save interp_temp, replace
+save interp_temp_jk, replace
 
 *** ---------------------------------------------------------------------------
 *** Section 4: Create Baseline Spending Quartiles (Multiple Years)
@@ -119,7 +122,7 @@ save interp_temp, replace
 local years 1966 1969 1970 1971
 preserve
 foreach y of local years {
-    use interp_temp, clear
+    use interp_temp_jk, clear
     keep if year_unified == `y'
     keep if !missing(exp, state_fips, county_id)
 
@@ -218,17 +221,68 @@ drop if county_id == "06037"
 *** Section 7: Save Intermediate Dataset
 *** ---------------------------------------------------------------------------
 
-save jjp_interp, replace
+save jjp_interp_jk, replace
 
 *** ---------------------------------------------------------------------------
-*** Section 8: JACKKNIFE PROCEDURE - Run Leave-One-State-Out Regressions
+*** Section 8: Create Balanced Panel (Event-Time Restriction)
+*** ---------------------------------------------------------------------------
+
+di as result _n "***********************************************"
+di as result "*** CREATING BALANCED PANEL ***"
+di as result "***********************************************" _n
+
+*--- Identify counties with complete event windows (-5 to +17)
+preserve
+keep if inrange(relative_year, -5, 17)  // Only check within the event window
+
+* Find counties with complete windows
+bys county_id: egen min_rel = min(relative_year)
+bys county_id: egen max_rel = max(relative_year)
+bys county_id: gen n_rel = _N
+
+* Keep only if they have the full window
+keep if min_rel == -5 & max_rel == 17 & n_rel == 23
+
+* Count nonmissing lexp in the window
+bys county_id: gen n_nonmiss = sum(!missing(lexp_ma_strict))
+bys county_id: replace n_nonmiss = n_nonmiss[_N]
+
+* Keep only counties with full window AND no missing spending
+keep if min_rel == -5 & max_rel == 17 & n_rel == 23 & n_nonmiss == 23
+
+keep county_id
+duplicates drop
+gen balance = 1
+tempfile balance
+save `balance'
+restore
+
+*--- Merge balance indicator back
+merge m:1 county_id using `balance'
+replace balance = 0 if missing(balance)
+
+*--- Display balance statistics
+di as text _n "Balance Statistics:"
+tab balance
+tab balance if ever_treated == 1
+
+*--- Keep balanced counties and never-treated controls
+keep if balance == 1 | never_treated2 == 1
+
+di as text _n "Sample size after balanced panel restriction:"
+unique county_id
+
+save jjp_balance_jk, replace
+
+*** ---------------------------------------------------------------------------
+*** Section 9: JACKKNIFE PROCEDURE - Run Leave-One-State-Out Regressions
 *** ---------------------------------------------------------------------------
 
 di as result _n "***********************************************"
 di as result "*** STARTING JACKKNIFE PROCEDURE ***"
 di as result "***********************************************" _n
 
-use jjp_interp, clear
+use jjp_balance_jk, clear
 
 *--- Use 1971 baseline quartile as primary specification
 rename pre_q1971 pre_q
@@ -239,7 +293,7 @@ save `reg_temp'
 *--- Get list of all states in the data
 levelsof state_fips, local(states)
 local n_states : word count `states'
-di as result "Running jackknife for `n_states' states..."
+di as result "Running jackknife for `n_states' states on BALANCED PANEL..."
 
 *--- Loop 1: Run regressions excluding each state and save estimates
 local counter = 0
@@ -251,12 +305,12 @@ foreach s of local states {
     use `reg_temp', clear
     drop if state_fips == "`s'"
 
-    *--- Main event-study regression with interactions
+    *--- Main event-study regression with interactions on BALANCED PANEL
     quietly areg lexp_ma_strict ///
         i.lag_*##i.pre_q i.lead_*##i.pre_q ///
         i.lag_*##i.inc_q i.lead_*##i.inc_q ///
         i.year_unified##i.pre_q##i.inc_q ///
-        [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
+        [aw = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
         absorb(county_id) vce(cluster county_id)
 
     estimates save layer_mod_`s', replace
@@ -266,7 +320,7 @@ foreach s of local states {
 di as result _n "Jackknife regressions completed!" _n
 
 *** ---------------------------------------------------------------------------
-*** Section 9: Extract Coefficients and Calculate Predicted Spending
+*** Section 10: Extract Coefficients and Calculate Predicted Spending
 *** ---------------------------------------------------------------------------
 
 di as result "***********************************************"
@@ -366,7 +420,7 @@ foreach s of local states {
 di as result _n "Coefficient extraction completed!" _n
 
 *** ---------------------------------------------------------------------------
-*** Section 10: Combine Predicted Spending Across All States
+*** Section 11: Combine Predicted Spending Across All States
 *** ---------------------------------------------------------------------------
 
 use `reg_temp', clear
@@ -382,7 +436,7 @@ foreach s of local states {
 }
 
 *** ---------------------------------------------------------------------------
-*** Section 11: Create High/Low Predicted Spending Groups
+*** Section 12: Create High/Low Predicted Spending Groups
 *** ---------------------------------------------------------------------------
 
 di as result "***********************************************"
@@ -405,17 +459,17 @@ label values pred_q q_lbl
 summ pred_spend, detail
 tab pre_q high_treated if never_treated == 0, m
 
-save pred_spend_ppe_all, replace
+save pred_spend_ppe_all_jk, replace
 
 *** ---------------------------------------------------------------------------
-*** Section 12: Event-Study Regression - High Predicted Spending Group
+*** Section 13: Event-Study Regression - High Predicted Spending Group
 *** ---------------------------------------------------------------------------
 
 di as result _n "***********************************************"
 di as result "*** RUNNING EVENT-STUDY: HIGH GROUP ***"
 di as result "***********************************************" _n
 
-use pred_spend_ppe_all, clear
+use pred_spend_ppe_all_jk, clear
 
 *--- Display cross-tabulation
 tab pre_q high_treated, m
@@ -468,14 +522,14 @@ twoway (rarea ci_lo ci_hi relative_year, color(gs12%40) cmissing(n)) ///
        graphregion(color(white))
 
 *** ---------------------------------------------------------------------------
-*** Section 13: Event-Study Regression - Low Predicted Spending Group
+*** Section 14: Event-Study Regression - Low Predicted Spending Group
 *** ---------------------------------------------------------------------------
 
 di as result _n "***********************************************"
 di as result "*** RUNNING EVENT-STUDY: LOW GROUP ***"
 di as result "***********************************************" _n
 
-use pred_spend_ppe_all, clear
+use pred_spend_ppe_all_jk, clear
 
 *--- Display cross-tabulation
 tab pre_q low_treated, m
@@ -528,7 +582,7 @@ twoway (rarea ci_lo ci_hi relative_year, color(gs12%40) cmissing(n)) ///
        graphregion(color(white))
 
 *** ---------------------------------------------------------------------------
-*** Section 14: Combined Plot - High vs Low Predicted Spending
+*** Section 15: Combined Plot - High vs Low Predicted Spending
 *** ---------------------------------------------------------------------------
 
 di as result _n "***********************************************"
@@ -565,14 +619,14 @@ twoway ///
     graphregion(color(white))
 
 *** ---------------------------------------------------------------------------
-*** Section 15: Quartile Analysis - All Four Groups
+*** Section 16: Quartile Analysis - All Four Groups
 *** ---------------------------------------------------------------------------
 
 di as result _n "***********************************************"
 di as result "*** RUNNING QUARTILE ANALYSIS ***"
 di as result "***********************************************" _n
 
-use pred_spend_ppe_all, clear
+use pred_spend_ppe_all_jk, clear
 
 *--- Run event-study regression with quartile interactions
 areg lexp_ma_strict ///
@@ -641,14 +695,14 @@ twoway ///
     graphregion(color(white))
 
 *** ---------------------------------------------------------------------------
-*** Section 16: Summary Statistics and Diagnostics
+*** Section 17: Summary Statistics and Diagnostics
 *** ---------------------------------------------------------------------------
 
 di as result _n "***********************************************"
 di as result "*** SUMMARY STATISTICS ***"
 di as result "***********************************************" _n
 
-use pred_spend_ppe_all, clear
+use pred_spend_ppe_all_jk, clear
 
 *--- Display predicted spending distribution
 di as text _n "Predicted Spending Distribution:"
@@ -678,8 +732,9 @@ foreach s of local states {
 }
 
 di as text "Output files saved:"
-di as text "  - jjp_interp.dta (full county panel)"
-di as text "  - pred_spend_ppe_all.dta (predicted spending classifications)"
+di as text "  - jjp_interp_jk.dta (full county panel)"
+di as text "  - jjp_balance_jk.dta (balanced county panel)"
+di as text "  - pred_spend_ppe_all_jk.dta (predicted spending classifications)"
 
 *** ---------------------------------------------------------------------------
 *** END OF FILE
