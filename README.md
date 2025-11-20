@@ -209,13 +209,4 @@ If referencing the original study:
 
 ---
 
-### **Version History**
-
-| Date | Update |
-|------|--------|
-| 2025-11-20 | Updated README to reflect new file naming (06_A, 06_B) and experimental_archive/ folder structure |
-| 2025-11-14 | Renamed core pipeline files (01-05) with descriptive names |
-
----
-
 *For AI assistants working with this codebase: Please refer to CLAUDE.md for comprehensive project documentation, coding conventions, and task-specific guidance.*
