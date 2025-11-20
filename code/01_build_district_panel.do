@@ -680,8 +680,32 @@ assert !missing(LEAID)
 isid LEAID
 drop _merge
 
+*--------------------------------------------------------------*
+* D.1) Propagate county_id from F-33 panel
+*--------------------------------------------------------------*
+
+* Extract unique LEAID-county_id pairs from F-33
+preserve
+    use "f33_panel.dta", clear
+    keep LEAID county_id
+    drop if missing(county_id)
+
+    * Keep most common county_id per LEAID (handles rare cases of boundary changes)
+    bysort LEAID county_id: gen n = _N
+    bysort LEAID: egen max_n = max(n)
+    keep if n == max_n
+    duplicates drop LEAID, force
+    drop n max_n
+
+    tempfile county_map
+    save `county_map', replace
+restore
+
+* Merge county_id into crosswalk
+merge m:1 LEAID using `county_map', keepusing(county_id) keep(master match) nogen
+
 // Order
-order LEAID GOVID good_govid_baseline good_govid_baseline_6771 good_govid_baseline_7072 ///
+order LEAID GOVID county_id good_govid_baseline good_govid_baseline_6771 good_govid_baseline_7072 ///
       good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 ///
       n_baseline_years_present n_baseline_years_present_6771 n_baseline_years_present_7072 ///
       mapped_1to1 fail_unmapped
