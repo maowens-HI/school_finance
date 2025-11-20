@@ -184,7 +184,7 @@ If referencing the original study:
 ---
 
 ### **Contact**
-**Author:** Myles Owens
+**Research Analyst:** Myles Owens
 **Affiliation:** Hoover Institution, Stanford University
 **Email:** myles.owens@stanford.edu
 **GitHub:** [maowens-HI/school_finance](https://github.com/maowens-HI/school_finance)
