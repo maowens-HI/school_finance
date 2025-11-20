@@ -43,6 +43,7 @@ school_finance/
     ├── 05_create_county_panel.do      # Interpolate districts & create county panel
     ├── 06_A_county_balanced_figure1.do    # County-level balanced panel Figure 1
     ├── 06_B_district_balanced_figure1.do  # District-level balanced panel Figure 1
+    ├── 07_jackknife_heterogeneity.do      # Full jackknife heterogeneity analysis
     └── experimental_archive/          # Archived experimental analysis files
 ```
 
@@ -53,9 +54,10 @@ school_finance/
   - 03: Adjust tract spending for inflation
   - 04: Tag county quality (baseline data completeness)
   - 05: Interpolate districts & create county panel
-- **Analysis Scripts (06):** Main event-study specifications for Figure 1 replication
-  - 06_A: County-level balanced panel analysis
-  - 06_B: District-level balanced panel analysis
+- **Analysis Scripts (06-07):** Main event-study specifications and robustness checks
+  - 06_A: County-level balanced panel analysis (Figure 1 replication)
+  - 06_B: District-level balanced panel analysis (Figure 1 replication)
+  - 07: Full jackknife heterogeneity analysis (treatment effect heterogeneity)
 - **Experimental Archive:** Historical analysis files, robustness checks, and alternative specifications
 
 ---
@@ -88,6 +90,7 @@ Execute main analysis scripts:
 ```stata
 do code/06_A_county_balanced_figure1.do
 do code/06_B_district_balanced_figure1.do
+do code/07_jackknife_heterogeneity.do
 ```
 
 Or explore archived experimental specifications in `code/experimental_archive/`

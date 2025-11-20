@@ -34,6 +34,9 @@ school_finance/
     ├── 03_adjust_inflation.do         # Adjust tract spending for inflation
     ├── 04_tag_county_quality.do       # Tag counties as good/bad (baseline data)
     ├── 05_create_county_panel.do      # Interpolate districts & create county panel
+    ├── 06_A_county_balanced_figure1.do    # County-level balanced panel Figure 1
+    ├── 06_B_district_balanced_figure1.do  # District-level balanced panel Figure 1
+    ├── 07_jackknife_heterogeneity.do      # Full jackknife heterogeneity analysis
     ├── balance.do                     # Panel balance testing
     ├── district_only.do               # [Experimental] District-level regressions
     ├── test_reg.do                    # [Experimental] Regression specification testing
@@ -52,6 +55,10 @@ school_finance/
 **Pipeline Organization:**
 - **Core Pipeline (01-05):** Sequential data construction and preparation
   - 01_build_district_panel.do → 02_build_tract_panel.do → 03_adjust_inflation.do → 04_tag_county_quality.do → 05_create_county_panel.do
+- **Analysis Scripts (06-07):** Main event-study specifications and robustness checks
+  - 06_A_county_balanced_figure1.do: County-level balanced panel Figure 1 replication
+  - 06_B_district_balanced_figure1.do: District-level balanced panel Figure 1 replication
+  - 07_jackknife_heterogeneity.do: Full jackknife analysis for treatment effect heterogeneity
 - **Balance Testing (balance.do):** Quality check for event-study readiness
 - **Experimental Files (11_*.do, district_only.do, test_reg.do):** Various regression specifications testing different samples, weights, and robustness checks. All follow similar patterns: creating leads/lags, baseline quartiles, and running event-study regressions.
 
@@ -645,8 +652,9 @@ list LEAID year if good_govid==0 & _n<=20
 | `run.do` | Master runner - start here to understand pipeline |
 | `01_build_district_panel.do` | District ID crosswalks - critical for linking data |
 | `05_create_county_panel.do` | Interpolates districts, assigns to tracts, collapses to counties |
+| `06_A_county_balanced_figure1.do` | County-level Figure 1 replication (main analysis) |
+| `07_jackknife_heterogeneity.do` | Full jackknife heterogeneity analysis (treatment effect variation) |
 | `balance.do` | Panel balance - determines final sample |
-| `11_7_25_restrict.do` | Example experimental specification with balanced panel |
 
 ### Most Important Variables
 
