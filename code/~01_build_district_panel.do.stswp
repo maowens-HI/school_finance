@@ -107,19 +107,45 @@ tempfile base
 
 local first = 1
 
-* 2)--------------------------------- Extract year from filename and load variables
+* 2)--------------------------------- Extract year and load variables
 foreach f of local files {
     disp "Processing `f'"
 
-    * Try to pull year (example: "sdf92.dta" → 1992)
+    * Try to pull year
     local shortyr = substr("`f'", 4, 2)
     local year = cond(real("`shortyr'") < 50, 2000 + real("`shortyr'"), 1900 + real("`shortyr'"))
 
-    use LEAID CENSUSID NAME V33 TOTALEXP SCHLEV using "`f'", clear
+    * 1. Load ALL variables
+    use "`f'", clear
+
+    * 2. Explicit Variable Rename (No Capture)
+    quietly ds
+    local current_vars "`r(varlist)'"
+
+    if strpos(" `current_vars' ", " FIPSCO ") > 0 {
+        rename FIPSCO county_id
+    }
+    if strpos(" `current_vars' ", " CONUM ") > 0 {
+        rename CONUM county_id
+    }
+
+    * 3. Standardize to 3 Digits (Strip State Code)
+    * First, ensure it is a string
+    tostring county_id, replace
+    replace county_id = trim(county_id)
+    
+    * LOGIC: Prepend zeros (to handle "95"), then take the LAST 3 characters.
+    * If it was "01095" -> "00001095" -> takes last 3 -> "095"
+    * If it was "95"    -> "00095"    -> takes last 3 -> "095"
+    replace county_id = substr("000" + county_id, -3, 3)
+
+    * 4. Keep variables
+    keep LEAID CENSUSID NAME V33 TOTALEXP SCHLEV county_id
+
     gen year = `year'
 
     if `first' {
-        save `base'
+        save `base', replace
         local first = 0
     }
     else {
@@ -128,6 +154,20 @@ foreach f of local files {
     }
 }
 
+*--------------------------------------------------------------*
+* POST-APPEND: Reconstruct Full 5-Digit FIPS
+*--------------------------------------------------------------*
+use `base', clear
+
+* Extract State FIPS from the first 2 digits of LEAID
+* Then combine it with the 3-digit county_id we cleaned above
+gen state_code = substr(LEAID, 1, 2)
+replace county_id = state_code + county_id
+
+* Drop the temporary helper variable if you don't need it
+drop state_code
+
+save `base', replace
 * 3)--------------------------------- Load unified tempfile
 use `base', clear
 
@@ -714,7 +754,7 @@ drop _merge
 rename year year4
 append using "indfin_panel_tagged.dta"
 
-keep LEAID GOVID year4 pp_exp good_govid_baseline enrollment level ///
+keep LEAID GOVID year4 pp_exp good_govid_baseline enrollment level FIPSCO///
 good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
 duplicates drop LEAID GOVID year4 pp_exp, force
 

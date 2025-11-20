@@ -37,14 +37,16 @@ bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
 
 *--- 2. Interpolate county expenditures --------------------------------------
 bys LEAID_num: ipolate pp_exp year4 if too_far == 0, gen(exp2) 
+bys LEAID_num: ipolate enrollment year4 if too_far == 0, gen(enr2) 
 // We create exp2 the imputed spending 
 
 replace exp2 = pp_exp if !missing(pp_exp)
-
+replace enr2 = enrollment if !missing(enrollment)
 drop pp_exp gap_next too_far
-
+drop enrollment
 rename exp2 pp_exp
-*/
+rename enr2 enrollment
+
 *** ---------------------------------------------------------------------------
 *** Save final panel
 *** ---------------------------------------------------------------------------
@@ -217,10 +219,8 @@ gen lexp_ma_strict = log(exp_ma_strict)
 gen relative_year = year_unified - reform_year
 replace relative_year = . if missing(reform_year)
 
-* Convert string LEAID → numeric
-encode LEAID, gen(county_num)
 
-drop if missing(exp)
+
 save interp_temp, replace
 
 
@@ -305,7 +305,6 @@ replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year) //  bins
 
 
 
-drop if LEAID == "06037"
 /**************************************************************************
    SAVE CLEAN INTERPOLATED DATASET
 **************************************************************************/
@@ -354,7 +353,7 @@ save `balance'
 restore
 
 use `balance',clear
-merge 1:m LEAID using jjp_district
+merge 1:m LEAID using jjp_interp
 * Mark unbalanced counties
 replace balance = 0 if missing(balance)
 **************
@@ -365,12 +364,69 @@ keep if balance ==1 | never_treated2 ==1 // keep balanced counties & never treat
 
 
 
-drop pre_q* base_*
 
 /**************************************************************************
 *   BASELINE QUARTILES (1969–1971) + AVERAGE BASELINE
 **************************************************************************/
-local var lexp lexp_ma_strict
+/*
+drop pre_q* base_*
+
+
+
+local years 1966 1969 1970 1971
+preserve
+foreach y of local years {
+
+    use interp_temp, clear
+    keep if year_unified == `y'
+    keep if !missing(exp, state_fips, LEAID)
+
+    count
+    if r(N)==0 {
+        di as error "No observations for year `y' — skipping."
+        continue
+    }
+
+    bysort state_fips: egen pre_q`y' = xtile(exp), n(4)
+    keep state_fips LEAID pre_q`y'
+
+    tempfile q`y'
+    save `q`y'', replace
+
+
+}
+restore
+* Merge quartiles back
+foreach y of local years {
+    merge m:1 state_fips LEAID using `q`y'', nogen
+}
+
+* Average baseline 1969–1971
+local number 66 69 70 71
+foreach n of local number {
+    gen base_`n' = .
+    replace base_`n' = exp if year_unified == 19`n'
+    bys LEAID: egen base_`n'_max = max(base_`n')
+    drop base_`n'
+    rename base_`n'_max base_`n'
+}
+egen base_exp = rowmean( base_66 base_69 base_70 base_71) 
+bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
+
+egen base_exp2 = rowmean( base_66 base_69 base_70) 
+bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
+
+egen base_exp3 = rowmean( base_69 base_70 base_71) 
+bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
+
+*/
+
+
+save jjp_balance,replace
+/**************************************************************************
+*   Regression
+**************************************************************************/
+local var lexp_ma_strict
 
 local years   pre_q1971 
 local good good_71 
@@ -440,9 +496,9 @@ graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\not
 * Regression: exclude top quartile (q == 4)
 *--------------------------------------*
 **********************************/
-local var lexp lexp_ma_strict
+local var  lexp_ma_strict
 
-local years    pre_q1971 
+local years   pre_q1971 
 local good  good_71 
 
 local n: word count `years'
