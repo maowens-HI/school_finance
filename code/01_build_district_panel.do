@@ -778,7 +778,7 @@ drop _merge
 rename year year4
 append using "indfin_panel_tagged.dta"
 
-keep LEAID GOVID county_id year4 pp_exp good_govid_baseline enrollment level FIPSCO///
+keep LEAID GOVID county_id year4 pp_exp good_govid_baseline enrollment level ///
 good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
 duplicates drop LEAID GOVID year4 pp_exp, force
 
