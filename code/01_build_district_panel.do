@@ -434,12 +434,31 @@ preserve
     save grf_id_tractlevel, replace
 restore
 
+*** Create county_code-LEAID mapping (one county per LEAID)
+* Use mode (most common) county per district
+preserve
+	gen str5 county_code = string(stc70,"%02.0f") + string(coc70,"%03.0f")
+	* Keep one row per LEAID-county pair
+	bysort LEAID county_code: keep if _n == 1
+	* Count frequency of each county per LEAID
+	bysort LEAID: gen county_freq = _N
+	* Sort by LEAID and frequency (descending) to get most common county first
+	gsort LEAID -county_freq county_code
+	* Keep first (most common) county per LEAID
+	bysort LEAID: keep if _n == 1
+	keep LEAID county_code
+	tempfile leaid_county
+	save `leaid_county', replace
+restore
+
 *** one row per LEAID with its school district type code (sdtc)
 keep LEAID
 duplicates tag LEAID, gen(dup)
 bysort LEAID: keep if _n == 1
 drop if missing(LEAID)
 drop dup
+* Merge in county_code
+merge 1:1 LEAID using `leaid_county', nogen
 save grf_id, replace // a master list of all LEAIDs in the GRF
 
 
@@ -772,4 +791,8 @@ drop _merge
 
 * 3)--------------------------------- Save final canonical panel
 save f33_indfin_grf_canon, replace
+
+* 4)--------------------------------- Resave district_panel_tagged with county_code for downstream use
+* This ensures county_code is available in files that use district_panel_tagged
+save "district_panel_tagged.dta", replace
 

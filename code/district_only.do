@@ -354,7 +354,7 @@ save `balance'
 restore
 
 use `balance',clear
-merge 1:m LEAID using jjp_district
+merge 1:m LEAID using jjp_interp
 * Mark unbalanced counties
 replace balance = 0 if missing(balance)
 **************
@@ -363,6 +363,8 @@ replace balance = 0 if missing(balance)
 * Create balanced-only dataset for analysis
 keep if balance ==1 | never_treated2 ==1 // keep balanced counties & never treateds
 
+* Save balanced dataset for analysis
+save jjp_balance, replace
 
 
 drop pre_q* base_*
