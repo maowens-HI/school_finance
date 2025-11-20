@@ -115,7 +115,29 @@ foreach f of local files {
     local shortyr = substr("`f'", 4, 2)
     local year = cond(real("`shortyr'") < 50, 2000 + real("`shortyr'"), 1900 + real("`shortyr'"))
 
-    use LEAID CENSUSID NAME V33 TOTALEXP SCHLEV using "`f'", clear
+    * Capture all available variables (some years have FIPSCO, others have CONUM)
+    quietly describe using "`f'"
+    local has_conum = 0
+    local has_fipsco = 0
+    local has_fipst = 0
+
+    * Check which county variables exist in this year
+    capture confirm variable CONUM using "`f'"
+    if !_rc local has_conum = 1
+
+    capture confirm variable FIPSCO using "`f'"
+    if !_rc local has_fipsco = 1
+
+    capture confirm variable FIPST using "`f'"
+    if !_rc local has_fipst = 1
+
+    * Build variable list based on what's available
+    local varlist "LEAID CENSUSID NAME V33 TOTALEXP SCHLEV"
+    if `has_fipst' local varlist "`varlist' FIPST"
+    if `has_conum' local varlist "`varlist' CONUM"
+    if `has_fipsco' local varlist "`varlist' FIPSCO"
+
+    use `varlist' using "`f'", clear
     gen year = `year'
 
     if `first' {
@@ -130,6 +152,15 @@ foreach f of local files {
 
 * 3)--------------------------------- Load unified tempfile
 use `base', clear
+
+* 4)--------------------------------- Create county_code from FIPST + CONUM/FIPSCO
+* CONUM appears in newer years, FIPSCO in older years
+gen str5 county_code_f33 = ""
+* Try FIPST + CONUM first (newer years)
+replace county_code_f33 = FIPST + CONUM if !missing(FIPST) & !missing(CONUM)
+* Fall back to FIPST + FIPSCO (older years)
+replace county_code_f33 = FIPST + FIPSCO if missing(county_code_f33) & !missing(FIPST) & !missing(FIPSCO)
+label var county_code_f33 "5-digit county code from F33 (FIPST+CONUM or FIPST+FIPSCO)"
 
 *--------------------------------------------------------------*
 * C) Clean and construct per-pupil expenditure
@@ -218,7 +249,12 @@ di as result "✓ INDFIN panel (1967‑1991) complete."
 gen str9 GOVID = string(id, "%09.0f")
 cd "$SchoolSpending\data"
 
-* 3)--------------------------------- Calculate per-pupil expenditure
+* 3)--------------------------------- Create county_code from statecode + county
+* INDFIN has statecode (2-digit) and county (3-digit)
+gen str5 county_code_indfin = string(statecode, "%02.0f") + string(county, "%03.0f")
+label var county_code_indfin "5-digit county code from INDFIN (statecode+county)"
+
+* 4)--------------------------------- Calculate per-pupil expenditure
 gen pp_exp = .
 replace pp_exp = totalexpenditure/population
 label var pp_exp "Per-pupil expenditure"
@@ -434,31 +470,12 @@ preserve
     save grf_id_tractlevel, replace
 restore
 
-*** Create county_code-LEAID mapping (one county per LEAID)
-* Use mode (most common) county per district
-preserve
-	gen str5 county_code = string(stc70,"%02.0f") + string(coc70,"%03.0f")
-	* Keep one row per LEAID-county pair
-	bysort LEAID county_code: keep if _n == 1
-	* Count frequency of each county per LEAID
-	bysort LEAID: gen county_freq = _N
-	* Sort by LEAID and frequency (descending) to get most common county first
-	gsort LEAID -county_freq county_code
-	* Keep first (most common) county per LEAID
-	bysort LEAID: keep if _n == 1
-	keep LEAID county_code
-	tempfile leaid_county
-	save `leaid_county', replace
-restore
-
 *** one row per LEAID with its school district type code (sdtc)
 keep LEAID
 duplicates tag LEAID, gen(dup)
 bysort LEAID: keep if _n == 1
 drop if missing(LEAID)
 drop dup
-* Merge in county_code
-merge 1:1 LEAID using `leaid_county', nogen
 save grf_id, replace // a master list of all LEAIDs in the GRF
 
 
@@ -734,10 +751,20 @@ rename year year4
 append using "indfin_panel_tagged.dta"
 
 keep LEAID GOVID year4 pp_exp good_govid_baseline enrollment level ///
-good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072
+good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072 ///
+county_code_f33 county_code_indfin
 duplicates drop LEAID GOVID year4 pp_exp, force
 
-* 2)--------------------------------- Propagate good_govid flags across all years
+* 2)--------------------------------- Create unified county_code
+* Prefer F33 county code (1992-2019), fall back to INDFIN (1967-1991)
+gen str5 county_code = ""
+replace county_code = county_code_f33 if !missing(county_code_f33)
+replace county_code = county_code_indfin if missing(county_code) & !missing(county_code_indfin)
+label var county_code "5-digit county code (FIPS state + county)"
+* Drop the source-specific variables
+drop county_code_f33 county_code_indfin
+
+* 3)--------------------------------- Propagate good_govid flags and county_code across all years
 bysort LEAID: egen __g = min(good_govid_baseline)
 replace good_govid_baseline = __g if missing(good_govid_baseline)
 drop __g
@@ -766,7 +793,12 @@ bysort LEAID: egen __g6 = min(good_govid_1972)
 replace good_govid_1972 = __g6 if missing(good_govid_1972)
 drop __g6
 
-* 3)--------------------------------- Remove duplicates
+* Propagate county_code across all years for each LEAID
+bysort LEAID: egen __county = mode(county_code), maxmode
+replace county_code = __county if missing(county_code)
+drop __county
+
+* 4)--------------------------------- Remove duplicates
 drop if missing(year4)
 save "district_panel_tagged.dta", replace
 
@@ -791,8 +823,4 @@ drop _merge
 
 * 3)--------------------------------- Save final canonical panel
 save f33_indfin_grf_canon, replace
-
-* 4)--------------------------------- Resave district_panel_tagged with county_code for downstream use
-* This ensures county_code is available in files that use district_panel_tagged
-save "district_panel_tagged.dta", replace
 
