@@ -96,35 +96,30 @@ drop if missing(exp)
 save interp_temp, replace
 
 *** ---------------------------------------------------------------------------
-*** Section 4: Create Baseline Spending Quartiles
+*** Section 4: Create Baseline Spending Quartiles (1971 only)
 *** ---------------------------------------------------------------------------
 
-local years 1966 1969 1970 1971
 preserve
-foreach y of local years {
-    use interp_temp, clear
-    keep if year_unified == `y'
-    keep if !missing(exp, state_fips, county_id)
+use interp_temp, clear
+keep if year_unified == 1971
+keep if !missing(exp, state_fips, county_id)
 
-    count
-    if r(N)==0 {
-        di as error "No observations for year `y' — skipping."
-        continue
-    }
-
-    *--- Within-state quartiles
-    bysort state_fips: egen pre_q`y' = xtile(exp), n(4)
-    keep state_fips county_id pre_q`y'
-
-    tempfile q`y'
-    save `q`y'', replace
+count
+if r(N)==0 {
+    di as error "No observations for year 1971 — skipping."
+    exit
 }
+
+*--- Within-state quartiles
+bysort state_fips: egen pre_q1971 = xtile(exp), n(4)
+keep state_fips county_id pre_q1971
+
+tempfile q1971
+save `q1971', replace
 restore
 
 *--- Merge quartiles back to main data
-foreach y of local years {
-    merge m:1 state_fips county_id using `q`y'', nogen
-}
+merge m:1 state_fips county_id using `q1971', nogen
 
 
 *** ---------------------------------------------------------------------------
@@ -151,13 +146,7 @@ replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year)   // Bin -5 
 *** Section 6: Rename Good County Indicators
 *** ---------------------------------------------------------------------------
 
-rename good_county_1967 good_66
-rename good_county_1970 good_69
-rename good_county_1971 good_70
-rename good_county_1972 good_71
-rename good_county_6771 good_66_70
-rename good_county good_66_71
-rename good_county_7072 good_69_71
+rename good_county_1971 good_71
 
 save jjp_interp, replace
 
@@ -199,35 +188,30 @@ replace balance = 0 if missing(balance)
 keep if balance == 1 | never_treated2 == 1
 
 *** ---------------------------------------------------------------------------
-*** Section 8: Recalculate Baseline Quartiles on Balanced Sample
+*** Section 8: Recalculate Baseline Quartiles on Balanced Sample (1971 only)
 *** ---------------------------------------------------------------------------
 
-drop pre_q* base_*
+drop pre_q*
 
-local years 1966 1969 1970 1971
 preserve
-foreach y of local years {
-    use interp_temp, clear
-    keep if year_unified == `y'
-    keep if !missing(exp, state_fips, county_id)
+use interp_temp, clear
+keep if year_unified == 1971
+keep if !missing(exp, state_fips, county_id)
 
-    count
-    if r(N)==0 {
-        di as error "No observations for year `y' — skipping."
-        continue
-    }
-
-    bysort state_fips: egen pre_q`y' = xtile(exp), n(4)
-    keep state_fips county_id pre_q`y'
-
-    tempfile q`y'
-    save `q`y'', replace
+count
+if r(N)==0 {
+    di as error "No observations for year 1971 — skipping."
+    exit
 }
+
+bysort state_fips: egen pre_q1971 = xtile(exp), n(4)
+keep state_fips county_id pre_q1971
+
+tempfile q1971
+save `q1971', replace
 restore
 
-foreach y of local years {
-    merge m:1 state_fips county_id using `q`y'', nogen
-}
+merge m:1 state_fips county_id using `q1971', nogen
 
 drop _merge
 save jjp_balance, replace
@@ -237,91 +221,19 @@ save jjp_balance, replace
 *** ---------------------------------------------------------------------------
 
 local var lexp lexp_ma lexp_ma_strict
-local years   pre_q1966  pre_q1969 pre_q1970  pre_q1971
-local good good_66 good_69 good_70 good_71
-local n: word count `years'
 
-forvalues i = 1/`n' {
-    local y : word `i' of `years'
-    local g : word `i' of `good'
-
-    foreach v of local var {
-        forvalues q = 1/4 {
-            use jjp_balance, clear
-            drop if `g' != 1
-            count
-            display "Remaining obs in this iteration: " r(N)
-
-            *--- Weighted event-study regression
-            areg `v' ///
-                i.lag_* i.lead_* ///
-                i.year_unified [w=school_age_pop] ///
-                if `y'==`q' & (never_treated==1 | reform_year<2000), ///
-                absorb(county_id) vce(cluster county_id)
-
-            *--- Extract coefficients
-            tempfile results
-            postfile handle str15 term float rel_year b se using `results', replace
-
-            forvalues k = 5(-1)1 {
-                lincom 1.lead_`k'
-                if !_rc post handle ("lead`k'") (-`k') (r(estimate)) (r(se))
-            }
-
-            post handle ("base0") (0) (0) (0)
-
-            forvalues k = 1/17 {
-                lincom 1.lag_`k'
-                if !_rc post handle ("lag`k'") (`k') (r(estimate)) (r(se))
-            }
-
-            postclose handle
-
-            *--- Create event-study plot
-            use `results', clear
-            sort rel_year
-
-            gen ci_lo = b - 1.645*se
-            gen ci_hi = b + 1.645*se
-
-            twoway ///
-                (rarea ci_lo ci_hi rel_year, color("59 91 132%20") cmissing(n)) ///
-                (line b rel_year, lcolor("42 66 94") lwidth(medium)), ///
-                yline(0, lpattern(dash) lcolor(gs10)) ///
-                xline(0, lpattern(dash) lcolor(gs10)) ///
-                ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
-                title("County Level: `v' | Quartile `q' | `y'", size(medlarge) color("35 45 60")) ///
-                graphregion(color(white)) ///
-                legend(off) ///
-                scheme(s2mono)
-
-            graph export "$SchoolSpending/output/county_reg_`v'_`q'_`y'.png", replace
-        }
-    }
-}
-
-*** ---------------------------------------------------------------------------
-*** Section 10: Event-Study Regressions - Bottom 3 Quartiles (Exclude Top)
-*** ---------------------------------------------------------------------------
-
-local var lexp lexp_ma lexp_ma_strict
-local years   pre_q1966  pre_q1969 pre_q1970  pre_q1971
-local good good_66 good_69 good_70 good_71
-local n: word count `years'
-
-forvalues i = 1/`n' {
-    local y : word `i' of `years'
-    local g : word `i' of `good'
-
-    foreach v of local var {
+foreach v of local var {
+    forvalues q = 1/4 {
         use jjp_balance, clear
-        drop if `g' != 1
+        drop if good_71 != 1
+        count
+        display "Remaining obs in this iteration: " r(N)
 
-        *--- Weighted regression excluding top quartile
+        *--- Weighted event-study regression
         areg `v' ///
             i.lag_* i.lead_* ///
             i.year_unified [w=school_age_pop] ///
-            if `y' < 4 & (never_treated==1 | reform_year<2000), ///
+            if pre_q1971==`q' & (never_treated==1 | reform_year<2000), ///
             absorb(county_id) vce(cluster county_id)
 
         *--- Extract coefficients
@@ -355,13 +267,69 @@ forvalues i = 1/`n' {
             yline(0, lpattern(dash) lcolor(gs10)) ///
             xline(0, lpattern(dash) lcolor(gs10)) ///
             ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
-            title("County Level: `v' | Quartiles 1-3 | `y'", size(medlarge) color("35 45 60")) ///
+            title("County Level: `v' | Quartile `q' | 1971", size(medlarge) color("35 45 60")) ///
             graphregion(color(white)) ///
             legend(off) ///
             scheme(s2mono)
 
-        graph export "$SchoolSpanning/output/county_btm_`v'_`y'.png", replace
+        graph export "$SchoolSpending/output/county_reg_`v'_`q'.png", replace
     }
+}
+
+*** ---------------------------------------------------------------------------
+*** Section 10: Event-Study Regressions - Bottom 3 Quartiles (Exclude Top)
+*** ---------------------------------------------------------------------------
+
+local var lexp lexp_ma lexp_ma_strict
+
+foreach v of local var {
+    use jjp_balance, clear
+    drop if good_71 != 1
+
+    *--- Weighted regression excluding top quartile
+    areg `v' ///
+        i.lag_* i.lead_* ///
+        i.year_unified [w=school_age_pop] ///
+        if pre_q1971 < 4 & (never_treated==1 | reform_year<2000), ///
+        absorb(county_id) vce(cluster county_id)
+
+    *--- Extract coefficients
+    tempfile results
+    postfile handle str15 term float rel_year b se using `results', replace
+
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k'
+        if !_rc post handle ("lead`k'") (-`k') (r(estimate)) (r(se))
+    }
+
+    post handle ("base0") (0) (0) (0)
+
+    forvalues k = 1/17 {
+        lincom 1.lag_`k'
+        if !_rc post handle ("lag`k'") (`k') (r(estimate)) (r(se))
+    }
+
+    postclose handle
+
+    *--- Create event-study plot
+    use `results', clear
+    sort rel_year
+
+    gen ci_lo = b - 1.645*se
+    gen ci_hi = b + 1.645*se
+
+    twoway ///
+        (rarea ci_lo ci_hi rel_year, color("59 91 132%20") cmissing(n)) ///
+        (line b rel_year, lcolor("42 66 94") lwidth(medium)), ///
+        yline(0, lpattern(dash) lcolor(gs10)) ///
+        xline(0, lpattern(dash) lcolor(gs10)) ///
+        ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
+        title("County Level: `v' | Quartiles 1-3 | 1971", size(medlarge) color("35 45 60")) ///
+        graphregion(color(white)) ///
+        legend(off) ///
+        scheme(s2mono)
+
+    graph export "$SchoolSpending/output/county_btm_`v'.png", replace
 }
 
 di as result "County-level balanced panel Figure 1 regressions complete!"
