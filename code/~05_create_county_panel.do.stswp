@@ -129,7 +129,7 @@ encode LEAID, gen(LEAID_num) // LEAID is a string and needs to be changed for in
 
 * 3)--------------------------------- Detect gaps in time series
 bysort LEAID (year): gen gap_next = year[_n+1] - year // gap = next year - current year
-gen too_far = gap_next > 4 // We don't want to impute gaps that are too big
+gen too_far = gap_next > 3 // We don't want to impute gaps that are too big
 
 * 4)--------------------------------- Create full panel structure
 tsset LEAID_num year4
@@ -147,12 +147,15 @@ foreach var in GOVID LEAID good_govid_baseline{
     drop __fill_`var'
 }
 
-bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
+/* Run 3 times to cover max gap size */
+forvalues i = 1/3 {
+    bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
+}
 
 * 2)--------------------------------- Interpolate spending (linear, gaps ≤ 3 years)
-bys LEAID_num: ipolate pp_exp year if too_far == 0, gen(exp2)
+bys LEAID_num: ipolate pp_exp year4 if too_far == 0, gen(exp2)
 // We create exp2 the imputed spending
-bys LEAID_num: ipolate enrollment year if too_far == 0, gen(enroll2)
+bys LEAID_num: ipolate enrollment year4 if too_far == 0, gen(enroll2)
 *--------------------------------------------------------------*
 * C) Save interpolated district panel
 *--------------------------------------------------------------*

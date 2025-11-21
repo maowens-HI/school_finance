@@ -48,6 +48,7 @@ cd "$SchoolSpending\data"
 
 use county_clean, clear
 merge 1:m county using county_exp_final
+keep if _merge == 3
 drop _merge
 replace good_county = 0 if missing(good_county)
 
@@ -188,17 +189,10 @@ keep if balance ==1 | never_treated2 ==1 // keep balanced counties & never treat
 *** ---------------------------------------------------------------------------
 
 drop pre_q*
-
 preserve
-use interp_temp, clear
+drop if good_71 != 1
 keep if year_unified == 1971
 keep if !missing(exp, state_fips, county_id)
-
-count
-if r(N)==0 {
-    di as error "No observations for year 1971 — skipping."
-    exit
-}
 
 bysort state_fips: egen pre_q1971 = xtile(exp), n(4)
 keep state_fips county_id pre_q1971
@@ -213,6 +207,37 @@ drop _merge
 
 save jjp_balance, replace
 
+/**************************************************************************
+*  Weight Investigation
+**************************************************************************/
+
+use jjp_balance, clear
+* County-year table statistics
+egen total_weight = total(school_age_pop)
+bys county_id: egen county_weight = sum(school_age_pop)
+gen weight_share = county_weight / total_weight
+
+* Share of county-year observations
+egen total_obs = count(county_id)
+bys county_id: egen county_obs = count(county_id)
+gen obs_share = county_obs / total_obs
+
+* Create ranking dataset: one row per county
+keep county_id county_name weight_share obs_share 
+order county_id county_name obs_share weight_share
+duplicates drop
+
+* Rank by weight_share
+gsort -weight_share
+gen rank = _n
+keep county_id rank
+save wt_rank,replace
+
+merge 1:m county_id using jjp_balance
+keep if _merge ==3
+drop _merge
+save jjp_rank,replace
+
 *** ---------------------------------------------------------------------------
 *** Section 9: Event-Study Regressions by Quartile
 *** ---------------------------------------------------------------------------
@@ -220,9 +245,10 @@ save jjp_balance, replace
 local var lexp_ma_strict
 
 foreach v of local var {
-    forvalues q = 1/4 {
-        use jjp_balance, clear
+    forvalues q = 4/4 {
+        use jjp_rank, clear
         drop if good_71 != 1
+		*drop if rank > 100
         count
         display "Remaining obs in this iteration: " r(N)
 
@@ -270,6 +296,7 @@ foreach v of local var {
             scheme(s2mono)
 
         *graph export "$SchoolSpending/output/county_reg_`v'_`q'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/county_reg_`v'_`q'.png", replace
     }
 }
 
@@ -280,8 +307,9 @@ foreach v of local var {
 local var lexp_ma_strict
 
 foreach v of local var {
-    use jjp_balance, clear
+    use jjp_rank, clear
     drop if good_71 != 1
+	*drop if rank > 100
 
     *--- Weighted regression excluding top quartile
     areg `v' ///
@@ -327,6 +355,247 @@ foreach v of local var {
         scheme(s2mono)
 
     *graph export "$SchoolSpending/output/county_btm_`v'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/county_btm_`v'.png", replace
+}
+
+*** ---------------------------------------------------------------------------
+*** Section 9: Event-Study Regressions by Quartile
+*** ---------------------------------------------------------------------------
+
+local var lexp_ma_strict
+
+foreach v of local var {
+    forvalues q = 4/4 {
+        use jjp_rank, clear
+        drop if good_71 != 1
+		drop if rank > 100
+        count
+        display "Remaining obs in this iteration: " r(N)
+
+        *--- Weighted event-study regression
+        areg `v' ///
+            i.lag_* i.lead_* ///
+            i.year_unified [w=school_age_pop] ///
+            if pre_q1971==`q' & (never_treated==1 | reform_year<2000), ///
+            absorb(county_id) vce(cluster county_id)
+
+        *--- Extract coefficients
+        tempfile results
+        postfile handle str15 term float rel_year b se using `results', replace
+
+        forvalues k = 5(-1)1 {
+            lincom 1.lead_`k'
+             post handle ("lead`k'") (-`k') (r(estimate)) (r(se))
+        }
+
+        post handle ("base0") (0) (0) (0)
+
+        forvalues k = 1/17 {
+            lincom 1.lag_`k'
+             post handle ("lag`k'") (`k') (r(estimate)) (r(se))
+        }
+
+        postclose handle
+
+        *--- Create event-study plot
+        use `results', clear
+        sort rel_year
+
+        gen ci_lo = b - 1.645*se
+        gen ci_hi = b + 1.645*se
+
+        twoway ///
+            (rarea ci_lo ci_hi rel_year, color("59 91 132%20") cmissing(n)) ///
+            (line b rel_year, lcolor("42 66 94") lwidth(medium)), ///
+            yline(0, lpattern(dash) lcolor(gs10)) ///
+            xline(0, lpattern(dash) lcolor(gs10)) ///
+            ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
+            title("County Level: `v' | Quartile `q' | 1971", size(medlarge) color("35 45 60")) ///
+            graphregion(color(white)) ///
+            legend(off) ///
+            scheme(s2mono)
+
+        *graph export "$SchoolSpending/output/county_reg_`v'_`q'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/top100/county_reg_`v'_`q'.png", replace
+    }
+}
+
+*** ---------------------------------------------------------------------------
+*** Section 10: Event-Study Regressions - Bottom 3 Quartiles (Exclude Top)
+*** ---------------------------------------------------------------------------
+
+local var lexp_ma_strict
+
+foreach v of local var {
+    use jjp_rank, clear
+    drop if good_71 != 1
+	drop if rank > 100
+
+    *--- Weighted regression excluding top quartile
+    areg `v' ///
+        i.lag_* i.lead_* ///
+        i.year_unified [w=school_age_pop] ///
+        if pre_q1971 < 4 & (never_treated==1 | reform_year<2000), ///
+        absorb(county_id) vce(cluster county_id)
+
+    *--- Extract coefficients
+    tempfile results
+    postfile handle str15 term float rel_year b se using `results', replace
+
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k'
+         post handle ("lead`k'") (-`k') (r(estimate)) (r(se))
+    }
+
+    post handle ("base0") (0) (0) (0)
+
+    forvalues k = 1/17 {
+        lincom 1.lag_`k'
+        post handle ("lag`k'") (`k') (r(estimate)) (r(se))
+    }
+
+    postclose handle
+
+    *--- Create event-study plot
+    use `results', clear
+    sort rel_year
+
+    gen ci_lo = b - 1.645*se
+    gen ci_hi = b + 1.645*se
+
+    twoway ///
+        (rarea ci_lo ci_hi rel_year, color("59 91 132%20") cmissing(n)) ///
+        (line b rel_year, lcolor("42 66 94") lwidth(medium)), ///
+        yline(0, lpattern(dash) lcolor(gs10)) ///
+        xline(0, lpattern(dash) lcolor(gs10)) ///
+        ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
+        title("County Level: `v' | Quartiles 1-3 | 1971", size(medlarge) color("35 45 60")) ///
+        graphregion(color(white)) ///
+        legend(off) ///
+        scheme(s2mono)
+
+    *graph export "$SchoolSpending/output/county_btm_`v'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/top100/county_btm_`v'.png", replace
+}
+
+*** ---------------------------------------------------------------------------
+*** Section 9: Event-Study Regressions by Quartile
+*** ---------------------------------------------------------------------------
+
+local var lexp_ma_strict
+
+foreach v of local var {
+    forvalues q = 4/4 {
+        use jjp_rank, clear
+        drop if good_71 != 1
+	drop if rank <= 100
+        count
+        display "Remaining obs in this iteration: " r(N)
+
+        *--- Weighted event-study regression
+        areg `v' ///
+            i.lag_* i.lead_* ///
+            i.year_unified [w=school_age_pop] ///
+            if pre_q1971==`q' & (never_treated==1 | reform_year<2000), ///
+            absorb(county_id) vce(cluster county_id)
+
+        *--- Extract coefficients
+        tempfile results
+        postfile handle str15 term float rel_year b se using `results', replace
+
+        forvalues k = 5(-1)1 {
+            lincom 1.lead_`k'
+             post handle ("lead`k'") (-`k') (r(estimate)) (r(se))
+        }
+
+        post handle ("base0") (0) (0) (0)
+
+        forvalues k = 1/17 {
+            lincom 1.lag_`k'
+             post handle ("lag`k'") (`k') (r(estimate)) (r(se))
+        }
+
+        postclose handle
+
+        *--- Create event-study plot
+        use `results', clear
+        sort rel_year
+
+        gen ci_lo = b - 1.645*se
+        gen ci_hi = b + 1.645*se
+
+        twoway ///
+            (rarea ci_lo ci_hi rel_year, color("59 91 132%20") cmissing(n)) ///
+            (line b rel_year, lcolor("42 66 94") lwidth(medium)), ///
+            yline(0, lpattern(dash) lcolor(gs10)) ///
+            xline(0, lpattern(dash) lcolor(gs10)) ///
+            ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
+            title("County Level: `v' | Quartile `q' | 1971", size(medlarge) color("35 45 60")) ///
+            graphregion(color(white)) ///
+            legend(off) ///
+            scheme(s2mono)
+
+        *graph export "$SchoolSpending/output/county_reg_`v'_`q'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/btm100/county_reg_`v'_`q'.png", replace
+    }
+}
+
+*** ---------------------------------------------------------------------------
+*** Section 10: Event-Study Regressions - Bottom 3 Quartiles (Exclude Top)
+*** ---------------------------------------------------------------------------
+
+local var lexp_ma_strict
+
+foreach v of local var {
+    use jjp_rank, clear
+    drop if good_71 != 1
+	drop if rank <= 100
+
+    *--- Weighted regression excluding top quartile
+    areg `v' ///
+        i.lag_* i.lead_* ///
+        i.year_unified [w=school_age_pop] ///
+        if pre_q1971 < 4 & (never_treated==1 | reform_year<2000), ///
+        absorb(county_id) vce(cluster county_id)
+
+    *--- Extract coefficients
+    tempfile results
+    postfile handle str15 term float rel_year b se using `results', replace
+
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k'
+         post handle ("lead`k'") (-`k') (r(estimate)) (r(se))
+    }
+
+    post handle ("base0") (0) (0) (0)
+
+    forvalues k = 1/17 {
+        lincom 1.lag_`k'
+        post handle ("lag`k'") (`k') (r(estimate)) (r(se))
+    }
+
+    postclose handle
+
+    *--- Create event-study plot
+    use `results', clear
+    sort rel_year
+
+    gen ci_lo = b - 1.645*se
+    gen ci_hi = b + 1.645*se
+
+    twoway ///
+        (rarea ci_lo ci_hi rel_year, color("59 91 132%20") cmissing(n)) ///
+        (line b rel_year, lcolor("42 66 94") lwidth(medium)), ///
+        yline(0, lpattern(dash) lcolor(gs10)) ///
+        xline(0, lpattern(dash) lcolor(gs10)) ///
+        ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
+        title("County Level: `v' | Quartiles 1-3 | 1971", size(medlarge) color("35 45 60")) ///
+        graphregion(color(white)) ///
+        legend(off) ///
+        scheme(s2mono)
+
+    *graph export "$SchoolSpending/output/county_btm_`v'.png", replace
+graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/btm100/county_btm_`v'.png", replace
 }
 
 

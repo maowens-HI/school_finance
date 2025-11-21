@@ -13,13 +13,11 @@ WHAT THIS FILE DOES (Summary):
   • Constructs state-specific fiscal-year CPI averages (states have different FY definitions)
   • Merges CPI deflators to tract-year spending panel
   • Creates pp_exp_real = per-pupil expenditure in constant 2000 dollars
-  • Preserves nominal values for robustness checks
 
 WHY THIS MATTERS (Workflow Context):
   This is Step 3 of the core pipeline. The event-study analysis compares spending
   levels ACROSS TIME (1967-2019) and ACROSS STATES. Without inflation adjustment:
   - $1,000 in 1970 ≠ $1,000 in 2000 (purchasing power differs)
-  - Nominal spending mechanically rises over time (confounds treatment effects)
   
   Challenge: States use different fiscal years (e.g., NY: April-March, CA: July-June).
   Solution: Calculate CPI averages specific to each state's 12-month fiscal period.
@@ -167,13 +165,6 @@ save `deflators', replace
 use "$SchoolSpending/data/tracts_panel_canon", clear
 
 * 2)--------------------------------- Standardize state_fips to str2
-capture confirm string variable state_fips
-if _rc {
-    tostring state_fips, gen(state_fips_str) force
-    replace state_fips_str = substr("00"+state_fips_str, -2, 2)
-    drop state_fips
-    rename state_fips_str state_fips
-}
 
 * 3)--------------------------------- Merge deflators
 merge m:1 state_fips year4 using `deflators', keep(match master) nogen

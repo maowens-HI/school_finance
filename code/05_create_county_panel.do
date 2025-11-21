@@ -147,12 +147,15 @@ foreach var in GOVID LEAID good_govid_baseline{
     drop __fill_`var'
 }
 
-bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
+/* Run 3 times to cover max gap size */
+forvalues i = 1/3 {
+    bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
+}
 
 * 2)--------------------------------- Interpolate spending (linear, gaps ≤ 3 years)
-bys LEAID_num: ipolate pp_exp year if too_far == 0, gen(exp2)
+bys LEAID_num: ipolate pp_exp year4 if too_far == 0, gen(exp2)
 // We create exp2 the imputed spending
-bys LEAID_num: ipolate enrollment year if too_far == 0, gen(enroll2)
+bys LEAID_num: ipolate enrollment year4 if too_far == 0, gen(enroll2)
 *--------------------------------------------------------------*
 * C) Save interpolated district panel
 *--------------------------------------------------------------*
