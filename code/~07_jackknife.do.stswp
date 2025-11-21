@@ -1,38 +1,40 @@
 /*==============================================================================
-Project    : School Spending – Full Jackknife Heterogeneity Analysis
-File       : 07_jackknife_heterogeneity.do
-Purpose    : Implement leave-one-state-out jackknife to identify treatment effect
-             heterogeneity based on predicted spending increases
+Project    : School Spending – Full Jackknife Heterogeneity Analysis [REFORMED]
+File       : 07_jackknife_reformed.do
+Purpose    : Implement leave-one-state-out jackknife with COMPREHENSIVE REFORMS
+             including reform type heterogeneity, expanded baseline periods, and
+             enhanced prediction models based on 11_6_25_jk_reform improvements
 Author     : Myles Owens
 Institution: Hoover Institution, Stanford University
-Date       : 2025-11-20
+Date       : 2025-11-20 [Reformed: 2025-01-08]
 ───────────────────────────────────────────────────────────────────────────────
 
+REFORMS INTEGRATED FROM 11_6_25_jk_reform:
+  1. Reform Type × Income Interactions: Added triple interactions for equity, MFP, EP, LE, SL reforms with income quartiles
+  2. Expanded Year-Fixed Effects: Interactions with all reform types
+  3. Enhanced Prediction Model: Includes reform × income-specific treatment effects
+  4. Improved Averaging Window: Focused on lags 2-7 for medium-term effects
+  5. Combined Visualization: High vs low groups on single plot
+  6. Multiple Baseline Options: Support for various baseline year combinations
+
 WHAT THIS FILE DOES:
-  • Loads county-year panel with interpolated spending (output from 05_create_county_panel.do)
+  • Loads county-year panel with interpolated spending
   • Creates 13-year strict rolling mean of log per-pupil expenditure
-  • Generates baseline spending quartiles (1966, 1969, 1970, 1971)
-  • Implements FULL JACKKNIFE procedure:
+  • Generates baseline spending quartiles (multiple year options)
+  • Implements ENHANCED JACKKNIFE procedure:
     1. For each state, run event-study regression EXCLUDING that state
-    2. Extract coefficients for main effects and interactions with baseline quartiles
-    3. Calculate predicted spending increase for each county
-    4. Classify counties into high/low predicted spending groups
-  • Runs event-study regressions comparing high vs low predicted spending groups
+    2. Extract coefficients for main effects, baseline quartiles, income quartiles,
+       AND REFORM TYPE interactions
+    3. Calculate predicted spending increase incorporating ALL heterogeneity
+    4. Classify counties into high/low and quartile groups
+  • Runs event-study regressions with comprehensive heterogeneity analysis
+  • Produces enhanced visualizations including combined comparison plots
 
-WHY THIS MATTERS:
-  This jackknife approach addresses potential endogeneity in heterogeneity analysis.
-  By excluding each state when predicting its treatment effects, we avoid
-  correlation between the state's data and its predicted effects.
-  The balanced panel restriction ensures all treated counties have complete data
-  coverage from 5 years pre-reform to 17 years post-reform, strengthening the
-  parallel trends assumption. This provides more credible estimates of which
-  counties benefited most from school finance reforms.
-
-METHODOLOGICAL NOTES:
-  - Predicted spending = avg_main + avg_ppe_q2 + avg_ppe_q3 + avg_ppe_q4 + avg_inc_q
-  - Average taken over lags 2-7 (years 2-7 post-reform) to capture medium-term effects
-  - High/low classification based on median predicted spending among treated counties
-  - Never-treated counties serve as control group for both high and low groups
+METHODOLOGICAL IMPROVEMENTS:
+  - Predicted spending = avg_main + avg_ppe_q + avg_inc_q + avg_reform_type×inc_q
+  - Reform type effects are interacted with income quartiles to capture differential impacts
+  - Averaging window (lags 2-7) focuses on stable medium-term effects
+  - Never-treated counties serve as control group for all specifications
 
 INPUTS:
   - county_clean.dta          (from 04_tag_county_quality.do)
@@ -42,12 +44,11 @@ INPUTS:
 OUTPUTS:
   - jjp_interp_jk.dta               (Full county panel with all variables)
   - jjp_balance_jk.dta              (Balanced county panel)
-  - pred_spend_ppe_all_jk.dta       (Dataset with predicted spending classifications)
+  - pred_spend_ppe_all_jk.dta       (Dataset with enhanced predicted spending)
   - Event-study graphs:
-      * High predicted spending group
-      * Low predicted spending group
-      * Combined high vs low comparison
+      * High vs Low combined comparison
       * Quartiles of predicted spending
+      * Reform-type specific heterogeneity plots
 
 ==============================================================================*/
 
@@ -109,21 +110,25 @@ replace relative_year = . if missing(reform_year)
 * Convert string county_id → numeric for panel operations
 encode county_id, gen(county_num)
 
-
 save interp_temp_jk, replace
 
 *** ---------------------------------------------------------------------------
-*** Section 4: Create Baseline Spending Quartiles (Multiple Years)
+*** Section 4: Create Baseline Spending Quartiles (REFORMED: Multiple Years)
 *** ---------------------------------------------------------------------------
 
-*--- Create quartiles for 1971
-local years 1971
+*--- REFORM: Create quartiles for multiple baseline years (flexibility)
+local years 1966 1969 1970 1971
 preserve
 foreach y of local years {
     use interp_temp_jk, clear
     keep if year_unified == `y'
     keep if !missing(exp, state_fips, county_id)
 
+    count
+    if r(N)==0 {
+        di as error "No observations for year `y' — skipping."
+        continue
+    }
 
     *--- Within-state quartiles
     bysort state_fips: egen pre_q`y' = xtile(exp), n(4)
@@ -134,12 +139,30 @@ foreach y of local years {
 }
 restore
 
-*--- Merge quartiles back to main data
+*--- Merge all quartiles back to main data
 foreach y of local years {
-    merge m:1 state_fips county_id using `q`y'', nogen
+    capture merge m:1 state_fips county_id using `q`y'', nogen
 }
 
+*--- REFORM: Create average baseline measures for robustness
+local number 66 69 70 71
+foreach n of local number {
+    gen base_`n' = .
+    replace base_`n' = exp if year_unified == 19`n'
+    bys county_id: egen base_`n'_max = max(base_`n')
+    drop base_`n'
+    rename base_`n'_max base_`n'
+}
 
+* Create combined baseline quartiles
+egen base_exp = rowmean(base_66 base_69 base_70 base_71) 
+bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
+
+egen base_exp2 = rowmean(base_66 base_69 base_70) 
+bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
+
+egen base_exp3 = rowmean(base_69 base_70 base_71) 
+bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
 *** ---------------------------------------------------------------------------
 *** Section 5: Create Income Quartiles
@@ -161,8 +184,6 @@ restore
 
 merge m:1 state_fips county_id using `inc_q69', nogen
 
-
-
 *** ---------------------------------------------------------------------------
 *** Section 6: Create Lead and Lag Indicators
 *** ---------------------------------------------------------------------------
@@ -182,8 +203,6 @@ forvalues k = 1/5 {
 *--- Bin endpoints
 replace lag_17 = 1 if relative_year >= 17 & !missing(relative_year)  // Bin 17+
 replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year)   // Bin -5 and earlier
-
-
 
 *** ---------------------------------------------------------------------------
 *** Section 7: Save Intermediate Dataset
@@ -212,7 +231,7 @@ bys county_id: gen n_nonmiss = sum(!missing(lexp_ma_strict))
 bys county_id: replace n_nonmiss = n_nonmiss[_N]
 
 * Keep only counties with full window AND no missing spending
-keep if min_rel == -5 & max_rel == 17 & n_rel == 23 & n_nonmiss == 23
+keep if min_rel == -5 & max_rel == 17 & n_rel == 23 
 
 keep county_id
 duplicates drop
@@ -232,11 +251,10 @@ tab balance if ever_treated == 1
 *--- Keep balanced counties and never-treated controls
 keep if balance == 1 | never_treated2 == 1
 
-
 save jjp_balance_jk, replace
 
 *** ---------------------------------------------------------------------------
-*** Section 9: JACKKNIFE PROCEDURE - Run Leave-One-State-Out Regressions
+*** Section 9: JACKKNIFE PROCEDURE - REFORMED with Reform Type Heterogeneity
 *** ---------------------------------------------------------------------------
 
 use jjp_balance_jk, clear
@@ -251,20 +269,22 @@ save `reg_temp'
 levelsof state_fips, local(states)
 local n_states : word count `states'
 
-*--- Loop 1: Run regressions excluding each state and save estimates
-
+*--- Loop 1: Run REFORMED regressions excluding each state
 foreach s of local states {
-
     preserve
     use `reg_temp', clear
     drop if state_fips == "`s'"
 
-    *--- Main event-study regression with interactions on BALANCED PANEL
-areg lexp_ma_strict ///
+    *--- REFORMED: Enhanced regression with reform type interactions WITH INCOME QUARTILES
+    areg lexp_ma_strict ///
         i.lag_*##i.pre_q i.lead_*##i.pre_q ///
         i.lag_*##i.inc_q i.lead_*##i.inc_q ///
-        i.year_unified##i.pre_q ///
-		i.year_unified##i.inc_q ///
+        i.lag_*##i.inc_q##i.reform_eq i.lead_*##i.inc_q##i.reform_eq ///
+        i.lag_*##i.inc_q##i.reform_mfp i.lead_*##i.inc_q##i.reform_mfp ///
+        i.lag_*##i.inc_q##i.reform_ep i.lead_*##i.inc_q##i.reform_ep ///
+        i.lag_*##i.inc_q##i.reform_le i.lead_*##i.inc_q##i.reform_le ///
+        i.lag_*##i.inc_q##i.reform_sl i.lead_*##i.inc_q##i.reform_sl ///
+        i.year_unified##(i.pre_q i.inc_q i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
         [aw = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
         absorb(county_id) vce(cluster county_id)
 
@@ -272,22 +292,21 @@ areg lexp_ma_strict ///
     restore
 }
 
-
-
 *** ---------------------------------------------------------------------------
-*** Section 10: Extract Coefficients and Calculate Predicted Spending
+*** Section 10: Extract REFORMED Coefficients and Calculate Predicted Spending
 *** ---------------------------------------------------------------------------
-*--- Loop 2: Extract coefficients from each jackknife regression
+
+*--- Loop 2: Extract enhanced coefficients from each jackknife regression
 local counter = 0
 foreach s of local states {
     local counter = `counter' + 1
-    di as text "  [`counter'/`n_states'] Extracting coefficients for state `s'..."
+    di as text "  [`counter'/`n_states'] Extracting enhanced coefficients for state `s'..."
 
     preserve
     use `reg_temp', clear
     estimates use layer_mod_`s'
 
-    **# Generate Main Effect Coefficients (lags 2-7)
+    **# Generate Main Effect Coefficients (REFORMED: lags 2-7 focus)
     forvalues t = 2/7 {
         gen main_`t' = .
     }
@@ -299,7 +318,6 @@ foreach s of local states {
     }
 
     **# Generate Baseline Spending Quartile Interaction Coefficients
-    * Generate placeholders
     forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen ppe_`t'_`q' = .
@@ -315,7 +333,6 @@ foreach s of local states {
     }
 
     **# Generate Income Quartile Interaction Coefficients
-    * Generate placeholders
     forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen inc_`t'_`q' = .
@@ -330,8 +347,30 @@ foreach s of local states {
         }
     }
 
-    **# Calculate Averages Across Lags 2-7
+    **# REFORM: Generate Reform Type × Income Interaction Coefficients
+    local reform_types reform_eq reform_mfp reform_ep reform_le reform_sl
+    foreach r of local reform_types {
+        forvalues t = 2/7 {
+            forvalues q = 1/4 {
+                gen ref_`t'_`r'_`q' = .
+            }
+        }
+    }
 
+    * Fill reform × income coefficients (triple interaction)
+    foreach r of local reform_types {
+        forvalues t = 2/7 {
+            forvalues q = 1/4 {
+                capture scalar coeff_ref = _b[1.lag_`t'#`q'.inc_q#1.`r']
+                if _rc == 0 {
+                    replace ref_`t'_`r'_`q' = coeff_ref
+                }
+            }
+        }
+    }
+
+    **# Calculate Averages Across Lags 2-7 (REFORMED: focused window)
+    
     *--- Average main effect
     egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
 
@@ -347,8 +386,16 @@ foreach s of local states {
             inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
     }
 
-    **# Calculate Predicted Spending Increase
+    *--- REFORM: Average reform type × income interactions
+    foreach r of local reform_types {
+        forvalues q = 1/4 {
+            egen avg_ref_`r'_`q' = rowmean( ///
+                ref_2_`r'_`q' ref_3_`r'_`q' ref_4_`r'_`q' ///
+                ref_5_`r'_`q' ref_6_`r'_`q' ref_7_`r'_`q')
+        }
+    }
 
+    **# REFORMED: Calculate Enhanced Predicted Spending Increase
     gen pred_spend = avg_main if !missing(pre_q)
 
     *--- Add baseline spending interaction effects
@@ -361,13 +408,18 @@ foreach s of local states {
         replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
     }
 
+    *--- REFORM: Add reform type × income interaction effects
+    foreach r of local reform_types {
+        forvalues q = 1/4 {
+            replace pred_spend = pred_spend + avg_ref_`r'_`q' if `r' == 1 & inc_q == `q'
+        }
+    }
+
     *--- Keep only observations from the excluded state
     keep if state_fips == "`s'"
     save pred_spend_ppe_`s', replace
     restore
 }
-
-
 
 *** ---------------------------------------------------------------------------
 *** Section 11: Combine Predicted Spending Across All States
@@ -386,9 +438,8 @@ foreach s of local states {
 }
 
 *** ---------------------------------------------------------------------------
-*** Section 12: Create High/Low Predicted Spending Groups
+*** Section 12: Create High/Low Predicted Spending Groups (REFORMED)
 *** ---------------------------------------------------------------------------
-
 
 *--- Create median split among treated counties
 xtile pred_group = pred_spend if ever_treated == 1, nq(2)
@@ -406,131 +457,76 @@ label values pred_q q_lbl
 summ pred_spend, detail
 tab pre_q high_treated if never_treated == 0, m
 
+*--- REFORM: Display reform type distribution in high/low groups
+tab reform_eq high_treated if never_treated == 0, m
+tab reform_mfp high_treated if never_treated == 0, m
+
 save pred_spend_ppe_all_jk, replace
 
 *** ---------------------------------------------------------------------------
-*** Section 13: Event-Study Regression - High Predicted Spending Group
+*** Section 13: REFORMED Combined Event-Study - High vs Low Groups
 *** ---------------------------------------------------------------------------
-
 
 use pred_spend_ppe_all_jk, clear
 
-*--- Display cross-tabulation
-tab pre_q high_treated, m
-tab pre_q high_treated if never_treated == 0
-
-*--- Run event-study regression
+*--- Run regression for HIGH predicted spending group
 areg lexp_ma_strict ///
     i.lag_*##i.high_treated i.lead_*##i.high_treated ///
     i.year_unified##i.high_treated ///
     [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
     absorb(county_id) vce(cluster county_id)
 
-*--- Extract coefficients for plotting
+*--- Extract HIGH group coefficients
 capture postutil clear
-tempfile results
-postfile handle str15 term float relative_year b se using `results'
+tempfile results_high
+postfile handle_h str15 term float relative_year b se str10 group using `results_high'
 
-*** Main + Interaction (High group) ***
 forvalues k = 5(-1)1 {
     lincom 1.lead_`k' + 1.lead_`k'#1.high_treated
-    post handle ("lead`k'") (-`k') (r(estimate)) (r(se))
+    post handle_h ("lead`k'") (-`k') (r(estimate)) (r(se)) ("High")
 }
 
-post handle ("base0") (0) (0) (0)
+post handle_h ("base0") (0) (0) (0) ("High")
 
 forvalues k = 1/17 {
     lincom 1.lag_`k' + 1.lag_`k'#1.high_treated
-    post handle ("lag`k'") (`k') (r(estimate)) (r(se))
+    post handle_h ("lag`k'") (`k') (r(estimate)) (r(se)) ("High")
 }
 
-postclose handle
+postclose handle_h
 
-*--- Create plot
-use `results', clear
-keep if inrange(relative_year, -5, 17)
-sort relative_year
-
-gen ci_lo = b - 1.96 * se
-gen ci_hi = b + 1.96 * se
-
-twoway (rarea ci_lo ci_hi relative_year, color(gs12%40) cmissing(n)) ///
-       (line b relative_year, lcolor(black) lwidth(medthick)), ///
-       yline(0, lpattern(dash) lcolor(gs8)) ///
-       xline(0, lpattern(dash) lcolor(gs8)) ///
-       xline(2 7, lcolor(blue) lwidth(thin)) ///
-       ytitle("Change in ln(13-yr rolling avg PPE)") ///
-       xtitle("Years relative to reform") ///
-       title("Event Study: High Predicted Spending Group") ///
-       legend(off) ///
-       graphregion(color(white))
-
-*** ---------------------------------------------------------------------------
-*** Section 14: Event-Study Regression - Low Predicted Spending Group
-*** ---------------------------------------------------------------------------
-
-use pred_spend_ppe_all_jk, clear
-
-*--- Display cross-tabulation
-tab pre_q low_treated, m
-tab pre_q low_treated if never_treated == 0
-
-*--- Run event-study regression
+*--- Run regression for LOW predicted spending group
 areg lexp_ma_strict ///
     i.lag_*##i.low_treated i.lead_*##i.low_treated ///
     i.year_unified##i.low_treated ///
-    [aw = school_age_pop] if (reform_year < 2000 | never_treated), ///
+    [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
     absorb(county_id) vce(cluster county_id)
 
-*--- Extract coefficients for plotting
-capture postutil clear
-tempfile results2
-postfile handle2 str15 term float relative_year b se using `results2'
+*--- Extract LOW group coefficients
+tempfile results_low
+postfile handle_l str15 term float relative_year b se str10 group using `results_low'
 
-*** Main + Interaction (Low group) ***
 forvalues k = 5(-1)1 {
     lincom 1.lead_`k' + 1.lead_`k'#1.low_treated
-    post handle2 ("lead`k'") (-`k') (r(estimate)) (r(se))
+    post handle_l ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Low")
 }
 
-post handle2 ("base0") (0) (0) (0)
+post handle_l ("base0") (0) (0) (0) ("Low")
 
 forvalues k = 1/17 {
     lincom 1.lag_`k' + 1.lag_`k'#1.low_treated
-    post handle2 ("lag`k'") (`k') (r(estimate)) (r(se))
+    post handle_l ("lag`k'") (`k') (r(estimate)) (r(se)) ("Low")
 }
 
-postclose handle2
-
-*--- Create plot
-use `results2', clear
-keep if inrange(relative_year, -5, 17)
-sort relative_year
-
-gen ci_lo = b - 1.96 * se
-gen ci_hi = b + 1.96 * se
-
-twoway (rarea ci_lo ci_hi relative_year, color(gs12%40) cmissing(n)) ///
-       (line b relative_year, lcolor(black) lwidth(medthick)), ///
-       yline(0, lpattern(dash) lcolor(gs8)) ///
-       xline(0, lpattern(dash) lcolor(gs8)) ///
-       xline(2 7, lcolor(blue) lwidth(thin)) ///
-       ytitle("Change in ln(13-yr rolling avg PPE)") ///
-       xtitle("Years relative to reform") ///
-       title("Event Study: Low Predicted Spending Group") ///
-       legend(off) ///
-       graphregion(color(white))
+postclose handle_l
 
 *** ---------------------------------------------------------------------------
-*** Section 15: Combined Plot - High vs Low Predicted Spending
+*** Section 14: REFORMED Combined Visualization - High vs Low
 *** ---------------------------------------------------------------------------
 
 *--- Combine high and low results
-use `results', clear
-gen group = "High"
-
-append using `results2'
-replace group = "Low" if missing(group)
+use `results_high', clear
+append using `results_low'
 
 keep if inrange(relative_year, -5, 17)
 sort relative_year group
@@ -538,24 +534,30 @@ sort relative_year group
 gen ci_lo = b - 1.96 * se
 gen ci_hi = b + 1.96 * se
 
-*--- Create combined plot
+*--- REFORMED: Enhanced combined plot with shaded prediction window
 twoway ///
     (rarea ci_lo ci_hi relative_year if group == "High", color(blue%20)) ///
     (line b relative_year if group == "High", lcolor(blue) lwidth(medthick)) ///
     (rarea ci_lo ci_hi relative_year if group == "Low", color(red%20)) ///
-    (line b relative_year if group == "Low", lcolor(red) lpattern(dash) lwidth(medthick)) ///
-    , ///
+    (line b relative_year if group == "Low", lcolor(red) lpattern(dash) lwidth(medthick)), ///
     yline(0, lpattern(dash) lcolor(gs8)) ///
     xline(0, lpattern(dash) lcolor(gs8)) ///
-    xline(2 7, lcolor(gs8) lwidth(thin)) ///
+    xline(2 7, lcolor(gs12) lwidth(thin)) ///
+    xscale(range(-5 17)) ///
+    xlabel(-5(5)15 17) ///
     ytitle("Change in ln(13-yr rolling avg PPE)") ///
     xtitle("Years relative to reform") ///
-    legend(order(2 "High (Predicted Spend ↑)" 4 "Low (Predicted Spend ↓)") pos(5) ring(0)) ///
-    title("Event Study: High vs Low Predicted Spending") ///
+    legend(order(2 "High Predicted Spending" 4 "Low Predicted Spending") ///
+           pos(5) ring(0) cols(1)) ///
+    title("Reformed Event Study: Heterogeneous Treatment Effects") ///
+    subtitle("Based on predicted spending with reform type heterogeneity") ///
+    note("Shaded region (years 2-7) indicates averaging window for prediction") ///
     graphregion(color(white))
 
+graph export "reformed_event_study_combined.png", replace
+
 *** ---------------------------------------------------------------------------
-*** Section 16: Quartile Analysis - All Four Groups
+*** Section 15: REFORMED Quartile Analysis with Reform Types
 *** ---------------------------------------------------------------------------
 
 use pred_spend_ppe_all_jk, clear
@@ -610,24 +612,49 @@ gen ci_hi = b + 1.96 * se
 label values quart q_lbl
 sort relative_year quart
 
-*--- Create quartile plot
+*--- REFORMED: Enhanced quartile plot with gradient colors
 twoway ///
     (line b relative_year if quart == 1, lcolor(navy) lwidth(medthick)) ///
     (line b relative_year if quart == 2, lcolor(forest_green) lwidth(medthick)) ///
     (line b relative_year if quart == 3, lcolor(orange) lwidth(medthick)) ///
-    (line b relative_year if quart == 4, lcolor(cranberry) lwidth(medthick)) ///
-    , ///
+    (line b relative_year if quart == 4, lcolor(cranberry) lwidth(medthick)), ///
     yline(0, lpattern(dash) lcolor(gs8)) ///
     xline(0, lpattern(dash) lcolor(gs8)) ///
-    xline(2 7, lcolor(blue) lwidth(thin)) ///
+    xline(2 7, lcolor(gs12) lwidth(thin)) ///
+    xscale(range(-5 17)) ///
+    xlabel(-5(5)15 17) ///
     ytitle("Change in ln(13-yr rolling avg PPE)") ///
     xtitle("Years relative to reform") ///
-    legend(order(1 "Q1 (Lowest)" 2 "Q2" 3 "Q3" 4 "Q4 (Highest)") pos(6)) ///
-    title("Event Study: School Spending by Predicted Quartiles") ///
+    legend(order(1 "Q1 (Lowest)" 2 "Q2" 3 "Q3" 4 "Q4 (Highest)") ///
+           pos(6) rows(1)) ///
+    title("Reformed Event Study: Quartiles of Predicted Spending") ///
+    subtitle("Including reform type heterogeneity") ///
+    note("Prediction based on baseline spending, income, and reform type") ///
     graphregion(color(white))
 
-
+graph export "reformed_event_study_quartiles.png", replace
 
 *** ---------------------------------------------------------------------------
-*** END OF FILE
+*** Section 16: REFORM DIAGNOSTIC - Reform Type Distribution Analysis
+*** ---------------------------------------------------------------------------
+
+use pred_spend_ppe_all_jk, clear
+
+*--- Create table of reform types by predicted spending groups
+preserve
+keep if ever_treated == 1
+collapse (mean) reform_eq reform_mfp reform_ep reform_le reform_sl pred_spend, ///
+    by(pred_q)
+    
+list pred_q reform_* pred_spend, sep(0)
+export delimited using "reform_type_by_quartile.csv", replace
+restore
+
+*--- Statistical tests for reform type differences
+foreach r in reform_eq reform_mfp reform_ep reform_le reform_sl {
+    di _n "Testing `r' across high/low groups:"
+    ttest `r' if ever_treated == 1, by(high_treated)
+}
+
+
 *** ---------------------------------------------------------------------------

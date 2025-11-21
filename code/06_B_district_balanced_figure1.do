@@ -340,7 +340,7 @@ keep if balance == 1 | never_treated2 == 1
 *** ---------------------------------------------------------------------------
 *** Section 10: Recalculate Baseline Quartiles on Balanced Sample (1971 only)
 *** ---------------------------------------------------------------------------
-/*
+
 drop pre_q*
 
 preserve
@@ -356,7 +356,7 @@ save `q1971', replace
 restore
 
 merge m:1 state_fips LEAID using `q1971', nogen
-*/
+
 save jjp_balance, replace
 
 *** ---------------------------------------------------------------------------
