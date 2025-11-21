@@ -64,11 +64,6 @@ DEPENDENCIES:
   • Stata packages: None (uses base Stata only)
   • Downstream files: 02_build_tract_panel.do requires f33_indfin_grf_canon.dta
 
-VALIDATION CHECKS TO RUN:
-  - Check crosswalk: count if _merge == 3 after LEAID-GOVID merge
-  - Check baseline flags: tab good_govid_baseline
-  - Check ID uniqueness: duplicates report LEAID year4
-  - Check spending coverage: count if missing(pp_exp) by year4
 ==============================================================================*/
 
 
