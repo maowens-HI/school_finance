@@ -68,7 +68,7 @@ gen too_far = gap_next > 3  // Don't impute gaps > 3 years
 
 *--- Ensure full district-year panel
 tsset LEAID_num year4
-tsfill, full  // Creates missing values to fill for the whole range
+tsfill  // Creates missing values to fill for the whole range
 
 *** ---------------------------------------------------------------------------
 *** Section 2: Fill Identifiers and Interpolate Spending

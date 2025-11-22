@@ -165,7 +165,7 @@ bys county_id: gen n_nonmiss = sum(!missing(lexp_ma_strict))
 bys county_id: replace n_nonmiss = n_nonmiss[_N]
 
 * Keep only counties with full window AND no missing spending
-keep if n_nonmiss == 23
+keep if min_rel == -5 & max_rel == 17 & n_rel == 23 & n_nonmiss == 23
 
 keep county_id
 duplicates drop
@@ -187,14 +187,14 @@ keep if balance ==1 | never_treated2 ==1 // keep balanced counties & never treat
 *** ---------------------------------------------------------------------------
 *** Section 8: Recalculate Baseline Quartiles on Balanced Sample (1971 only)
 *** ---------------------------------------------------------------------------
-
+/*
 drop pre_q*
 preserve
 drop if good_71 != 1
 keep if year_unified == 1971
 keep if !missing(exp, state_fips, county_id)
 
-bysort state_fips: egen pre_q1971 = xtile(exp), n(4)
+bysort state_fips: egen pre_q1971 = xtile(lexp_ma_strict), n(4)
 keep state_fips county_id pre_q1971
 
 tempfile q1971
@@ -202,7 +202,7 @@ save `q1971', replace
 restore
 
 merge m:1 state_fips county_id using `q1971', nogen
-
+*/
 drop _merge
 
 save jjp_balance, replace
@@ -242,21 +242,21 @@ save jjp_rank,replace
 *** Section 9: Event-Study Regressions by Quartile
 *** ---------------------------------------------------------------------------
 
+
 local var lexp_ma_strict
 
 foreach v of local var {
-    forvalues q = 4/4 {
-        use jjp_rank, clear
-        drop if good_71 != 1
-		*drop if rank > 100
-        count
-        display "Remaining obs in this iteration: " r(N)
+    forvalues q = 1/4 {
+        use jjp_balance, clear
+        *drop if good_71 != 1
+
+
 
         *--- Weighted event-study regression
-        areg `v' ///
+        areg  `v' ///
             i.lag_* i.lead_* ///
             i.year_unified [w=school_age_pop] ///
-            if pre_q1971==`q' & (never_treated==1 | reform_year<2000), ///
+            if pre_q1971==`q' | never_treated == 1, ///
             absorb(county_id) vce(cluster county_id)
 
         *--- Extract coefficients
@@ -289,16 +289,17 @@ foreach v of local var {
             (line b rel_year, lcolor("42 66 94") lwidth(medium)), ///
             yline(0, lpattern(dash) lcolor(gs10)) ///
             xline(0, lpattern(dash) lcolor(gs10)) ///
-            ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
-            title("County Level: `v' | Quartile `q' | 1971", size(medlarge) color("35 45 60")) ///
+            ytitle("Δ ln(13-yr rolling avg PPE)", size(medsmall) margin(medium)) ///
+            title(" `v' | Quartile `q' | 1971", size(medlarge) color("35 45 60")) ///
             graphregion(color(white)) ///
             legend(off) ///
             scheme(s2mono)
 
-        *graph export "$SchoolSpending/output/county_reg_`v'_`q'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/county_reg_`v'_`q'.png", replace
+
     }
 }
+
+
 
 *** ---------------------------------------------------------------------------
 *** Section 10: Event-Study Regressions - Bottom 3 Quartiles (Exclude Top)
@@ -307,15 +308,14 @@ graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\not
 local var lexp_ma_strict
 
 foreach v of local var {
-    use jjp_rank, clear
-    drop if good_71 != 1
-	*drop if rank > 100
+    use jjp_balance, clear
+    *drop if good_71 != 1
 
     *--- Weighted regression excluding top quartile
     areg `v' ///
         i.lag_* i.lead_* ///
         i.year_unified [w=school_age_pop] ///
-        if pre_q1971 < 4 & (never_treated==1 | reform_year<2000), ///
+        if pre_q1971 < 4 | never_treated==1 , ///
         absorb(county_id) vce(cluster county_id)
 
     *--- Extract coefficients
@@ -355,9 +355,59 @@ foreach v of local var {
         scheme(s2mono)
 
     *graph export "$SchoolSpending/output/county_btm_`v'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/county_btm_`v'.png", replace
+*graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/county_btm_`v'.png", replace
 }
 
+
+*** ---------------------------------------------------------------------------
+*** Section 11: Robustness - Stata Built-in DID (xtdidregress)
+*** ---------------------------------------------------------------------------
+use jjp_interp,clear
+gen treated_post = 0
+replace treated_post = 1 if relative_year >= 0 & !missing(relative_year)
+
+
+* 2. Ensure Panel Set
+xtset county_num year_unified
+        hdidregress aipw (lexp) (treated_post) [aw=school_age_pop], ///
+            group(county_num) time(year_unified)
+			
+			estat aggregation
+local var lexp_ma_strict
+
+foreach v of local var {
+    forvalues q = 1/1 {
+        
+        * Preserve to subset data for this specific quartile run
+        preserve
+        
+        * Keep: Treated units in Quartile `q` + All Never Treated controls
+        * Note: We keep 'never_treated' regardless of their quartile to serve as controls
+        keep if (pre_q1971 == `q' & never_treated == 0) | never_treated == 1
+        
+
+        * Run DID regression (Two-Way Fixed Effects)
+        * aequations: Annotate equations
+        * vce(cluster): Cluster standard errors by county
+        * aweight: Use school-age population weights matches your 'areg'
+        
+        xtdidregress (`v') (treated_post) [aw=school_age_pop], ///
+            group(county_num) time(year_unified) ///
+            vce(cluster county_id)
+            
+        * Generate Event Study Plot
+        * window(-5 17): Matches your manual lead/lag window
+        * revent: Returns the coefficients to matrix for access if needed
+ 
+            
+        * Export graph
+        * Adjust path as needed
+        * graph export "$SchoolSpending/output/xtdid_`v'_`q'.png", replace
+        
+        restore
+    }
+}
+/*
 *** ---------------------------------------------------------------------------
 *** Section 9: Event-Study Regressions by Quartile
 *** ---------------------------------------------------------------------------
