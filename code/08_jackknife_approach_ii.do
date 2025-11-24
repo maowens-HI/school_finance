@@ -281,53 +281,17 @@ forvalues t = 2/7 {
     }
 }
 
-**# Generate Income Quartile Interaction Coefficients (two-way: lag x income)
-forvalues t = 2/7 {
-    forvalues q = 2/4 {
-        gen inc_`t'_`q' = .
-    }
-}
-
-* Fill with coefficient values
-forvalues t = 2/7 {
-    forvalues q = 2/4 {
-        scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
-        replace inc_`t'_`q' = coeff_inc
-    }
-}
-
-**# Generate Reform Type Interaction Coefficients (two-way: lag x reform)
-local reforms reform_eq reform_mfp reform_ep reform_le reform_sl
-foreach r of local reforms {
-    forvalues t = 2/7 {
-        gen `r'_`t' = .
-    }
-}
-
-* Fill with coefficient values
-foreach r of local reforms {
-    forvalues t = 2/7 {
-        scalar coeff_ref = _b[1.lag_`t'#1.`r']
-        replace `r'_`t' = coeff_ref
-    }
-}
-
-**# Generate Three-Way Interaction Coefficients (lag x income x reform)
+**# Generate Combined Reform Interaction Coefficients
+*   Combines: lag×income + lag×reform + lag×income×reform
 local reforms reform_eq reform_mfp reform_ep reform_le reform_sl
 foreach r of local reforms {
     forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen inc_`r'_`t'_`q' = .
-        }
-    }
-}
-
-* Fill with coefficient values
-foreach r of local reforms {
-    forvalues t = 2/7 {
-        forvalues q = 2/4 {
-            scalar coeff_3way = _b[1.lag_`t'#`q'.inc_q#1.`r']
-            replace inc_`r'_`t'_`q' = coeff_3way
+            scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]        // lag × income
+            scalar coeff_ref = _b[1.lag_`t'#1.`r']            // lag × reform
+            scalar coeff_3way = _b[1.lag_`t'#`q'.inc_q#1.`r'] // lag × income × reform
+            replace inc_`r'_`t'_`q' = coeff_inc + coeff_ref + coeff_3way
         }
     }
 }
@@ -342,19 +306,7 @@ forvalues q = 2/4 {
         ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
 }
 
-*--- Average income interactions (two-way)
-forvalues q = 2/4 {
-    egen avg_inc_`q' = rowmean( ///
-        inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
-}
-
-*--- Average reform type interactions (two-way)
-foreach r of local reforms {
-    egen avg_`r' = rowmean( ///
-        `r'_2 `r'_3 `r'_4 `r'_5 `r'_6 `r'_7)
-}
-
-*--- Average three-way interactions (lag x income x reform)
+*--- Average combined reform interactions (income + reform + three-way)
 foreach r of local reforms {
     forvalues q = 2/4 {
         egen avg_inc_`r'_`q' = rowmean( ///
@@ -370,17 +322,7 @@ forvalues q = 2/4 {
     replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
 }
 
-*--- Add income interaction effects (two-way)
-forvalues q = 2/4 {
-    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
-}
-
-*--- Add reform type interaction effects (two-way)
-foreach r of local reforms {
-    replace pred_spend = pred_spend + avg_`r' if `r' == 1
-}
-
-*--- Add three-way interaction effects (lag x income x reform)
+*--- Add combined reform interaction effects (income + reform + three-way)
 foreach r of local reforms {
     forvalues q = 2/4 {
         replace pred_spend = pred_spend + avg_inc_`r'_`q' if inc_q == `q' & `r' == 1
