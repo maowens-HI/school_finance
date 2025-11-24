@@ -251,7 +251,144 @@ forvalues q = 2/4 {
 save baseline_predictions_spec_B, replace
 
 *--- 1.C Predictions: Spending + Income Quartiles + Reforms---
-*TODO complete the predictions section for 1.C as you did above the main differnece is that when we generate coefficients we have to add all the interactions together between reform and income as well as income for q2/4 on its own...
+
+use jjp_jackknife_prep, clear
+estimates use model_baseline_C
+
+**# Generate Main Effect Coefficients (lags 2-7)
+forvalues t = 2/7 {
+    gen main_`t' = .
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    scalar coeff_main = _b[1.lag_`t']
+    replace main_`t' = coeff_main
+}
+
+**# Generate Baseline Spending Quartile Interaction Coefficients
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        gen ppe_`t'_`q' = .
+    }
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
+        replace ppe_`t'_`q' = coeff_ppe
+    }
+}
+
+**# Generate Income Quartile Interaction Coefficients (two-way: lag x income)
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        gen inc_`t'_`q' = .
+    }
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
+        replace inc_`t'_`q' = coeff_inc
+    }
+}
+
+**# Generate Reform Type Interaction Coefficients (two-way: lag x reform)
+local reforms reform_eq reform_mfp reform_ep reform_le reform_sl
+foreach r of local reforms {
+    forvalues t = 2/7 {
+        gen `r'_`t' = .
+    }
+}
+
+* Fill with coefficient values
+foreach r of local reforms {
+    forvalues t = 2/7 {
+        scalar coeff_ref = _b[1.lag_`t'#1.`r']
+        replace `r'_`t' = coeff_ref
+    }
+}
+
+**# Generate Three-Way Interaction Coefficients (lag x income x reform)
+local reforms reform_eq reform_mfp reform_ep reform_le reform_sl
+foreach r of local reforms {
+    forvalues t = 2/7 {
+        forvalues q = 2/4 {
+            gen inc_`r'_`t'_`q' = .
+        }
+    }
+}
+
+* Fill with coefficient values
+foreach r of local reforms {
+    forvalues t = 2/7 {
+        forvalues q = 2/4 {
+            scalar coeff_3way = _b[1.lag_`t'#`q'.inc_q#1.`r']
+            replace inc_`r'_`t'_`q' = coeff_3way
+        }
+    }
+}
+
+**# Calculate Averages Across Lags 2-7
+*--- Average main effect
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
+
+*--- Average baseline spending interactions
+forvalues q = 2/4 {
+    egen avg_ppe_`q' = rowmean( ///
+        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
+}
+
+*--- Average income interactions (two-way)
+forvalues q = 2/4 {
+    egen avg_inc_`q' = rowmean( ///
+        inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
+}
+
+*--- Average reform type interactions (two-way)
+foreach r of local reforms {
+    egen avg_`r' = rowmean( ///
+        `r'_2 `r'_3 `r'_4 `r'_5 `r'_6 `r'_7)
+}
+
+*--- Average three-way interactions (lag x income x reform)
+foreach r of local reforms {
+    forvalues q = 2/4 {
+        egen avg_inc_`r'_`q' = rowmean( ///
+            inc_`r'_2_`q' inc_`r'_3_`q' inc_`r'_4_`q' inc_`r'_5_`q' inc_`r'_6_`q' inc_`r'_7_`q')
+    }
+}
+
+**# Calculate Predicted Spending Increase
+gen pred_spend = avg_main if !missing(pre_q)
+
+*--- Add baseline spending interaction effects
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+}
+
+*--- Add income interaction effects (two-way)
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+}
+
+*--- Add reform type interaction effects (two-way)
+foreach r of local reforms {
+    replace pred_spend = pred_spend + avg_`r' if `r' == 1
+}
+
+*--- Add three-way interaction effects (lag x income x reform)
+foreach r of local reforms {
+    forvalues q = 2/4 {
+        replace pred_spend = pred_spend + avg_inc_`r'_`q' if inc_q == `q' & `r' == 1
+    }
+}
+
+save baseline_predictions_spec_C, replace
+di "  Saved: baseline_predictions_spec_C.dta"
 
 *** ---------------------------------------------------------------------------
 *** PHASE 2: JACKKNIFE PROCEDURE (Leave-One-State-Out)
