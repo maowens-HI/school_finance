@@ -21,7 +21,7 @@ WORKFLOW (Following Whiteboard):
     1.B. Spending + Income Quartile
     1.C. Spending + Income + Reform types
 
-  PHASE 2: JACKKNIFE (Leave-One-Out)
+  PHASE 2: JACKKNIFE (Leave-One-Out) - MIRRORS PHASE 1 STRUCTURE
     2.A. Spending Quartile only
     2.B. Spending + Income Quartile
     2.C. Spending + Income + Reform types
@@ -123,7 +123,7 @@ di "========================================"
 use jjp_jackknife_prep, clear
 
 *--- 1.A. Spending Quartile Only ---
-di _n "--- Specification A: Spending Quartile ---"
+di _n "--- Specification 1.A: Spending Quartile ---"
 areg lexp_ma_strict ///
     i.lag_*##i.pre_q i.lead_*##i.pre_q ///
     i.year_unified##i.pre_q ///
@@ -133,7 +133,7 @@ eststo model_A
 estimates save model_baseline_A, replace
 
 *--- 1.B. Spending + Income Quartiles ---
-di _n "--- Specification B: Spending + Income ---"
+di _n "--- Specification 1.B: Spending + Income ---"
 areg lexp_ma_strict ///
     i.lag_*##i.pre_q i.lead_*##i.pre_q ///
     i.lag_*##i.inc_q i.lead_*##i.inc_q ///
@@ -144,7 +144,7 @@ eststo model_B
 estimates save model_baseline_B, replace
 
 *--- 1.C. Full Specification (Spending + Income + Reform Types) ---
-di _n "--- Specification C: Full Heterogeneity ---"
+di _n "--- Specification 1.C: Full Heterogeneity ---"
 areg lexp_ma_strict ///
     i.lag_*##i.pre_q     i.lead_*##i.pre_q ///
     i.lag_*##i.inc_q     i.lead_*##i.inc_q ///
@@ -164,9 +164,12 @@ esttab model_A model_B model_C using "baseline_models_comparison.csv", ///
     replace csv se star(* 0.10 ** 0.05 *** 0.01) ///
     keep(*.lag_*) label nonotes
 
+di _n "Phase 1 Complete: All baseline models estimated and saved"
+
 *** ---------------------------------------------------------------------------
 *** PHASE 2: JACKKNIFE PROCEDURE (Leave-One-State-Out)
 *** Following JJP (2016) Approach II methodology
+*** Structure mirrors Phase 1: 2.A, 2.B, 2.C
 *** ---------------------------------------------------------------------------
 
 di _n(2) "========================================"
@@ -184,197 +187,398 @@ tempfile master_data
 save `master_data'
 
 *** ---------------------------------------------------------------------------
-*** Jackknife Loop: Run 3 specifications excluding each state
+*** 2.A. Jackknife: Spending Quartile Only
 *** ---------------------------------------------------------------------------
 
-di _n "=== Running Leave-One-State-Out Regressions ==="
+di _n(2) "--- Specification 2.A: Spending Quartile (Jackknife) ---"
 
-local spec_count = 0
-foreach spec in A B C {
-    local spec_count = `spec_count' + 1
-    di _n "--- Specification `spec' [`spec_count'/3] ---"
+local state_count = 0
+foreach s of local states {
+    local state_count = `state_count' + 1
 
-    local state_count = 0
-    foreach s of local states {
-        local state_count = `state_count' + 1
-
-        * Show progress every 5 states
-        if mod(`state_count', 5) == 0 {
-            di "  Progress: `state_count'/`n_states' states processed..."
-        }
-
-        quietly {
-            use `master_data', clear
-            drop if state_fips == "`s'"
-
-            * Run appropriate specification
-            if "`spec'" == "A" {
-                * Spec A: Spending Quartile Only
-                areg lexp_ma_strict ///
-                    i.lag_*##i.pre_q i.lead_*##i.pre_q ///
-                    i.year_unified##i.pre_q ///
-                    [aw = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
-                    absorb(county_id) vce(cluster county_id)
-            }
-            else if "`spec'" == "B" {
-                * Spec B: Spending + Income
-                areg lexp_ma_strict ///
-                    i.lag_*##i.pre_q i.lead_*##i.pre_q ///
-                    i.lag_*##i.inc_q i.lead_*##i.inc_q ///
-                    i.year_unified##(i.pre_q i.inc_q) ///
-                    [aw = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
-                    absorb(county_id) vce(cluster county_id)
-            }
-            else if "`spec'" == "C" {
-                * Spec C: Full Heterogeneity
-                areg lexp_ma_strict ///
-                    i.lag_*##i.pre_q     i.lead_*##i.pre_q ///
-                    i.lag_*##i.inc_q     i.lead_*##i.inc_q ///
-                    i.lag_*##i.reform_eq i.lead_*##i.reform_eq ///
-                    i.lag_*##i.reform_mfp i.lead_*##i.reform_mfp ///
-                    i.lag_*##i.reform_ep i.lead_*##i.reform_ep ///
-                    i.lag_*##i.reform_le i.lead_*##i.reform_le ///
-                    i.lag_*##i.reform_sl i.lead_*##i.reform_sl ///
-                    i.year_unified##(i.pre_q i.inc_q i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
-                    [aw = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
-                    absorb(county_id) vce(cluster county_id)
-            }
-
-            * Save estimates
-            estimates save jackknife_`spec'_state_`s', replace
-        }
+    * Show progress every 5 states
+    if mod(`state_count', 5) == 0 {
+        di "  [2.A] Progress: `state_count'/`n_states' states processed..."
     }
-    di "  Specification `spec' complete: `n_states' states processed"
+
+    quietly {
+        use `master_data', clear
+        drop if state_fips == "`s'"
+
+        * Run Spec A regression excluding state `s'
+        areg lexp_ma_strict ///
+            i.lag_*##i.pre_q i.lead_*##i.pre_q ///
+            i.year_unified##i.pre_q ///
+            [aw = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
+            absorb(county_id) vce(cluster county_id)
+
+        * Save estimates
+        estimates save jackknife_A_state_`s', replace
+    }
 }
+di "  Specification 2.A complete: `n_states' jackknife regressions run"
 
-*** ---------------------------------------------------------------------------
-*** Extract Coefficients and Calculate Predicted Spending
-*** Following JJP (2016) equation in footnote 20
-*** ---------------------------------------------------------------------------
+*--- Extract coefficients and calculate predicted spending for Spec A ---
+di "  Extracting coefficients and calculating predictions..."
 
-di _n(2) "=== Extracting Coefficients and Calculating Predictions ==="
+local state_count = 0
+foreach s of local states {
+    local state_count = `state_count' + 1
 
-* Process each specification separately
-foreach spec in A B C {
-    di _n "--- Processing Specification `spec' ---"
+    if mod(`state_count', 10) == 0 {
+        di "    Extracting: `state_count'/`n_states'..."
+    }
 
-    local state_count = 0
-    foreach s of local states {
-        local state_count = `state_count' + 1
+    quietly {
+        * Load master data and estimates for this state
+        use `master_data', clear
+        estimates use jackknife_A_state_`s'
 
-        if mod(`state_count', 5) == 0 {
-            di "  Extracting: `state_count'/`n_states' states..."
+        * Initialize prediction variable
+        gen pred_spend_A = 0 if state_fips == "`s'"
+
+        *--- Extract and average main effects (lags 2-7 per JJP) ---
+        local sum_main = 0
+        local n_lags = 0
+        forvalues t = 2/7 {
+            capture scalar beta_main = _b[1.lag_`t']
+            if _rc == 0 & !missing(beta_main) {
+                local sum_main = `sum_main' + beta_main
+                local n_lags = `n_lags' + 1
+            }
+        }
+        if `n_lags' > 0 {
+            replace pred_spend_A = pred_spend_A + (`sum_main' / `n_lags') ///
+                if state_fips == "`s'"
         }
 
-        quietly {
-            * Load master data and estimates for this state
-            use `master_data', clear
-            estimates use jackknife_`spec'_state_`s'
-
-            * Initialize prediction variable
-            gen pred_spend_`spec' = 0 if state_fips == "`s'"
-
-            *--- Extract and average main effects (lags 2-7 per JJP) ---
-            * Following JJP: average treatment effects over years 2-7
-            local sum_main = 0
-            local n_lags = 0
+        *--- Add baseline spending quartile interactions ---
+        forvalues q = 2/4 {
+            local sum_ppe = 0
+            local n_ppe = 0
             forvalues t = 2/7 {
-                capture scalar beta_main = _b[1.lag_`t']
-                if _rc == 0 & !missing(beta_main) {
-                    local sum_main = `sum_main' + beta_main
-                    local n_lags = `n_lags' + 1
+                capture scalar beta_ppe = _b[1.lag_`t'#`q'.pre_q]
+                if _rc == 0 & !missing(beta_ppe) {
+                    local sum_ppe = `sum_ppe' + beta_ppe
+                    local n_ppe = `n_ppe' + 1
                 }
             }
-            if `n_lags' > 0 {
-                replace pred_spend_`spec' = pred_spend_`spec' + (`sum_main' / `n_lags') ///
-                    if state_fips == "`s'"
+            if `n_ppe' > 0 {
+                replace pred_spend_A = pred_spend_A + (`sum_ppe' / `n_ppe') ///
+                    if state_fips == "`s'" & pre_q == `q'
             }
-
-            *--- Add baseline spending quartile interactions ---
-            forvalues q = 2/4 {
-                local sum_ppe = 0
-                local n_ppe = 0
-                forvalues t = 2/7 {
-                    capture scalar beta_ppe = _b[1.lag_`t'#`q'.pre_q]
-                    if _rc == 0 & !missing(beta_ppe) {
-                        local sum_ppe = `sum_ppe' + beta_ppe
-                        local n_ppe = `n_ppe' + 1
-                    }
-                }
-                if `n_ppe' > 0 {
-                    replace pred_spend_`spec' = pred_spend_`spec' + (`sum_ppe' / `n_ppe') ///
-                        if state_fips == "`s'" & pre_q == `q'
-                }
-            }
-
-            *--- For Specs B and C: Add income quartile interactions ---
-            if inlist("`spec'", "B", "C") {
-                forvalues q = 2/4 {
-                    local sum_inc = 0
-                    local n_inc = 0
-                    forvalues t = 2/7 {
-                        capture scalar beta_inc = _b[1.lag_`t'#`q'.inc_q]
-                        if _rc == 0 & !missing(beta_inc) {
-                            local sum_inc = `sum_inc' + beta_inc
-                            local n_inc = `n_inc' + 1
-                        }
-                    }
-                    if `n_inc' > 0 {
-                        replace pred_spend_`spec' = pred_spend_`spec' + (`sum_inc' / `n_inc') ///
-                            if state_fips == "`s'" & inc_q == `q'
-                    }
-                }
-            }
-
-            *--- For Spec C only: Add reform type interactions ---
-            if "`spec'" == "C" {
-                local reforms reform_eq reform_mfp reform_ep reform_le reform_sl
-                foreach r of local reforms {
-                    local sum_ref = 0
-                    local n_ref = 0
-                    forvalues t = 2/7 {
-                        capture scalar beta_ref = _b[1.lag_`t'#1.`r']
-                        if _rc == 0 & !missing(beta_ref) {
-                            local sum_ref = `sum_ref' + beta_ref
-                            local n_ref = `n_ref' + 1
-                        }
-                    }
-                    if `n_ref' > 0 {
-                        replace pred_spend_`spec' = pred_spend_`spec' + (`sum_ref' / `n_ref') ///
-                            if state_fips == "`s'" & `r' == 1
-                    }
-                }
-            }
-
-            * Keep only the excluded state's predictions
-            keep if state_fips == "`s'"
-            keep county_id state_fips year_unified relative_year pred_spend_`spec' ///
-                 pre_q inc_q reform_* never_treated ever_treated school_age_pop ///
-                 lexp_ma_strict reform_year
-
-            * Save predictions for this state
-            save pred_temp_`spec'_`s', replace
         }
+
+        * Keep only the excluded state's predictions
+        keep if state_fips == "`s'"
+        keep county_id state_fips year_unified relative_year pred_spend_A ///
+             pre_q inc_q reform_* never_treated ever_treated school_age_pop ///
+             lexp_ma_strict reform_year
+
+        save pred_temp_A_`s', replace
     }
-
-    * Combine all states for this specification
-    clear
-    foreach s of local states {
-        append using pred_temp_`spec'_`s'
-        erase pred_temp_`spec'_`s'.dta
-    }
-
-    * Merge with full dataset
-    merge 1:1 county_id year_unified using `master_data', ///
-        update replace nogen
-
-    * Summary statistics
-    di _n "Predicted Spending Distribution - Spec `spec':"
-    summ pred_spend_`spec' if ever_treated == 1, detail
-
-    save jackknife_predictions_spec_`spec', replace
-    di "  Saved: jackknife_predictions_spec_`spec'.dta"
 }
+
+* Combine all states for Spec A
+clear
+foreach s of local states {
+    append using pred_temp_A_`s'
+    erase pred_temp_A_`s'.dta
+}
+
+* Merge with full dataset
+merge 1:1 county_id year_unified using `master_data', ///
+    update replace nogen
+
+* Summary statistics
+di _n "  Predicted Spending Distribution - Spec A:"
+summ pred_spend_A if ever_treated == 1, detail
+
+save jackknife_predictions_spec_A, replace
+di "  Saved: jackknife_predictions_spec_A.dta"
+
+*** ---------------------------------------------------------------------------
+*** 2.B. Jackknife: Spending + Income Quartiles
+*** ---------------------------------------------------------------------------
+
+di _n(2) "--- Specification 2.B: Spending + Income (Jackknife) ---"
+
+local state_count = 0
+foreach s of local states {
+    local state_count = `state_count' + 1
+
+    * Show progress every 5 states
+    if mod(`state_count', 5) == 0 {
+        di "  [2.B] Progress: `state_count'/`n_states' states processed..."
+    }
+
+    quietly {
+        use `master_data', clear
+        drop if state_fips == "`s'"
+
+        * Run Spec B regression excluding state `s'
+        areg lexp_ma_strict ///
+            i.lag_*##i.pre_q i.lead_*##i.pre_q ///
+            i.lag_*##i.inc_q i.lead_*##i.inc_q ///
+            i.year_unified##(i.pre_q i.inc_q) ///
+            [aw = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
+            absorb(county_id) vce(cluster county_id)
+
+        * Save estimates
+        estimates save jackknife_B_state_`s', replace
+    }
+}
+di "  Specification 2.B complete: `n_states' jackknife regressions run"
+
+*--- Extract coefficients and calculate predicted spending for Spec B ---
+di "  Extracting coefficients and calculating predictions..."
+
+local state_count = 0
+foreach s of local states {
+    local state_count = `state_count' + 1
+
+    if mod(`state_count', 10) == 0 {
+        di "    Extracting: `state_count'/`n_states'..."
+    }
+
+    quietly {
+        * Load master data and estimates for this state
+        use `master_data', clear
+        estimates use jackknife_B_state_`s'
+
+        * Initialize prediction variable
+        gen pred_spend_B = 0 if state_fips == "`s'"
+
+        *--- Extract and average main effects (lags 2-7) ---
+        local sum_main = 0
+        local n_lags = 0
+        forvalues t = 2/7 {
+            capture scalar beta_main = _b[1.lag_`t']
+            if _rc == 0 & !missing(beta_main) {
+                local sum_main = `sum_main' + beta_main
+                local n_lags = `n_lags' + 1
+            }
+        }
+        if `n_lags' > 0 {
+            replace pred_spend_B = pred_spend_B + (`sum_main' / `n_lags') ///
+                if state_fips == "`s'"
+        }
+
+        *--- Add baseline spending quartile interactions ---
+        forvalues q = 2/4 {
+            local sum_ppe = 0
+            local n_ppe = 0
+            forvalues t = 2/7 {
+                capture scalar beta_ppe = _b[1.lag_`t'#`q'.pre_q]
+                if _rc == 0 & !missing(beta_ppe) {
+                    local sum_ppe = `sum_ppe' + beta_ppe
+                    local n_ppe = `n_ppe' + 1
+                }
+            }
+            if `n_ppe' > 0 {
+                replace pred_spend_B = pred_spend_B + (`sum_ppe' / `n_ppe') ///
+                    if state_fips == "`s'" & pre_q == `q'
+            }
+        }
+
+        *--- Add income quartile interactions ---
+        forvalues q = 2/4 {
+            local sum_inc = 0
+            local n_inc = 0
+            forvalues t = 2/7 {
+                capture scalar beta_inc = _b[1.lag_`t'#`q'.inc_q]
+                if _rc == 0 & !missing(beta_inc) {
+                    local sum_inc = `sum_inc' + beta_inc
+                    local n_inc = `n_inc' + 1
+                }
+            }
+            if `n_inc' > 0 {
+                replace pred_spend_B = pred_spend_B + (`sum_inc' / `n_inc') ///
+                    if state_fips == "`s'" & inc_q == `q'
+            }
+        }
+
+        * Keep only the excluded state's predictions
+        keep if state_fips == "`s'"
+        keep county_id state_fips year_unified relative_year pred_spend_B ///
+             pre_q inc_q reform_* never_treated ever_treated school_age_pop ///
+             lexp_ma_strict reform_year
+
+        save pred_temp_B_`s', replace
+    }
+}
+
+* Combine all states for Spec B
+clear
+foreach s of local states {
+    append using pred_temp_B_`s'
+    erase pred_temp_B_`s'.dta
+}
+
+* Merge with full dataset
+merge 1:1 county_id year_unified using `master_data', ///
+    update replace nogen
+
+* Summary statistics
+di _n "  Predicted Spending Distribution - Spec B:"
+summ pred_spend_B if ever_treated == 1, detail
+
+save jackknife_predictions_spec_B, replace
+di "  Saved: jackknife_predictions_spec_B.dta"
+
+*** ---------------------------------------------------------------------------
+*** 2.C. Jackknife: Full Heterogeneity (Spending + Income + Reform Types)
+*** ---------------------------------------------------------------------------
+
+di _n(2) "--- Specification 2.C: Full Heterogeneity (Jackknife) ---"
+
+local state_count = 0
+foreach s of local states {
+    local state_count = `state_count' + 1
+
+    * Show progress every 5 states
+    if mod(`state_count', 5) == 0 {
+        di "  [2.C] Progress: `state_count'/`n_states' states processed..."
+    }
+
+    quietly {
+        use `master_data', clear
+        drop if state_fips == "`s'"
+
+        * Run Spec C regression excluding state `s'
+        areg lexp_ma_strict ///
+            i.lag_*##i.pre_q     i.lead_*##i.pre_q ///
+            i.lag_*##i.inc_q     i.lead_*##i.inc_q ///
+            i.lag_*##i.reform_eq i.lead_*##i.reform_eq ///
+            i.lag_*##i.reform_mfp i.lead_*##i.reform_mfp ///
+            i.lag_*##i.reform_ep i.lead_*##i.reform_ep ///
+            i.lag_*##i.reform_le i.lead_*##i.reform_le ///
+            i.lag_*##i.reform_sl i.lead_*##i.reform_sl ///
+            i.year_unified##(i.pre_q i.inc_q i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
+            [aw = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
+            absorb(county_id) vce(cluster county_id)
+
+        * Save estimates
+        estimates save jackknife_C_state_`s', replace
+    }
+}
+di "  Specification 2.C complete: `n_states' jackknife regressions run"
+
+*--- Extract coefficients and calculate predicted spending for Spec C ---
+di "  Extracting coefficients and calculating predictions..."
+
+local state_count = 0
+foreach s of local states {
+    local state_count = `state_count' + 1
+
+    if mod(`state_count', 10) == 0 {
+        di "    Extracting: `state_count'/`n_states'..."
+    }
+
+    quietly {
+        * Load master data and estimates for this state
+        use `master_data', clear
+        estimates use jackknife_C_state_`s'
+
+        * Initialize prediction variable
+        gen pred_spend_C = 0 if state_fips == "`s'"
+
+        *--- Extract and average main effects (lags 2-7) ---
+        local sum_main = 0
+        local n_lags = 0
+        forvalues t = 2/7 {
+            capture scalar beta_main = _b[1.lag_`t']
+            if _rc == 0 & !missing(beta_main) {
+                local sum_main = `sum_main' + beta_main
+                local n_lags = `n_lags' + 1
+            }
+        }
+        if `n_lags' > 0 {
+            replace pred_spend_C = pred_spend_C + (`sum_main' / `n_lags') ///
+                if state_fips == "`s'"
+        }
+
+        *--- Add baseline spending quartile interactions ---
+        forvalues q = 2/4 {
+            local sum_ppe = 0
+            local n_ppe = 0
+            forvalues t = 2/7 {
+                capture scalar beta_ppe = _b[1.lag_`t'#`q'.pre_q]
+                if _rc == 0 & !missing(beta_ppe) {
+                    local sum_ppe = `sum_ppe' + beta_ppe
+                    local n_ppe = `n_ppe' + 1
+                }
+            }
+            if `n_ppe' > 0 {
+                replace pred_spend_C = pred_spend_C + (`sum_ppe' / `n_ppe') ///
+                    if state_fips == "`s'" & pre_q == `q'
+            }
+        }
+
+        *--- Add income quartile interactions ---
+        forvalues q = 2/4 {
+            local sum_inc = 0
+            local n_inc = 0
+            forvalues t = 2/7 {
+                capture scalar beta_inc = _b[1.lag_`t'#`q'.inc_q]
+                if _rc == 0 & !missing(beta_inc) {
+                    local sum_inc = `sum_inc' + beta_inc
+                    local n_inc = `n_inc' + 1
+                }
+            }
+            if `n_inc' > 0 {
+                replace pred_spend_C = pred_spend_C + (`sum_inc' / `n_inc') ///
+                    if state_fips == "`s'" & inc_q == `q'
+            }
+        }
+
+        *--- Add reform type interactions ---
+        local reforms reform_eq reform_mfp reform_ep reform_le reform_sl
+        foreach r of local reforms {
+            local sum_ref = 0
+            local n_ref = 0
+            forvalues t = 2/7 {
+                capture scalar beta_ref = _b[1.lag_`t'#1.`r']
+                if _rc == 0 & !missing(beta_ref) {
+                    local sum_ref = `sum_ref' + beta_ref
+                    local n_ref = `n_ref' + 1
+                }
+            }
+            if `n_ref' > 0 {
+                replace pred_spend_C = pred_spend_C + (`sum_ref' / `n_ref') ///
+                    if state_fips == "`s'" & `r' == 1
+            }
+        }
+
+        * Keep only the excluded state's predictions
+        keep if state_fips == "`s'"
+        keep county_id state_fips year_unified relative_year pred_spend_C ///
+             pre_q inc_q reform_* never_treated ever_treated school_age_pop ///
+             lexp_ma_strict reform_year
+
+        save pred_temp_C_`s', replace
+    }
+}
+
+* Combine all states for Spec C
+clear
+foreach s of local states {
+    append using pred_temp_C_`s'
+    erase pred_temp_C_`s'.dta
+}
+
+* Merge with full dataset
+merge 1:1 county_id year_unified using `master_data', ///
+    update replace nogen
+
+* Summary statistics
+di _n "  Predicted Spending Distribution - Spec C:"
+summ pred_spend_C if ever_treated == 1, detail
+
+save jackknife_predictions_spec_C, replace
+di "  Saved: jackknife_predictions_spec_C.dta"
+
+di _n(2) "Phase 2 Complete: All jackknife predictions calculated"
 
 *** ---------------------------------------------------------------------------
 *** PHASE 3: GRAPH GENERATION
@@ -407,7 +611,7 @@ foreach spec in A B C {
     *===========================================================================
 
     foreach def in A B {
-        di "  Creating Graph I for Definition `def'..."
+        di "  Creating Graph I for Specification `spec', Definition `def'..."
 
         * Run event study
         quietly areg lexp_ma_strict ///
@@ -478,7 +682,7 @@ foreach spec in A B C {
     * GRAPH II: All 4 Quartiles
     *===========================================================================
 
-    di "  Creating Graph II (All Quartiles)..."
+    di "  Creating Graph II (All Quartiles) for Specification `spec'..."
 
     quietly areg lexp_ma_strict ///
         i.lag_*##i.pred_q i.lead_*##i.pred_q ///
@@ -577,7 +781,7 @@ di "  1. jackknife_predictions_spec_A.dta"
 di "  2. jackknife_predictions_spec_B.dta"
 di "  3. jackknife_predictions_spec_C.dta"
 di "  4. jackknife_predictions_all_specs.dta"
-di "  5. 18 PNG graphs (3 specs × 3 graph types × 2 definitions)"
+di "  5. 9 PNG graphs (3 specs × 3 types: 2 definitions + 1 quartiles)"
 di _n "All jackknife estimation complete!"
 
 *** ---------------------------------------------------------------------------
