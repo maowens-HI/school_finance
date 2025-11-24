@@ -98,15 +98,12 @@ eststo model_B
 estimates save model_baseline_B, replace
 
 *--- 1.C. Full Specification (Spending + Income + Reform Types) ---
-*TODO: This section 1.C needs to be edited. The equation we are referencing involved lag/lead being interacted with inc_q AND each reform (e.g i.lag_*##inc_Q##reform_eq)
+*    Three-way interactions: lag/lead × income quartile × reform types
+*    This allows effects to vary by BOTH income level AND reform type
 areg lexp_ma_strict ///
     i.lag_*##i.pre_q     i.lead_*##i.pre_q ///
-    i.lag_*##i.inc_q     i.lead_*##i.inc_q ///
-    i.lag_*##i.reform_eq i.lead_*##i.reform_eq ///
-    i.lag_*##i.reform_mfp i.lead_*##i.reform_mfp ///
-    i.lag_*##i.reform_ep i.lead_*##i.reform_ep ///
-    i.lag_*##i.reform_le i.lead_*##i.reform_le ///
-    i.lag_*##i.reform_sl i.lead_*##i.reform_sl ///
+    i.lag_*##i.inc_q##(i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
+    i.lead_*##i.inc_q##(i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
     i.year_unified##(i.pre_q i.inc_q i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
     [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
     absorb(county_id) vce(cluster county_id)
@@ -119,7 +116,152 @@ esttab model_A model_B model_C using "baseline_models_comparison.csv", ///
     keep(*.lag_*) label nonotes
 
 
-*TODO: I would like to capture predicted spending as i did below in phase 2 for phase 1 and graph them. 
+*** ---------------------------------------------------------------------------
+*** PHASE 1 PREDICTIONS: Calculate Predicted Spending from Baseline Models
+*** (Following same approach as Phase 2 jackknife, but using full-sample estimates)
+*** ---------------------------------------------------------------------------
+
+*--- 1.A Predictions: Spending Quartile Only ---
+
+use jjp_jackknife_prep, clear
+estimates use model_baseline_A
+
+**# Generate Main Effect Coefficients (lags 2-7)
+forvalues t = 2/7 {
+    gen main_`t' = .
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    scalar coeff_main = _b[1.lag_`t']
+    replace main_`t' = coeff_main
+}
+
+**# Generate Baseline Spending Quartile Interaction Coefficients
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        gen ppe_`t'_`q' = .
+    }
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
+        replace ppe_`t'_`q' = coeff_ppe
+    }
+}
+
+**# Calculate Averages Across Lags 2-7
+*--- Average main effect
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
+
+*--- Average baseline spending interactions
+forvalues q = 2/4 {
+    egen avg_ppe_`q' = rowmean( ///
+        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
+}
+
+**# Calculate Predicted Spending Increase
+gen pred_spend = avg_main if !missing(pre_q)
+
+*--- Add baseline spending interaction effects
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+}
+
+save baseline_predictions_spec_A, replace
+di "  Saved: baseline_predictions_spec_A.dta"
+
+*--- 1.B Predictions: Spending + Income Quartiles ---
+
+use jjp_jackknife_prep, clear
+estimates use model_baseline_B
+
+**# Generate Main Effect Coefficients (lags 2-7)
+forvalues t = 2/7 {
+    gen main_`t' = .
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    scalar coeff_main = _b[1.lag_`t']
+    replace main_`t' = coeff_main
+}
+
+**# Generate Baseline Spending Quartile Interaction Coefficients
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        gen ppe_`t'_`q' = .
+    }
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
+        replace ppe_`t'_`q' = coeff_ppe
+    }
+}
+
+**# Generate Income Quartile Interaction Coefficients
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        gen inc_`t'_`q' = .
+    }
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
+        replace inc_`t'_`q' = coeff_inc
+    }
+}
+
+**# Calculate Averages Across Lags 2-7
+*--- Average main effect
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
+
+*--- Average baseline spending interactions
+forvalues q = 2/4 {
+    egen avg_ppe_`q' = rowmean( ///
+        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
+}
+
+*--- Average income interactions
+forvalues q = 2/4 {
+    egen avg_inc_`q' = rowmean( ///
+        inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
+}
+
+**# Calculate Predicted Spending Increase
+gen pred_spend = avg_main if !missing(pre_q)
+
+*--- Add baseline spending interaction effects
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+}
+
+*--- Add income interaction effects
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+}
+
+save baseline_predictions_spec_B, replace
+di "  Saved: baseline_predictions_spec_B.dta"
+
+*--- Summary statistics for baseline predictions ---
+di _n "Phase 1 Predictions Summary:"
+di "  Spec A - Predicted Spending Distribution (treated counties):"
+use baseline_predictions_spec_A, clear
+summ pred_spend if ever_treated == 1, detail
+
+di _n "  Spec B - Predicted Spending Distribution (treated counties):"
+use baseline_predictions_spec_B, clear
+summ pred_spend if ever_treated == 1, detail
+
+di _n "Phase 1 Predictions Complete" _n 
 *** ---------------------------------------------------------------------------
 *** PHASE 2: JACKKNIFE PROCEDURE (Leave-One-State-Out)
 *** Following JJP (2016) Approach II methodology
@@ -532,10 +674,209 @@ di _n(2) "Phase 2 Complete: All jackknife predictions calculated"
 *** ---------------------------------------------------------------------------
 *** PHASE 3: GRAPH GENERATION
 *** Create high/low classifications and event-study plots
+*** First: Phase 1 baseline predictions, Then: Phase 2 jackknife predictions
 *** ---------------------------------------------------------------------------
 
+*==============================================================================
+* PART 3A: PHASE 1 BASELINE PREDICTIONS GRAPHS
+*==============================================================================
 
-* Process each specification
+di _n(2) "Generating Phase 3A: Baseline Predictions Graphs..."
+
+* Process Phase 1 baseline predictions
+foreach spec in A B  { // Can add C when Model C predictions are ready
+
+    use baseline_predictions_spec_`spec', clear
+
+    *--- Definition A: High = (pred_spend > 0) ---
+    gen high_def_A = (pred_spend > 0) if !missing(pred_spend) & ever_treated == 1
+
+    *--- Definition B: High = Top 2 Quartiles ---
+    xtile pred_q = pred_spend if ever_treated == 1, nq(4)
+    gen high_def_B = (pred_q >= 3) if !missing(pred_q)
+
+    save baseline_reg_`spec', replace
+
+    *---------------------------------------------------------------------------
+    * GRAPH I: High vs Low Comparison for Baseline Predictions (Both Definitions)
+    *---------------------------------------------------------------------------
+    foreach def in A B {
+        use baseline_reg_`spec', clear
+
+        * Run event study
+        areg lexp_ma_strict ///
+            i.lag_*##i.high_def_`def' i.lead_*##i.high_def_`def' ///
+            i.year_unified##i.high_def_`def' ///
+            [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
+            absorb(county_id) vce(cluster county_id)
+
+        * Extract coefficients for High group
+        tempfile results_high results_low
+        postfile h_high str15 term float t b se str10 group using `results_high'
+
+        forvalues k = 5(-1)1 {
+            lincom 1.lead_`k' + 1.lead_`k'#1.high_def_`def'
+            post h_high ("lead`k'") (-`k') (r(estimate)) (r(se)) ("High")
+        }
+        post h_high ("base") (0) (0) (0) ("High")
+        forvalues k = 1/17 {
+            lincom 1.lag_`k' + 1.lag_`k'#1.high_def_`def'
+            post h_high ("lag`k'") (`k') (r(estimate)) (r(se)) ("High")
+        }
+        postclose h_high
+
+        * Extract coefficients for Low group
+        postfile h_low str15 term float t b se str10 group using `results_low'
+
+        forvalues k = 5(-1)1 {
+             lincom 1.lead_`k'
+            post h_low ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Low")
+        }
+        post h_low ("base") (0) (0) (0) ("Low")
+        forvalues k = 1/17 {
+             lincom 1.lag_`k'
+            post h_low ("lag`k'") (`k') (r(estimate)) (r(se)) ("Low")
+        }
+        postclose h_low
+
+        * Combine and plot
+        use `results_high', clear
+        append using `results_low'
+
+        gen ci_lo = b - 1.96*se
+        gen ci_hi = b + 1.96*se
+
+        * Title text
+        local def_text = cond("`def'" == "A", "High = Predicted > 0", "High = Top 2 Quartiles")
+
+        twoway ///
+            (rarea ci_lo ci_hi t if group == "High", color(blue%20) lw(none)) ///
+            (line b t if group == "High", lcolor(blue) lwidth(medthick)) ///
+            (rarea ci_lo ci_hi t if group == "Low", color(red%20) lw(none)) ///
+            (line b t if group == "Low", lcolor(red) lpattern(dash) lwidth(medthick)), ///
+            yline(0, lcolor(gs10) lpattern(dash)) ///
+            xline(0, lcolor(gs10) lpattern(dash)) ///
+            xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+            legend(order(2 "High Predicted" 4 "Low Predicted") pos(6) col(2)) ///
+            title("BASELINE Spec `spec' - Definition `def': High vs Low") ///
+            subtitle("`def_text' | Full-sample estimates (no jackknife)") ///
+            ytitle("Change in ln(13-yr rolling avg PPE)") ///
+            xtitle("Years relative to reform") ///
+            note("Averaging window: lags 2-7 (vertical lines)") ///
+            graphregion(color(white))
+
+        graph export "baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
+    }
+
+    *---------------------------------------------------------------------------
+    * GRAPH II: All 4 Predicted Spending Quartiles for Baseline
+    *---------------------------------------------------------------------------
+    use baseline_reg_`spec', clear
+
+    * Run event study interacting with predicted spending quartiles
+    areg lexp_ma_strict ///
+        i.lag_*##i.pred_q i.lead_*##i.pred_q ///
+        i.year_unified##i.pred_q ///
+        [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
+        absorb(county_id) vce(cluster county_id)
+
+    * Extract coefficients for all 4 quartiles
+    tempfile results_q1 results_q2 results_q3 results_q4
+
+    * Quartile 1 (lowest predicted spending)
+    postfile h_q1 str15 term float t b se byte quartile using `results_q1'
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k'
+        post h_q1 ("lead`k'") (-`k') (r(estimate)) (r(se)) (1)
+    }
+    post h_q1 ("base") (0) (0) (0) (1)
+    forvalues k = 1/17 {
+        lincom 1.lag_`k'
+        post h_q1 ("lag`k'") (`k') (r(estimate)) (r(se)) (1)
+    }
+    postclose h_q1
+
+    * Quartile 2
+    postfile h_q2 str15 term float t b se byte quartile using `results_q2'
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k' + 1.lead_`k'#2.pred_q
+        post h_q2 ("lead`k'") (-`k') (r(estimate)) (r(se)) (2)
+    }
+    post h_q2 ("base") (0) (0) (0) (2)
+    forvalues k = 1/17 {
+        lincom 1.lag_`k' + 1.lag_`k'#2.pred_q
+        post h_q2 ("lag`k'") (`k') (r(estimate)) (r(se)) (2)
+    }
+    postclose h_q2
+
+    * Quartile 3
+    postfile h_q3 str15 term float t b se byte quartile using `results_q3'
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k' + 1.lead_`k'#3.pred_q
+        post h_q3 ("lead`k'") (-`k') (r(estimate)) (r(se)) (3)
+    }
+    post h_q3 ("base") (0) (0) (0) (3)
+    forvalues k = 1/17 {
+        lincom 1.lag_`k' + 1.lag_`k'#3.pred_q
+        post h_q3 ("lag`k'") (`k') (r(estimate)) (r(se)) (3)
+    }
+    postclose h_q3
+
+    * Quartile 4 (highest predicted spending)
+    postfile h_q4 str15 term float t b se byte quartile using `results_q4'
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k' + 1.lead_`k'#4.pred_q
+        post h_q4 ("lead`k'") (-`k') (r(estimate)) (r(se)) (4)
+    }
+    post h_q4 ("base") (0) (0) (0) (4)
+    forvalues k = 1/17 {
+        lincom 1.lag_`k' + 1.lag_`k'#4.pred_q
+        post h_q4 ("lag`k'") (`k') (r(estimate)) (r(se)) (4)
+    }
+    postclose h_q4
+
+    * Combine all quartiles
+    use `results_q1', clear
+    append using `results_q2'
+    append using `results_q3'
+    append using `results_q4'
+
+    gen ci_lo = b - 1.96*se
+    gen ci_hi = b + 1.96*se
+
+    * Create graph with all 4 quartiles
+    twoway ///
+        (rarea ci_lo ci_hi t if quartile == 1, color(red%20) lw(none)) ///
+        (line b t if quartile == 1, lcolor(red) lwidth(medium)) ///
+        (rarea ci_lo ci_hi t if quartile == 2, color(orange%20) lw(none)) ///
+        (line b t if quartile == 2, lcolor(orange) lwidth(medium)) ///
+        (rarea ci_lo ci_hi t if quartile == 3, color(blue%20) lw(none)) ///
+        (line b t if quartile == 3, lcolor(blue) lwidth(medium)) ///
+        (rarea ci_lo ci_hi t if quartile == 4, color(green%20) lw(none)) ///
+        (line b t if quartile == 4, lcolor(green) lwidth(medium)), ///
+        yline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+        legend(order(2 "Q1 (Lowest)" 4 "Q2" 6 "Q3" 8 "Q4 (Highest)") pos(6) rows(1)) ///
+        title("BASELINE Spec `spec': All Predicted Spending Quartiles") ///
+        subtitle("Full-sample estimates (no jackknife)") ///
+        ytitle("Change in ln(13-yr rolling avg PPE)") ///
+        xtitle("Years relative to reform") ///
+        note("Averaging window: lags 2-7 (vertical lines)") ///
+        graphregion(color(white))
+
+    graph export "baseline_spec_`spec'_all_quartiles.png", replace
+}
+
+di "Phase 3A Complete: Baseline predictions graphs saved"
+
+*==============================================================================
+* PART 3B: PHASE 2 JACKKNIFE PREDICTIONS GRAPHS
+*==============================================================================
+
+di _n(2) "Generating Phase 3B: Jackknife Predictions Graphs..."
+
+* Process each jackknife specification
 foreach spec in A B  { // C
 
     use jackknife_predictions_spec_`spec', clear
@@ -552,9 +893,10 @@ foreach spec in A B  { // C
     save jk_reg_`spec', replace
 
 }
-   *===========================================================================
-    * GRAPH I: High vs Low Comparison (Both Definitions)
-    *===========================================================================
+
+    *---------------------------------------------------------------------------
+    * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
+    *---------------------------------------------------------------------------
 foreach spec in A B { // C
     foreach def in A B {
 		use jk_reg_`spec', clear
@@ -614,8 +956,8 @@ foreach spec in A B { // C
             xline(0, lcolor(gs10) lpattern(dash)) ///
             xline(2 7, lcolor(gs12) lwidth(vthin)) ///
             legend(order(2 "High Predicted" 4 "Low Predicted") pos(6) col(2)) ///
-            title("Spec `spec' - Definition `def': High vs Low") ///
-            subtitle("`def_text'") ///
+            title("JACKKNIFE Spec `spec' - Definition `def': High vs Low") ///
+            subtitle("`def_text' | Leave-one-state-out predictions") ///
             ytitle("Change in ln(13-yr rolling avg PPE)") ///
             xtitle("Years relative to reform") ///
             note("Averaging window: lags 2-7 (vertical lines)") ///
@@ -624,6 +966,108 @@ foreach spec in A B { // C
         graph export "jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 
+    *---------------------------------------------------------------------------
+    * GRAPH II: All 4 Predicted Spending Quartiles for Jackknife
+    *---------------------------------------------------------------------------
+    use jk_reg_`spec', clear
+
+    * Run event study interacting with predicted spending quartiles
+    areg lexp_ma_strict ///
+        i.lag_*##i.pred_q i.lead_*##i.pred_q ///
+        i.year_unified##i.pred_q ///
+        [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
+        absorb(county_id) vce(cluster county_id)
+
+    * Extract coefficients for all 4 quartiles
+    tempfile results_q1 results_q2 results_q3 results_q4
+
+    * Quartile 1 (lowest predicted spending)
+    postfile h_q1 str15 term float t b se byte quartile using `results_q1'
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k'
+        post h_q1 ("lead`k'") (-`k') (r(estimate)) (r(se)) (1)
+    }
+    post h_q1 ("base") (0) (0) (0) (1)
+    forvalues k = 1/17 {
+        lincom 1.lag_`k'
+        post h_q1 ("lag`k'") (`k') (r(estimate)) (r(se)) (1)
+    }
+    postclose h_q1
+
+    * Quartile 2
+    postfile h_q2 str15 term float t b se byte quartile using `results_q2'
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k' + 1.lead_`k'#2.pred_q
+        post h_q2 ("lead`k'") (-`k') (r(estimate)) (r(se)) (2)
+    }
+    post h_q2 ("base") (0) (0) (0) (2)
+    forvalues k = 1/17 {
+        lincom 1.lag_`k' + 1.lag_`k'#2.pred_q
+        post h_q2 ("lag`k'") (`k') (r(estimate)) (r(se)) (2)
+    }
+    postclose h_q2
+
+    * Quartile 3
+    postfile h_q3 str15 term float t b se byte quartile using `results_q3'
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k' + 1.lead_`k'#3.pred_q
+        post h_q3 ("lead`k'") (-`k') (r(estimate)) (r(se)) (3)
+    }
+    post h_q3 ("base") (0) (0) (0) (3)
+    forvalues k = 1/17 {
+        lincom 1.lag_`k' + 1.lag_`k'#3.pred_q
+        post h_q3 ("lag`k'") (`k') (r(estimate)) (r(se)) (3)
+    }
+    postclose h_q3
+
+    * Quartile 4 (highest predicted spending)
+    postfile h_q4 str15 term float t b se byte quartile using `results_q4'
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k' + 1.lead_`k'#4.pred_q
+        post h_q4 ("lead`k'") (-`k') (r(estimate)) (r(se)) (4)
+    }
+    post h_q4 ("base") (0) (0) (0) (4)
+    forvalues k = 1/17 {
+        lincom 1.lag_`k' + 1.lag_`k'#4.pred_q
+        post h_q4 ("lag`k'") (`k') (r(estimate)) (r(se)) (4)
+    }
+    postclose h_q4
+
+    * Combine all quartiles
+    use `results_q1', clear
+    append using `results_q2'
+    append using `results_q3'
+    append using `results_q4'
+
+    gen ci_lo = b - 1.96*se
+    gen ci_hi = b + 1.96*se
+
+    * Create graph with all 4 quartiles
+    twoway ///
+        (rarea ci_lo ci_hi t if quartile == 1, color(red%20) lw(none)) ///
+        (line b t if quartile == 1, lcolor(red) lwidth(medium)) ///
+        (rarea ci_lo ci_hi t if quartile == 2, color(orange%20) lw(none)) ///
+        (line b t if quartile == 2, lcolor(orange) lwidth(medium)) ///
+        (rarea ci_lo ci_hi t if quartile == 3, color(blue%20) lw(none)) ///
+        (line b t if quartile == 3, lcolor(blue) lwidth(medium)) ///
+        (rarea ci_lo ci_hi t if quartile == 4, color(green%20) lw(none)) ///
+        (line b t if quartile == 4, lcolor(green) lwidth(medium)), ///
+        yline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+        legend(order(2 "Q1 (Lowest)" 4 "Q2" 6 "Q3" 8 "Q4 (Highest)") pos(6) rows(1)) ///
+        title("JACKKNIFE Spec `spec': All Predicted Spending Quartiles") ///
+        subtitle("Leave-one-state-out predictions") ///
+        ytitle("Change in ln(13-yr rolling avg PPE)") ///
+        xtitle("Years relative to reform") ///
+        note("Averaging window: lags 2-7 (vertical lines)") ///
+        graphregion(color(white))
+
+    graph export "jackknife_spec_`spec'_all_quartiles.png", replace
 }
+
+di "Phase 3B Complete: Jackknife predictions graphs saved"
+
+di _n(2) "*** PHASE 3 COMPLETE: All graphs generated ***" _n
   
 
