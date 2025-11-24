@@ -119,7 +119,7 @@ esttab model_A model_B model_C using "baseline_models_comparison.csv", ///
     keep(*.lag_*) label nonotes
 
 
-*TODO: I would like to capture predicted spending as i did below in phase 2 for phase 1 and graph them. 
+
 *** ---------------------------------------------------------------------------
 *** PHASE 2: JACKKNIFE PROCEDURE (Leave-One-State-Out)
 *** Following JJP (2016) Approach II methodology

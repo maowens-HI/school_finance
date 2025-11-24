@@ -95,7 +95,7 @@ encode county_id, gen(county_num)
 save interp_temp, replace
 
 *** ---------------------------------------------------------------------------
-*** Section 4: Create Baseline Spending Quartiles (1971 only)
+*** Section 4a: Create Baseline Spending Quartiles (1971 only)
 *** ---------------------------------------------------------------------------
 
 preserve
@@ -114,6 +114,29 @@ restore
 
 *--- Merge quartiles back to main data
 merge m:1 state_fips county_id using `q1971', nogen
+
+*** ---------------------------------------------------------------------------
+*** Section 4b: Create Baseline Spending Quartiles (1971 only)
+*** ---------------------------------------------------------------------------
+
+preserve
+use interp_temp, clear
+keep state_fips county_id median_family_income
+gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
+destring med_fam_inc, replace
+drop median_family_income
+duplicates drop
+keep if !missing(med_fam_inc, state_fips, county_id)
+*--- Within-state quartiles
+bysort state_fips: egen inc_q = xtile(med_fam_inc), n(4)
+keep state_fips county_id inc_q
+
+tempfile inc_q
+save `inc_q', replace
+restore
+
+*--- Merge quartiles back to main data
+merge m:1 state_fips county_id using `inc_q', nogen
 
 
 *** ---------------------------------------------------------------------------
