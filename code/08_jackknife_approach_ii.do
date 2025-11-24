@@ -21,6 +21,11 @@ WORKFLOW (Following Whiteboard):
     1.B. Spending + Income Quartile
     1.C. Spending + Income + Reform types
 
+  PHASE 1.5: BASELINE PREDICTIONS
+    Calculate pred_spend using full-sample coefficients for each specification
+    - Uses average of lag 2-7 coefficients (main effects + interactions)
+    - Saves baseline_predictions_spec_[A|B|C].dta
+
   PHASE 2: JACKKNIFE (Leave-One-Out) - MIRRORS PHASE 1 STRUCTURE
     2.A. Spending Quartile only
     2.B. Spending + Income Quartile
@@ -30,15 +35,25 @@ WORKFLOW (Following Whiteboard):
     Definition A: high = (pred_spend > 0)
     Definition B: high = (quartile(pred_spend) > 2)
 
-    Graph I:  High vs Low groups
-    Graph II: All 4 predicted spending quartiles
+    Phase 3.1: BASELINE GRAPHS (full-sample predictions)
+      Graph I:  High vs Low groups
+      Graph II: All 4 predicted spending quartiles
+
+    Phase 3.2: JACKKNIFE GRAPHS (leave-one-out predictions)
+      Graph I:  High vs Low groups
+      Graph II: All 4 predicted spending quartiles
 
 INPUTS:
   - jjp_balance.dta        (balanced panel from 06_A_county_balanced_figure1.do)
 
 OUTPUTS:
-  - jackknife_predictions_spec_[A|B|C].dta  (predicted spending by specification)
-  - Event-study graphs by definition and specification
+  - baseline_predictions_spec_[A|B|C].dta   (predicted spending from full-sample)
+  - jackknife_predictions_spec_[A|B|C].dta  (predicted spending from leave-one-out)
+  - jackknife_predictions_all_specs.dta     (combined predictions)
+  - baseline_spec_*_high_vs_low.png         (baseline event-study graphs)
+  - baseline_spec_*_all_quartiles.png       (baseline quartile graphs)
+  - jackknife_spec_*_high_vs_low.png        (jackknife event-study graphs)
+  - jackknife_spec_*_all_quartiles.png      (jackknife quartile graphs)
 
 KEY VARIABLES:
   - lexp_ma_strict         : Log per-pupil expenditure (13-yr rolling mean)
@@ -164,7 +179,202 @@ esttab model_A model_B model_C using "baseline_models_comparison.csv", ///
     replace csv se star(* 0.10 ** 0.05 *** 0.01) ///
     keep(*.lag_*) label nonotes
 
-di _n "Phase 1 Complete: All baseline models estimated and saved"
+di _n "Phase 1 Complete: All baseline models estimated"
+
+*** ---------------------------------------------------------------------------
+*** PHASE 1.5: CALCULATE BASELINE PREDICTIONS
+*** Use full-sample coefficients to calculate pred_spend for each observation
+*** ---------------------------------------------------------------------------
+
+di _n(2) "========================================"
+di "PHASE 1.5: BASELINE PREDICTIONS"
+di "========================================"
+
+*--- 1.5.A: Predictions from Spec A (Spending Quartile Only) ---
+di _n "--- Calculating Baseline Predictions for Spec A ---"
+
+use jjp_jackknife_prep, clear
+estimates use model_baseline_A
+
+* Initialize prediction variable
+gen pred_spend_A = 0 if ever_treated == 1
+
+*--- Extract and average main effects (lags 2-7) ---
+local sum_main = 0
+local n_lags = 0
+forvalues t = 2/7 {
+    capture scalar beta_main = _b[1.lag_`t']
+    if _rc == 0 & !missing(beta_main) {
+        local sum_main = `sum_main' + beta_main
+        local n_lags = `n_lags' + 1
+    }
+}
+if `n_lags' > 0 {
+    replace pred_spend_A = pred_spend_A + (`sum_main' / `n_lags') if ever_treated == 1
+}
+
+*--- Add baseline spending quartile interactions ---
+forvalues q = 2/4 {
+    local sum_ppe = 0
+    local n_ppe = 0
+    forvalues t = 2/7 {
+        capture scalar beta_ppe = _b[1.lag_`t'#`q'.pre_q]
+        if _rc == 0 & !missing(beta_ppe) {
+            local sum_ppe = `sum_ppe' + beta_ppe
+            local n_ppe = `n_ppe' + 1
+        }
+    }
+    if `n_ppe' > 0 {
+        replace pred_spend_A = pred_spend_A + (`sum_ppe' / `n_ppe') if ever_treated == 1 & pre_q == `q'
+    }
+}
+
+di "  Predicted Spending Distribution - Baseline Spec A:"
+summ pred_spend_A if ever_treated == 1, detail
+
+save baseline_predictions_spec_A, replace
+di "  Saved: baseline_predictions_spec_A.dta"
+
+*--- 1.5.B: Predictions from Spec B (Spending + Income Quartiles) ---
+di _n "--- Calculating Baseline Predictions for Spec B ---"
+
+use jjp_jackknife_prep, clear
+estimates use model_baseline_B
+
+* Initialize prediction variable
+gen pred_spend_B = 0 if ever_treated == 1
+
+*--- Extract and average main effects (lags 2-7) ---
+local sum_main = 0
+local n_lags = 0
+forvalues t = 2/7 {
+    capture scalar beta_main = _b[1.lag_`t']
+    if _rc == 0 & !missing(beta_main) {
+        local sum_main = `sum_main' + beta_main
+        local n_lags = `n_lags' + 1
+    }
+}
+if `n_lags' > 0 {
+    replace pred_spend_B = pred_spend_B + (`sum_main' / `n_lags') if ever_treated == 1
+}
+
+*--- Add baseline spending quartile interactions ---
+forvalues q = 2/4 {
+    local sum_ppe = 0
+    local n_ppe = 0
+    forvalues t = 2/7 {
+        capture scalar beta_ppe = _b[1.lag_`t'#`q'.pre_q]
+        if _rc == 0 & !missing(beta_ppe) {
+            local sum_ppe = `sum_ppe' + beta_ppe
+            local n_ppe = `n_ppe' + 1
+        }
+    }
+    if `n_ppe' > 0 {
+        replace pred_spend_B = pred_spend_B + (`sum_ppe' / `n_ppe') if ever_treated == 1 & pre_q == `q'
+    }
+}
+
+*--- Add income quartile interactions ---
+forvalues q = 2/4 {
+    local sum_inc = 0
+    local n_inc = 0
+    forvalues t = 2/7 {
+        capture scalar beta_inc = _b[1.lag_`t'#`q'.inc_q]
+        if _rc == 0 & !missing(beta_inc) {
+            local sum_inc = `sum_inc' + beta_inc
+            local n_inc = `n_inc' + 1
+        }
+    }
+    if `n_inc' > 0 {
+        replace pred_spend_B = pred_spend_B + (`sum_inc' / `n_inc') if ever_treated == 1 & inc_q == `q'
+    }
+}
+
+di "  Predicted Spending Distribution - Baseline Spec B:"
+summ pred_spend_B if ever_treated == 1, detail
+
+save baseline_predictions_spec_B, replace
+di "  Saved: baseline_predictions_spec_B.dta"
+
+*--- 1.5.C: Predictions from Spec C (Full Heterogeneity) ---
+di _n "--- Calculating Baseline Predictions for Spec C ---"
+
+use jjp_jackknife_prep, clear
+estimates use model_baseline_C
+
+* Initialize prediction variable
+gen pred_spend_C = 0 if ever_treated == 1
+
+*--- Extract and average main effects (lags 2-7) ---
+local sum_main = 0
+local n_lags = 0
+forvalues t = 2/7 {
+    capture scalar beta_main = _b[1.lag_`t']
+    if _rc == 0 & !missing(beta_main) {
+        local sum_main = `sum_main' + beta_main
+        local n_lags = `n_lags' + 1
+    }
+}
+if `n_lags' > 0 {
+    replace pred_spend_C = pred_spend_C + (`sum_main' / `n_lags') if ever_treated == 1
+}
+
+*--- Add baseline spending quartile interactions ---
+forvalues q = 2/4 {
+    local sum_ppe = 0
+    local n_ppe = 0
+    forvalues t = 2/7 {
+        capture scalar beta_ppe = _b[1.lag_`t'#`q'.pre_q]
+        if _rc == 0 & !missing(beta_ppe) {
+            local sum_ppe = `sum_ppe' + beta_ppe
+            local n_ppe = `n_ppe' + 1
+        }
+    }
+    if `n_ppe' > 0 {
+        replace pred_spend_C = pred_spend_C + (`sum_ppe' / `n_ppe') if ever_treated == 1 & pre_q == `q'
+    }
+}
+
+*--- Add income quartile interactions ---
+forvalues q = 2/4 {
+    local sum_inc = 0
+    local n_inc = 0
+    forvalues t = 2/7 {
+        capture scalar beta_inc = _b[1.lag_`t'#`q'.inc_q]
+        if _rc == 0 & !missing(beta_inc) {
+            local sum_inc = `sum_inc' + beta_inc
+            local n_inc = `n_inc' + 1
+        }
+    }
+    if `n_inc' > 0 {
+        replace pred_spend_C = pred_spend_C + (`sum_inc' / `n_inc') if ever_treated == 1 & inc_q == `q'
+    }
+}
+
+*--- Add reform type interactions ---
+local reforms reform_eq reform_mfp reform_ep reform_le reform_sl
+foreach r of local reforms {
+    local sum_ref = 0
+    local n_ref = 0
+    forvalues t = 2/7 {
+        capture scalar beta_ref = _b[1.lag_`t'#1.`r']
+        if _rc == 0 & !missing(beta_ref) {
+            local sum_ref = `sum_ref' + beta_ref
+            local n_ref = `n_ref' + 1
+        }
+    }
+    if `n_ref' > 0 {
+        replace pred_spend_C = pred_spend_C + (`sum_ref' / `n_ref') if ever_treated == 1 & `r' == 1
+    }
+}
+
+di "  Predicted Spending Distribution - Baseline Spec C:"
+summ pred_spend_C if ever_treated == 1, detail
+
+save baseline_predictions_spec_C, replace
+di "  Saved: baseline_predictions_spec_C.dta"
+
+di _n "Phase 1.5 Complete: All baseline predictions calculated"
 
 *** ---------------------------------------------------------------------------
 *** PHASE 2: JACKKNIFE PROCEDURE (Leave-One-State-Out)
@@ -589,9 +799,179 @@ di _n(2) "========================================"
 di "PHASE 3: GRAPH GENERATION"
 di "========================================"
 
-* Process each specification
+*** ---------------------------------------------------------------------------
+*** PHASE 3.1: BASELINE GRAPHS
+*** Generate event-study plots using baseline (full-sample) predictions
+*** ---------------------------------------------------------------------------
+
+di _n "========================================"
+di "PHASE 3.1: BASELINE GRAPHS"
+di "========================================"
+
+* Process each specification for BASELINE
 foreach spec in A B C {
-    di _n "--- Graphs for Specification `spec' ---"
+    di _n "--- Baseline Graphs for Specification `spec' ---"
+
+    use baseline_predictions_spec_`spec', clear
+
+    *--- Definition A: High = (pred_spend > 0) ---
+    gen high_def_A = (pred_spend_`spec' > 0) if !missing(pred_spend_`spec')
+    replace high_def_A = 0 if never_treated == 1
+
+    *--- Definition B: High = Top 2 Quartiles ---
+    xtile pred_q = pred_spend_`spec' if ever_treated == 1, nq(4)
+    gen high_def_B = (pred_q >= 3) if !missing(pred_q)
+    replace high_def_B = 0 if never_treated == 1
+
+    save baseline_predictions_spec_`spec', replace
+
+    *===========================================================================
+    * GRAPH I: High vs Low Comparison (Both Definitions) - BASELINE
+    *===========================================================================
+
+    foreach def in A B {
+        di "  Creating Baseline Graph I for Specification `spec', Definition `def'..."
+
+        * Run event study
+        quietly areg lexp_ma_strict ///
+            i.lag_*##i.high_def_`def' i.lead_*##i.high_def_`def' ///
+            i.year_unified##i.high_def_`def' ///
+            [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
+            absorb(county_id) vce(cluster county_id)
+
+        * Extract coefficients for High group
+        tempfile results_high results_low
+        postfile h_high str15 term float t b se str10 group using `results_high'
+
+        forvalues k = 5(-1)1 {
+            quietly lincom 1.lead_`k' + 1.lead_`k'#1.high_def_`def'
+            post h_high ("lead`k'") (-`k') (r(estimate)) (r(se)) ("High")
+        }
+        post h_high ("base") (0) (0) (0) ("High")
+        forvalues k = 1/17 {
+            quietly lincom 1.lag_`k' + 1.lag_`k'#1.high_def_`def'
+            post h_high ("lag`k'") (`k') (r(estimate)) (r(se)) ("High")
+        }
+        postclose h_high
+
+        * Extract coefficients for Low group
+        postfile h_low str15 term float t b se str10 group using `results_low'
+
+        forvalues k = 5(-1)1 {
+            quietly lincom 1.lead_`k'
+            post h_low ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Low")
+        }
+        post h_low ("base") (0) (0) (0) ("Low")
+        forvalues k = 1/17 {
+            quietly lincom 1.lag_`k'
+            post h_low ("lag`k'") (`k') (r(estimate)) (r(se)) ("Low")
+        }
+        postclose h_low
+
+        * Combine and plot
+        use `results_high', clear
+        append using `results_low'
+
+        gen ci_lo = b - 1.96*se
+        gen ci_hi = b + 1.96*se
+
+        * Title text
+        local def_text = cond("`def'" == "A", "High = Predicted > 0", "High = Top 2 Quartiles")
+
+        twoway ///
+            (rarea ci_lo ci_hi t if group == "High", color(blue%20) lw(none)) ///
+            (line b t if group == "High", lcolor(blue) lwidth(medthick)) ///
+            (rarea ci_lo ci_hi t if group == "Low", color(red%20) lw(none)) ///
+            (line b t if group == "Low", lcolor(red) lpattern(dash) lwidth(medthick)), ///
+            yline(0, lcolor(gs10) lpattern(dash)) ///
+            xline(0, lcolor(gs10) lpattern(dash)) ///
+            xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+            legend(order(2 "High Predicted" 4 "Low Predicted") pos(6) col(2)) ///
+            title("BASELINE Spec `spec' - Definition `def': High vs Low") ///
+            subtitle("`def_text'") ///
+            ytitle("Change in ln(13-yr rolling avg PPE)") ///
+            xtitle("Years relative to reform") ///
+            note("Averaging window: lags 2-7 (vertical lines). Full-sample coefficients.") ///
+            graphregion(color(white))
+
+        graph export "baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
+    }
+
+    *===========================================================================
+    * GRAPH II: All 4 Quartiles - BASELINE
+    *===========================================================================
+
+    di "  Creating Baseline Graph II (All Quartiles) for Specification `spec'..."
+
+    use baseline_predictions_spec_`spec', clear
+
+    quietly areg lexp_ma_strict ///
+        i.lag_*##i.pred_q i.lead_*##i.pred_q ///
+        i.year_unified##i.pred_q ///
+        [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
+        absorb(county_id) vce(cluster county_id)
+
+    * Extract coefficients for each quartile
+    clear
+    tempfile all_quartiles
+    save `all_quartiles', emptyok
+
+    forvalues q = 1/4 {
+        tempfile q`q'_file
+        postfile h_q`q' str15 term float t b se byte quart using `q`q'_file'
+
+        forvalues k = 5(-1)1 {
+            quietly lincom 1.lead_`k' + 1.lead_`k'#`q'.pred_q
+            post h_q`q' ("lead`k'") (-`k') (r(estimate)) (r(se)) (`q')
+        }
+        post h_q`q' ("base") (0) (0) (0) (`q')
+        forvalues k = 1/17 {
+            quietly lincom 1.lag_`k' + 1.lag_`k'#`q'.pred_q
+            post h_q`q' ("lag`k'") (`k') (r(estimate)) (r(se)) (`q')
+        }
+        postclose h_q`q'
+
+        use `q`q'_file', clear
+        append using `all_quartiles'
+        save `all_quartiles', replace
+    }
+
+    use `all_quartiles', clear
+    gen ci_lo = b - 1.96*se
+    gen ci_hi = b + 1.96*se
+
+    twoway ///
+        (line b t if quart == 1, lcolor(navy) lwidth(medthick)) ///
+        (line b t if quart == 2, lcolor(forest_green) lwidth(medthick)) ///
+        (line b t if quart == 3, lcolor(orange) lwidth(medthick)) ///
+        (line b t if quart == 4, lcolor(cranberry) lwidth(medthick)), ///
+        yline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+        legend(order(1 "Q1 (Lowest)" 2 "Q2" 3 "Q3" 4 "Q4 (Highest)") pos(6) rows(1)) ///
+        title("BASELINE Spec `spec': All Quartiles of Predicted Spending") ///
+        ytitle("Change in ln(13-yr rolling avg PPE)") ///
+        xtitle("Years relative to reform") ///
+        note("Averaging window: lags 2-7 (vertical lines). Full-sample coefficients.") ///
+        graphregion(color(white))
+
+    graph export "baseline_spec_`spec'_all_quartiles.png", replace
+}
+
+di _n "Phase 3.1 Complete: All baseline graphs generated"
+
+*** ---------------------------------------------------------------------------
+*** PHASE 3.2: JACKKNIFE GRAPHS
+*** Generate event-study plots using leave-one-out predictions
+*** ---------------------------------------------------------------------------
+
+di _n "========================================"
+di "PHASE 3.2: JACKKNIFE GRAPHS"
+di "========================================"
+
+* Process each specification for JACKKNIFE
+foreach spec in A B C {
+    di _n "--- Jackknife Graphs for Specification `spec' ---"
 
     use jackknife_predictions_spec_`spec', clear
 
@@ -777,12 +1157,20 @@ restore
 save jackknife_predictions_all_specs, replace
 
 di _n "=== OUTPUT FILES ==="
-di "  1. jackknife_predictions_spec_A.dta"
-di "  2. jackknife_predictions_spec_B.dta"
-di "  3. jackknife_predictions_spec_C.dta"
-di "  4. jackknife_predictions_all_specs.dta"
-di "  5. 9 PNG graphs (3 specs × 3 types: 2 definitions + 1 quartiles)"
-di _n "All jackknife estimation complete!"
+di _n "  BASELINE OUTPUTS:"
+di "    - baseline_predictions_spec_A.dta"
+di "    - baseline_predictions_spec_B.dta"
+di "    - baseline_predictions_spec_C.dta"
+di "    - 9 PNG graphs: baseline_spec_[A|B|C]_[def_A|def_B]_high_vs_low.png"
+di "                    baseline_spec_[A|B|C]_all_quartiles.png"
+di _n "  JACKKNIFE OUTPUTS:"
+di "    - jackknife_predictions_spec_A.dta"
+di "    - jackknife_predictions_spec_B.dta"
+di "    - jackknife_predictions_spec_C.dta"
+di "    - jackknife_predictions_all_specs.dta"
+di "    - 9 PNG graphs: jackknife_spec_[A|B|C]_[def_A|def_B]_high_vs_low.png"
+di "                    jackknife_spec_[A|B|C]_all_quartiles.png"
+di _n "All baseline and jackknife estimation complete!"
 
 *** ---------------------------------------------------------------------------
 *** Clean up temporary estimate files
