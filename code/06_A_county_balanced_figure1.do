@@ -40,7 +40,7 @@ OUTPUTS:
 
 clear all
 set more off
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 *** ---------------------------------------------------------------------------
 *** Section 1: Load and Merge County Data
@@ -378,7 +378,7 @@ foreach v of local var {
         scheme(s2mono)
 
     *graph export "$SchoolSpending/output/county_btm_`v'.png", replace
-*graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/county_btm_`v'.png", replace
+*graph export "$SchoolSpending/output/county_btm_`v'.png", replace
 }
 
 
@@ -489,7 +489,7 @@ foreach v of local var {
             scheme(s2mono)
 
         *graph export "$SchoolSpending/output/county_reg_`v'_`q'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/top100/county_reg_`v'_`q'.png", replace
+graph export "$SchoolSpending/output/top100/county_reg_`v'_`q'.png", replace
     }
 }
 
@@ -548,7 +548,7 @@ foreach v of local var {
         scheme(s2mono)
 
     *graph export "$SchoolSpending/output/county_btm_`v'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/top100/county_btm_`v'.png", replace
+graph export "$SchoolSpending/output/top100/county_btm_`v'.png", replace
 }
 
 *** ---------------------------------------------------------------------------
@@ -609,7 +609,7 @@ foreach v of local var {
             scheme(s2mono)
 
         *graph export "$SchoolSpending/output/county_reg_`v'_`q'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/btm100/county_reg_`v'_`q'.png", replace
+graph export "$SchoolSpending/output/btm100/county_reg_`v'_`q'.png", replace
     }
 }
 
@@ -668,7 +668,7 @@ foreach v of local var {
         scheme(s2mono)
 
     *graph export "$SchoolSpending/output/county_btm_`v'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/btm100/county_btm_`v'.png", replace
+graph export "$SchoolSpending/output/btm100/county_btm_`v'.png", replace
 }
 
 

@@ -175,7 +175,7 @@ use `base', clear
 * C) Clean and construct per-pupil expenditure
 *--------------------------------------------------------------*
 
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 * 1)--------------------------------- Flag anomalous values (keep for inspection)
 gen bad_pop   = (V33 < 0)        // negative pop
@@ -257,7 +257,7 @@ di as result "✓ INDFIN panel (1967‑1991) complete."
 
 * 2)--------------------------------- Create standard 9-digit GOVID
 gen str9 GOVID = string(id, "%09.0f")
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 * 3)--------------------------------- Calculate per-pupil expenditure
 gen pp_exp = .
@@ -279,7 +279,7 @@ save indfin_panel, replace
 
 clear
 set more off
-cd "$SchoolSpending\data\raw\nces\build_f33_in_dir"
+cd "$SchoolSpending/data/raw/nces/build_f33_in_dir"
 
 * 1)--------------------------------- Convert SAS files to Stata
 local files : dir "." files "*.sas7bdat"
@@ -327,7 +327,7 @@ foreach f of local files {
 use `base', clear
 
 * 3)--------------------------------- Extract GOVID and save crosswalk
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 gen str9 GOVID = substr(CENSUSID,1,9)
 save f33_id, replace
 

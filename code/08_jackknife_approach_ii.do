@@ -55,7 +55,7 @@ KEY VARIABLES:
 
 clear all
 set more off
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 *** ---------------------------------------------------------------------------
 *** Section 1: Load Balanced Panel and Prepare Variables

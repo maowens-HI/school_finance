@@ -58,7 +58,7 @@ OUTPUTS:
 
 clear all
 set more off
-cd "$SchoolSpending\data"
+cd "$SchoolSpending/data"
 
 *** ---------------------------------------------------------------------------
 *** Section 1: Load and Merge County Data
