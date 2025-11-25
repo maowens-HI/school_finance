@@ -381,7 +381,7 @@ set more off
 cd "$SchoolSpending/data"
 
 *** Load tract-level NHGIS school school_age_pop data
-*import delimited "$SchoolSpending\data\school_level_1970.csv", clear
+*import delimited "$SchoolSpending/data/school_level_1970.csv", clear
 import delimited "$SchoolSpending/data/enroll_age_tract.csv", clear
 
 *** Label variables from NHGIS 1970 "Age by school_age_pop Status" table (NT112)

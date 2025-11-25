@@ -549,7 +549,7 @@ foreach v of local var {
             scheme(s2mono)
 
         *graph export "$SchoolSpending/output/district_reg_`v'_`q'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/district_reg_`v'_`q'.png", replace
+graph export "$SchoolSpending/output/district_reg_`v'_`q'.png", replace
     }
 }
 
@@ -607,7 +607,7 @@ foreach v of local var {
         scheme(s2mono)
 
     *graph export "$SchoolSpending/output/district_btm_`v'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/district_btm_`v'.png", replace
+graph export "$SchoolSpending/output/district_btm_`v'.png", replace
 }
 
 
@@ -669,7 +669,7 @@ foreach v of local var {
             scheme(s2mono)
 
         *graph export "$SchoolSpending/output/district_reg_`v'_`q'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/top100/district_reg_`v'_`q'.png", replace
+graph export "$SchoolSpending/output/top100/district_reg_`v'_`q'.png", replace
     }
 }
 
@@ -727,7 +727,7 @@ foreach v of local var {
         scheme(s2mono)
 
     *graph export "$SchoolSpending/output/district_btm_`v'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/top100/district_btm_`v'.png", replace
+graph export "$SchoolSpending/output/top100/district_btm_`v'.png", replace
 }
 
 *** ---------------------------------------------------------------------------
@@ -788,7 +788,7 @@ foreach v of local var {
             scheme(s2mono)
 
         *graph export "$SchoolSpending/output/district_reg_`v'_`q'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/btm100/district_reg_`v'_`q'.png", replace
+graph export "$SchoolSpending/output/btm100/district_reg_`v'_`q'.png", replace
     }
 }
 
@@ -846,6 +846,6 @@ foreach v of local var {
         scheme(s2mono)
 
     *graph export "$SchoolSpending/output/district_btm_`v'.png", replace
-graph export "C:\Users\maowens\OneDrive - Stanford\Documents\school_spending\notes\11_21_2025/btm100/district_btm_`v'.png", replace
+graph export "$SchoolSpending/output/btm100/district_btm_`v'.png", replace
 }
 
