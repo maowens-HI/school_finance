@@ -250,8 +250,168 @@ forvalues q = 2/4 {
 
 save baseline_predictions_spec_B, replace
 
-*--- 1.C Predictions: Spending + Income Quartiles + Reforms---
-*TODO complete the predictions section for 1.C as you did above the main differnece is that when we generate coefficients we have to 
+*--- 1.C Predictions: Spending + Income Quartiles + Reforms ---
+* Model 1.C has triple interactions: lag_*##inc_q##reform_*
+* We need to extract:
+*   1. Main effect: 1.lag_t
+*   2. Spending quartile interaction: 1.lag_t#q.pre_q
+*   3. Income quartile interaction: 1.lag_t#q.inc_q
+*   4. Reform type interaction: 1.lag_t#1.reform_*
+*   5. Triple interaction (income × reform): 1.lag_t#q.inc_q#1.reform_*
+
+use jjp_jackknife_prep, clear
+estimates use model_baseline_C
+
+**# Generate Main Effect Coefficients (lags 2-7)
+forvalues t = 2/7 {
+    gen main_`t' = .
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    capture scalar coeff_main = _b[1.lag_`t']
+    if _rc == 0 {
+        replace main_`t' = coeff_main
+    }
+}
+
+**# Generate Baseline Spending Quartile Interaction Coefficients
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        gen ppe_`t'_`q' = .
+    }
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        capture scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
+        if _rc == 0 {
+            replace ppe_`t'_`q' = coeff_ppe
+        }
+    }
+}
+
+**# Generate Income Quartile Interaction Coefficients
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        gen inc_`t'_`q' = .
+    }
+}
+
+* Fill with coefficient values
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        capture scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
+        if _rc == 0 {
+            replace inc_`t'_`q' = coeff_inc
+        }
+    }
+}
+
+**# Generate Reform Type Interaction Coefficients
+* Reform types: reform_eq, reform_mfp, reform_ep, reform_le, reform_sl
+local reforms "eq mfp ep le sl"
+foreach r of local reforms {
+    forvalues t = 2/7 {
+        gen ref_`r'_`t' = .
+    }
+}
+
+* Fill with coefficient values
+foreach r of local reforms {
+    forvalues t = 2/7 {
+        capture scalar coeff_ref = _b[1.lag_`t'#1.reform_`r']
+        if _rc == 0 {
+            replace ref_`r'_`t' = coeff_ref
+        }
+    }
+}
+
+**# Generate Triple Interaction Coefficients (Income × Reform)
+* These are: 1.lag_t#q.inc_q#1.reform_*
+foreach r of local reforms {
+    forvalues t = 2/7 {
+        forvalues q = 2/4 {
+            gen triple_`r'_`t'_`q' = .
+        }
+    }
+}
+
+* Fill with coefficient values
+foreach r of local reforms {
+    forvalues t = 2/7 {
+        forvalues q = 2/4 {
+            capture scalar coeff_triple = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+            if _rc == 0 {
+                replace triple_`r'_`t'_`q' = coeff_triple
+            }
+        }
+    }
+}
+
+**# Calculate Averages Across Lags 2-7
+
+*--- Average main effect
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
+
+*--- Average baseline spending interactions
+forvalues q = 2/4 {
+    egen avg_ppe_`q' = rowmean( ///
+        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
+}
+
+*--- Average income interactions
+forvalues q = 2/4 {
+    egen avg_inc_`q' = rowmean( ///
+        inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
+}
+
+*--- Average reform type interactions
+foreach r of local reforms {
+    egen avg_ref_`r' = rowmean( ///
+        ref_`r'_2 ref_`r'_3 ref_`r'_4 ref_`r'_5 ref_`r'_6 ref_`r'_7)
+}
+
+*--- Average triple interactions (income × reform)
+foreach r of local reforms {
+    forvalues q = 2/4 {
+        egen avg_triple_`r'_`q' = rowmean( ///
+            triple_`r'_2_`q' triple_`r'_3_`q' triple_`r'_4_`q' ///
+            triple_`r'_5_`q' triple_`r'_6_`q' triple_`r'_7_`q')
+    }
+}
+
+**# Calculate Predicted Spending Increase
+* Sum all applicable components for each observation
+gen pred_spend = avg_main if !missing(pre_q)
+
+*--- Add baseline spending interaction effects (for pre_q = 2, 3, 4)
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+}
+
+*--- Add income interaction effects (for inc_q = 2, 3, 4)
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+}
+
+*--- Add reform type interaction effects (for each reform = 1)
+foreach r of local reforms {
+    replace pred_spend = pred_spend + avg_ref_`r' if reform_`r' == 1
+}
+
+*--- Add triple interaction effects (income × reform)
+* These apply when both inc_q = q AND reform_r = 1
+foreach r of local reforms {
+    forvalues q = 2/4 {
+        replace pred_spend = pred_spend + avg_triple_`r'_`q' ///
+            if inc_q == `q' & reform_`r' == 1
+    }
+}
+
+save baseline_predictions_spec_C, replace
+di "  Saved: baseline_predictions_spec_C.dta"
 
 *** ---------------------------------------------------------------------------
 *** PHASE 2: JACKKNIFE PROCEDURE (Leave-One-State-Out)
