@@ -62,6 +62,8 @@ gen year_unified = year4 - 1
 *--- Winsorize spending at 1st and 99th percentiles
 winsor2 county_exp, replace c(1 99) by(year_unified)
 
+rename good_county_1971 good_71
+ *drop if good_71 != 1
 *** ---------------------------------------------------------------------------
 *** Section 2: Create 13-Year Strict Rolling Mean
 *** ---------------------------------------------------------------------------
@@ -105,7 +107,7 @@ keep if !missing(exp, state_fips, county_id)
 
 
 *--- Within-state quartiles
-bysort state_fips: egen pre_q1971 = xtile(exp), n(4)
+bysort state_fips: egen pre_q1971 = xtile(exp), n(20)
 keep state_fips county_id pre_q1971
 
 tempfile q1971
@@ -163,7 +165,7 @@ replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year)   // Bin -5 
 *** Section 6: Rename Good County Indicators
 *** ---------------------------------------------------------------------------
 
-rename good_county_1971 good_71
+
 
 save jjp_interp, replace
 
@@ -217,7 +219,7 @@ drop if good_71 != 1
 keep if year_unified == 1971
 keep if !missing(exp, state_fips, county_id)
 
-bysort state_fips: egen pre_q1971 = xtile(lexp_ma_strict), n(4)
+bysort state_fips: egen pre_q1971 = xtile(lexp_ma_strict), n(20)
 keep state_fips county_id pre_q1971
 
 tempfile q1971
@@ -269,9 +271,9 @@ save jjp_rank,replace
 local var lexp_ma_strict
 
 foreach v of local var {
-    forvalues q = 1/4 {
+    forvalues q = 1/20 {
         use jjp_balance, clear
-        *drop if good_71 != 1
+        drop if good_71 != 1
 
 
 
@@ -279,7 +281,7 @@ foreach v of local var {
         areg  `v' ///
             i.lag_* i.lead_* ///
             i.year_unified [w=school_age_pop] ///
-            if pre_q1971==`q' | never_treated == 1, ///
+            if pre_q1971==`q' & (reform_year < 2000 | never_treated == 1), ///
             absorb(county_id) vce(cluster county_id)
 
         *--- Extract coefficients
@@ -313,12 +315,12 @@ foreach v of local var {
             yline(0, lpattern(dash) lcolor(gs10)) ///
             xline(0, lpattern(dash) lcolor(gs10)) ///
             ytitle("Δ ln(13-yr rolling avg PPE)", size(medsmall) margin(medium)) ///
-            title(" `v' | Quartile `q' | 1971", size(medlarge) color("35 45 60")) ///
+            title(" `v' | `q'/20 | 1971", size(medlarge) color("35 45 60")) ///
             graphregion(color(white)) ///
             legend(off) ///
             scheme(s2mono)
 
-
+	graph export "$SchoolSpending/output/5_perc_reg_`q'.png", replace
     }
 }
 
@@ -338,7 +340,7 @@ foreach v of local var {
     areg `v' ///
         i.lag_* i.lead_* ///
         i.year_unified [w=school_age_pop] ///
-        if pre_q1971 < 4 | never_treated==1 , ///
+        if pre_q1971 < 7 | never_treated==1 , ///
         absorb(county_id) vce(cluster county_id)
 
     *--- Extract coefficients

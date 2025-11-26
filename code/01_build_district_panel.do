@@ -198,8 +198,7 @@ gen pp_exp = .
 replace pp_exp = (TOTALEXP/1000) / V33
 
 label var pp_exp "Per-pupil expenditure"
-drop if year < 1992 | year > 2010
-
+drop if year < 1992 
 * 3)--------------------------------- Extract 9-digit GOVID from 14-digit CENSUSID
 gen str9 GOVID = substr(CENSUSID,1,9)
 rename V33 enrollment
