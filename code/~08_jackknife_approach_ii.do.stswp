@@ -372,7 +372,7 @@ save baseline_predictions_spec_C, replace
 *** Following JJP (2016) Approach II methodology
 *** Structure mirrors Phase 1: 2.A, 2.B, 2.C
 *** ---------------------------------------------------------------------------
-/*
+
 *--- Get list of all states
 use jjp_jackknife_prep, clear
 levelsof state_fips, local(states)
@@ -488,12 +488,12 @@ foreach s of local states {
 }
 
 save jackknife_predictions_spec_A, replace
-*/
+
 
 *** ---------------------------------------------------------------------------
 *** 2.B. Jackknife: Spending + Income Quartiles
 *** ---------------------------------------------------------------------------
-/*
+
 local state_count = 0
 foreach s of local states {
     local state_count = `state_count' + 1
@@ -620,7 +620,7 @@ foreach s of local states {
 }
 
 save jackknife_predictions_spec_B, replace
-*/
+
 
 *** ---------------------------------------------------------------------------
 *** 2.C. Jackknife: Full Heterogeneity (Spending + Income + Reform Types)
@@ -788,13 +788,13 @@ di _n(2) "Phase 2 Complete: All jackknife predictions calculated"
 
 
 * Process Phase 1 baseline predictions
-foreach spec in C { 
+foreach spec in A B C{ 
 
     use baseline_predictions_spec_`spec', clear
-
+	drop if good_71 != 1
     *--- Definition A: High = (pred_spend > 0) ---
     gen high_def_A = (pred_spend > 0) if !missing(pred_spend) & ever_treated == 1
-
+	replace high_def_A = 0 if never_treated == 1
     *--- Definition B: High = Top 2 Quartiles ---
     xtile pred_q = pred_spend if ever_treated == 1, nq(4)
     gen high_def_B = (pred_q >= 3) if !missing(pred_q)
@@ -804,13 +804,13 @@ foreach spec in C {
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Baseline Predictions (Both Definitions)
     *---------------------------------------------------------------------------
-    foreach def in A B{
+    foreach def in A {
         use baseline_reg_`spec', clear
 		
         * Run event study
         areg lexp_ma_strict ///
             i.lag_*##i.high_def_`def' i.lead_*##i.high_def_`def' ///
-            i.year_unified##i.high_def_`def' ///
+            i.year_unified ///
             [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
             absorb(county_id) vce(cluster county_id)
 
@@ -847,8 +847,8 @@ foreach spec in C {
         use `results_high', clear
         append using `results_low'
 
-        gen ci_lo = b - 1.96*se
-        gen ci_hi = b + 1.96*se
+        gen ci_lo = b - 1.645*se
+        gen ci_hi = b + 1.645*se
 
         * Title text
         local def_text = cond("`def'" == "A", "High = Predicted > 0", "High = Top 2 Quartiles")
@@ -860,7 +860,7 @@ foreach spec in C {
             (line b t if group == "Low", lcolor(red) lpattern(dash) lwidth(medthick)), ///
             yline(0, lcolor(gs10) lpattern(dash)) ///
             xline(0, lcolor(gs10) lpattern(dash)) ///
-            xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+            xline(2 7, lcolor(blue) lwidth(vthin)) ///
             legend(order(2 "High Predicted" 4 "Low Predicted") pos(6) col(2)) ///
             title("BASELINE Spec `spec' - Definition `def': High vs Low") ///
             subtitle("`def_text' | Full-sample estimates (no jackknife)") ///
@@ -869,7 +869,7 @@ foreach spec in C {
             note("Averaging window: lags 2-7 (vertical lines)") ///
             graphregion(color(white))
 
-        graph export "baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
+        graph export "C:/Users\maowens\OneDrive - Stanford\Documents/school_spending\notes/12_5_2025/baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
 
@@ -877,7 +877,6 @@ foreach spec in C {
 * PART 3B: PHASE 2 JACKKNIFE PREDICTIONS GRAPHS
 *==============================================================================
 
-di _n(2) "Generating Phase 3B: Jackknife Predictions Graphs..."
 
 * Process each jackknife specification
 foreach spec in A B  { // C
@@ -886,7 +885,7 @@ foreach spec in A B  { // C
 
     *--- Definition A: High = (pred_spend > 0) ---
     gen high_def_A = (pred_spend > 0) if !missing(pred_spend) & ever_treated == 1
-
+		replace high_def_A = 0 if never_treated == 1
 
     *--- Definition B: High = Top 2 Quartiles ---
     xtile pred_q = pred_spend if ever_treated == 1, nq(4)
@@ -901,13 +900,13 @@ foreach spec in A B  { // C
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
 foreach spec in A B { // C
-    foreach def in A B {
+    foreach def in A  {
 		use jk_reg_`spec', clear
 
         * Run event study
         areg lexp_ma_strict ///
             i.lag_*##i.high_def_`def' i.lead_*##i.high_def_`def' ///
-            i.year_unified##i.high_def_`def' ///
+            i.year_unified ///
             [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
             absorb(county_id) vce(cluster county_id)
 
@@ -944,8 +943,8 @@ foreach spec in A B { // C
         use `results_high', clear
         append using `results_low'
 
-        gen ci_lo = b - 1.96*se
-        gen ci_hi = b + 1.96*se
+        gen ci_lo = b - 1.645*se
+        gen ci_hi = b + 1.645*se
 
         * Title text
         local def_text = cond("`def'" == "A", "High = Predicted > 0", "High = Top 2 Quartiles")
@@ -966,7 +965,7 @@ foreach spec in A B { // C
             note("Averaging window: lags 2-7 (vertical lines)") ///
             graphregion(color(white))
 
-        graph export "jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
+        graph export "C:/Users\maowens\OneDrive - Stanford\Documents/school_spending\notes/12_5_2025/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
 

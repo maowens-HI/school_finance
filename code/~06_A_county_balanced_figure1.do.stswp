@@ -334,7 +334,7 @@ local var lexp_ma_strict
 
 foreach v of local var {
     use jjp_balance, clear
-    *drop if good_71 != 1
+    drop if good_71 != 1
 
     *--- Weighted regression excluding top quartile
     areg `v' ///
