@@ -8,7 +8,7 @@
 
 * --- 0. Define project root ---
 * Change global to where the share_code file is located on your device
-global SchoolSpending "C:/Users/maowens/OneDrive - Stanford/Documents/share_code"
+global SchoolSpending "C:\Users\maowens\OneDrive - Stanford\school\git"
 local ProjectDir "$SchoolSpending"
 cd "`ProjectDir'"
 
@@ -50,10 +50,11 @@ do "`ProjectDir'/code/05_create_county_panel.do"   // Interpolate districts & cr
 
 
 * --- 3. Analysis -------------------------------------------------------------------------
-
-
+do "`ProjectDir'/code/06_A_county_balanced_figure1.do"   // Figure 1
+do "`ProjectDir'/code/08_jackknife_approach_ii.do"   // Figure 1
 
 * --- 5. Wrap up --------------------------------------------------------------------------
 local datetime2 = clock("$S_DATE $S_TIME", "DMYhms")
 di "Runtime (hours): " %-12.2fc (`datetime2' - `datetime1')/(1000*60*60)
 log close
+
