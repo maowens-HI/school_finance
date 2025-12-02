@@ -891,7 +891,7 @@ foreach spec in A B C{
             note("Averaging window: lags 2-7 (vertical lines)") ///
             graphregion(color(white))
 
-        graph export "C:/Users\maowens\OneDrive - Stanford\Documents/school_spending\notes/12_5_2025/baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
+        graph export "C:/Users\maowens\OneDrive - Stanford\Documents/school_spending\notes/12_2_2025/baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
 
@@ -901,7 +901,7 @@ foreach spec in A B C{
 
 
 * Process each jackknife specification
-foreach spec in A B  { // C
+foreach spec in A B C {
 
     use jackknife_predictions_spec_`spec', clear
 
@@ -921,7 +921,7 @@ foreach spec in A B  { // C
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
-foreach spec in A B { // C
+foreach spec in A B C {
     foreach def in A  {
 		use jk_reg_`spec', clear
 
@@ -987,7 +987,7 @@ foreach spec in A B { // C
             note("Averaging window: lags 2-7 (vertical lines)") ///
             graphregion(color(white))
 
-        graph export "C:/Users\maowens\OneDrive - Stanford\Documents/school_spending\notes/12_5_2025/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
+        graph export "C:/Users\maowens\OneDrive - Stanford\Documents/school_spending\notes/12_2_2025/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
 
