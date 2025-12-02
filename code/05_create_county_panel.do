@@ -100,14 +100,6 @@ DEPENDENCIES:
   • Excel file: tabula-tabled2.xlsx must be in data directory
   • Downstream: ALL analysis files (11_*.do, balance.do, etc.) use interp_d.dta
 
-VALIDATION CHECKS TO RUN:
-  - Interpolation: tab too_far (shows % gaps NOT interpolated, should be small)
-  - County uniqueness: duplicates report county year4 (should be 0)
-  - Treatment merge: tab _merge after reform merge (should be 100% matched)
-  - Enrollment weights: summ school_age_pop, detail (check for negatives/outliers)
-  - Reform coverage: tab reform_year if !missing(reform_year) (shows reform timing)
-  - Never-treated: tab never_treated (control group size)
-  - Sample size: count (should be ~3,000 counties × 50 years ≈ 150,000 obs)
 ==============================================================================*/
 *==============================================================*
 * I) Interpolate district panel (gaps ≤ 3 years)

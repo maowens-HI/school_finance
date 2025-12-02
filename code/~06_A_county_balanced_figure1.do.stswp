@@ -271,7 +271,7 @@ save jjp_rank,replace
 local var lexp_ma_strict
 
 foreach v of local var {
-    forvalues q = 1/20 {
+    forvalues q = 1/4 {
         use jjp_balance, clear
         drop if good_71 != 1
 
@@ -340,7 +340,7 @@ foreach v of local var {
     areg `v' ///
         i.lag_* i.lead_* ///
         i.year_unified [w=school_age_pop] ///
-        if pre_q1971 < 7 | never_treated==1 , ///
+        if pre_q1971 < 4 | never_treated==1 , ///
         absorb(county_id) vce(cluster county_id)
 
     *--- Extract coefficients
