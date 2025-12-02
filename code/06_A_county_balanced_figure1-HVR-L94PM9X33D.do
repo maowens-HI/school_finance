@@ -63,7 +63,7 @@ gen year_unified = year4 - 1
 winsor2 county_exp, replace c(1 99) by(year_unified)
 
 rename good_county_1971 good_71
-drop if good_71 != 1
+ *drop if good_71 != 1
 *** ---------------------------------------------------------------------------
 *** Section 2: Create 13-Year Strict Rolling Mean
 *** ---------------------------------------------------------------------------
@@ -273,7 +273,7 @@ local var lexp_ma_strict
 foreach v of local var {
     forvalues q = 1/4 {
         use jjp_balance, clear
- 
+        drop if good_71 != 1
 
 
 
@@ -334,7 +334,7 @@ local var lexp_ma_strict
 
 foreach v of local var {
     use jjp_balance, clear
-
+    drop if good_71 != 1
 
     *--- Weighted regression excluding top quartile
     areg `v' ///

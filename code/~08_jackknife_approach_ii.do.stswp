@@ -625,17 +625,11 @@ save jackknife_predictions_spec_B, replace
 *** ---------------------------------------------------------------------------
 *** 2.C. Jackknife: Full Heterogeneity (Spending + Income + Reform Types)
 *** ---------------------------------------------------------------------------
-/*
+
 local state_count = 0
 foreach s of local states {
     local state_count = `state_count' + 1
 
-    * Show progress every 5 states
-    if mod(`state_count', 5) == 0 {
-        di "  [2.C] Progress: `state_count'/`n_states' states processed..."
-    }
-
-    quietly {
         use `master_data', clear
         drop if state_fips == "`s'"
 
@@ -654,127 +648,153 @@ foreach s of local states {
 
         * Save estimates
         estimates save jackknife_C_state_`s', replace
-    }
-}
-di "  Specification 2.C complete: `n_states' jackknife regressions run"
 
-*--- Extract coefficients and calculate predicted spending for Spec C ---
-di "  Extracting coefficients and calculating predictions..."
+}
+
 
 local state_count = 0
 foreach s of local states {
     local state_count = `state_count' + 1
 
-    if mod(`state_count', 10) == 0 {
-        di "    Extracting: `state_count'/`n_states'..."
-    }
 
-    quietly {
+
+
         * Load master data and estimates for this state
         use `master_data', clear
         estimates use jackknife_C_state_`s'
 
-        * Initialize prediction variable
-        gen pred_spend_C = 0 if state_fips == "`s'"
+* Define reforms local for reuse
+local reforms "eq mfp ep le sl"
 
-        *--- Extract and average main effects (lags 2-7) ---
-        local sum_main = 0
-        local n_lags = 0
-        forvalues t = 2/7 {
-            capture scalar beta_main = _b[1.lag_`t']
-            if _rc == 0 & !missing(beta_main) {
-                local sum_main = `sum_main' + beta_main
-                local n_lags = `n_lags' + 1
-            }
-        }
-        if `n_lags' > 0 {
-            replace pred_spend_C = pred_spend_C + (`sum_main' / `n_lags') ///
-                if state_fips == "`s'"
-        }
+** ---------------------------------------------------------
+** 1. Generate Main Effect Coefficients (lags 2-7)
+** ---------------------------------------------------------
+forvalues t = 2/7 {
+    gen main_`t' = .
+}
 
-        *--- Add baseline spending quartile interactions ---
-        forvalues q = 2/4 {
-            local sum_ppe = 0
-            local n_ppe = 0
-            forvalues t = 2/7 {
-                capture scalar beta_ppe = _b[1.lag_`t'#`q'.pre_q]
-                if _rc == 0 & !missing(beta_ppe) {
-                    local sum_ppe = `sum_ppe' + beta_ppe
-                    local n_ppe = `n_ppe' + 1
-                }
-            }
-            if `n_ppe' > 0 {
-                replace pred_spend_C = pred_spend_C + (`sum_ppe' / `n_ppe') ///
-                    if state_fips == "`s'" & pre_q == `q'
-            }
-        }
+* Fill with coefficient values
+forvalues t = 2/7 {
+    scalar coeff_main = _b[1.lag_`t']
+    replace main_`t' = coeff_main
+}
 
-        *--- Add income quartile interactions ---
-        forvalues q = 2/4 {
-            local sum_inc = 0
-            local n_inc = 0
-            forvalues t = 2/7 {
-                capture scalar beta_inc = _b[1.lag_`t'#`q'.inc_q]
-                if _rc == 0 & !missing(beta_inc) {
-                    local sum_inc = `sum_inc' + beta_inc
-                    local n_inc = `n_inc' + 1
-                }
-            }
-            if `n_inc' > 0 {
-                replace pred_spend_C = pred_spend_C + (`sum_inc' / `n_inc') ///
-                    if state_fips == "`s'" & inc_q == `q'
-            }
-        }
-
-        *--- Add reform type interactions ---
-        local reforms reform_eq reform_mfp reform_ep reform_le reform_sl
-        foreach r of local reforms {
-            local sum_ref = 0
-            local n_ref = 0
-            forvalues t = 2/7 {
-                capture scalar beta_ref = _b[1.lag_`t'#1.`r']
-                if _rc == 0 & !missing(beta_ref) {
-                    local sum_ref = `sum_ref' + beta_ref
-                    local n_ref = `n_ref' + 1
-                }
-            }
-            if `n_ref' > 0 {
-                replace pred_spend_C = pred_spend_C + (`sum_ref' / `n_ref') ///
-                    if state_fips == "`s'" & `r' == 1
-            }
-        }
-
-        * Keep only the excluded state's predictions
-        keep if state_fips == "`s'"
-        keep county_id state_fips year_unified relative_year pred_spend_C ///
-             pre_q inc_q reform_* never_treated ever_treated school_age_pop ///
-             lexp_ma_strict reform_year
-
-        save pred_temp_C_`s', replace
+** ---------------------------------------------------------
+** 2. Generate Baseline Spending Quartile Interaction Coefficients
+** ---------------------------------------------------------
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        gen ppe_`t'_`q' = .
     }
 }
 
-* Combine all states for Spec C
-clear
-foreach s of local states {
-    append using pred_temp_C_`s'
-    erase pred_temp_C_`s'.dta
+* Fill with coefficient values
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+         scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
+         replace ppe_`t'_`q' = coeff_ppe
+    }
 }
 
-* Merge with full dataset
-merge 1:1 county_id year_unified using `master_data', ///
-    update replace nogen
+** ---------------------------------------------------------
+** 3, 4 & 5. Generate Combined Income + Reform + Triple Coefficients
+** ---------------------------------------------------------
+* Step A: Initialize variables for quartiles 2-4 
+foreach r of local reforms {
+    forvalues t = 2/7 {
+        forvalues q = 2/4 {
+            gen comb_`r'_`t'_`q' = .
+        }
+    }
+}
 
-* Summary statistics
-di _n "  Predicted Spending Distribution - Spec C:"
-summ pred_spend_C if ever_treated == 1, detail
+* Step B: Calculate intermediate coefficients and sum them.
+foreach r of local reforms {
+    forvalues t = 2/7 {
+        forvalues q = 2/4 {
+            
+            * Get component coefficients
+            scalar coeff_ref    = _b[1.lag_`t'#1.reform_`r']
+            scalar coeff_inc    = _b[1.lag_`t'#`q'.inc_q]
+            scalar coeff_triple = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+            
+            * Sum them up
+            scalar coeff_total = coeff_ref + coeff_inc + coeff_triple
+            
+            * Single replace at the end
+            replace comb_`r'_`t'_`q' = coeff_total
+        }
+    }
+}
+
+** ---------------------------------------------------------
+** Calculate Averages Across Lags 2-7
+** ---------------------------------------------------------
+
+*--- Average main effect
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
+
+*--- Average baseline spending interactions
+forvalues q = 2/4 {
+    egen avg_ppe_`q' = rowmean( ///
+        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
+}
+
+*--- Average Combined Interactions (3+4+5)
+foreach r of local reforms {
+    forvalues q = 2/4 {
+        egen avg_comb_`r'_`q' = rowmean( ///
+            comb_`r'_2_`q' comb_`r'_3_`q' comb_`r'_4_`q' ///
+            comb_`r'_5_`q' comb_`r'_6_`q' comb_`r'_7_`q')
+    }
+}
+
+** ---------------------------------------------------------
+** Calculate Predicted Spending Increase
+** ---------------------------------------------------------
+
+* Sum all applicable components for each observation
+gen pred_spend = avg_main if !missing(pre_q)
+
+*--- Add baseline spending interaction effects (for pre_q = 2, 3, 4)
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+}
+
+*--- Add Combined Effects (Income + Reform + Triple)
+
+foreach r of local reforms {
+    forvalues q = 2/4 {
+        replace pred_spend = pred_spend + avg_comb_`r'_`q' ///
+            if inc_q == `q' & reform_`r' == 1 & !missing(pre_q)
+    }
+}
+        * Keep only the excluded state's predictions
+        keep if state_fips == "`s'"
+
+
+        save pred_temp_C_`s', replace
+    
+}
+
+
+*** 
+
+use `master_data', clear
+levelsof state_fips, local(states)
+
+clear
+tempfile jk_empty_B\C
+save `jk_empty_C', emptyok
+
+*--- Append predicted spending from all states
+foreach s of local states {
+    append using pred_temp_C_`s'.dta
+}
 
 save jackknife_predictions_spec_C, replace
-di "  Saved: jackknife_predictions_spec_C.dta"
 
-di _n(2) "Phase 2 Complete: All jackknife predictions calculated"
 
-*/
 
 *** ---------------------------------------------------------------------------
 *** PHASE 3: GRAPH GENERATION
@@ -791,7 +811,7 @@ di _n(2) "Phase 2 Complete: All jackknife predictions calculated"
 foreach spec in A B C{ 
 
     use baseline_predictions_spec_`spec', clear
-	drop if good_71 != 1
+
     *--- Definition A: High = (pred_spend > 0) ---
     gen high_def_A = (pred_spend > 0) if !missing(pred_spend) & ever_treated == 1
 	replace high_def_A = 0 if never_treated == 1
@@ -806,7 +826,7 @@ foreach spec in A B C{
     *---------------------------------------------------------------------------
     foreach def in A {
         use baseline_reg_`spec', clear
-		
+			
         * Run event study
         areg lexp_ma_strict ///
             i.lag_*##i.high_def_`def' i.lead_*##i.high_def_`def' ///
@@ -869,9 +889,11 @@ foreach spec in A B C{
             note("Averaging window: lags 2-7 (vertical lines)") ///
             graphregion(color(white))
 
-        graph export "C:/Users\maowens\OneDrive - Stanford\Documents/school_spending\notes/12_5_2025/baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
+        graph export "$SchoolSpending/output//baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
+
+
 
 *==============================================================================
 * PART 3B: PHASE 2 JACKKNIFE PREDICTIONS GRAPHS
@@ -879,7 +901,7 @@ foreach spec in A B C{
 
 
 * Process each jackknife specification
-foreach spec in A B  { // C
+foreach spec in A B C { // 
 
     use jackknife_predictions_spec_`spec', clear
 
@@ -956,7 +978,7 @@ foreach spec in A B { // C
             (line b t if group == "Low", lcolor(red) lpattern(dash) lwidth(medthick)), ///
             yline(0, lcolor(gs10) lpattern(dash)) ///
             xline(0, lcolor(gs10) lpattern(dash)) ///
-            xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+            xline(2 7, lcolor(blue) lwidth(vthin)) ///
             legend(order(2 "High Predicted" 4 "Low Predicted") pos(6) col(2)) ///
             title("JACKKNIFE Spec `spec' - Definition `def': High vs Low") ///
             subtitle("`def_text' | Leave-one-state-out predictions") ///
@@ -965,8 +987,36 @@ foreach spec in A B { // C
             note("Averaging window: lags 2-7 (vertical lines)") ///
             graphregion(color(white))
 
-        graph export "C:/Users\maowens\OneDrive - Stanford\Documents/school_spending\notes/12_5_2025/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
+        graph export "$SchoolSpending/output/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
+
+foreach spec in A B  C{
+	use baseline_reg_`spec',clear
+	display "Spec `spec'"
+	tab pre_q high_def_A
+}
+
+
+
+foreach spec in A B  {
+	use jk_reg_`spec',clear
+		display "Spec `spec'"
+	tab pre_q high_def_A
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
