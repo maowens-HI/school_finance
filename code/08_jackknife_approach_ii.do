@@ -82,7 +82,7 @@ areg lexp_ma_strict ///
     i.year_unified##i.pre_q ///
     [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
     absorb(county_id) vce(cluster county_id)
-eststo model_A
+
 estimates save model_baseline_A, replace
 
 *--- 1.B. Spending + Income Quartiles ---
@@ -93,7 +93,7 @@ areg lexp_ma_strict ///
     i.year_unified##(i.pre_q i.inc_q) ///
     [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
     absorb(county_id) vce(cluster county_id)
-eststo model_B
+
 estimates save model_baseline_B, replace
 
 *--- 1.C. Full Specification (Spending + Income + Reform Types) ---
@@ -106,7 +106,7 @@ areg lexp_ma_strict ///
     i.year_unified##(i.pre_q i.inc_q i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
     [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
     absorb(county_id) vce(cluster county_id)
-eststo model_C
+
 estimates save model_baseline_C, replace
 
 
