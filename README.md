@@ -94,8 +94,6 @@ do code/06_B_district_balanced_figure1.do
 do code/07_jackknife.do
 ```
 
-Or explore archived experimental specifications in `code/experimental_archive/`
-
 ---
 
 ### **Key Geographic Identifiers**
@@ -122,10 +120,10 @@ Where: SS = State FIPS, CCC = County FIPS, DDDDD = District code, BTCTSC = Basic
 
 **Key Variables:**
 - **Spending:** `pp_exp` (nominal), `pp_exp_real` (2000 dollars), `lexp_ma_strict` (log spending with 13-year rolling mean)
-- **Population:** `school_age_pop` (used for weighting in aggregation)
+- **School Age Population:** `school_age_pop` (used for weighting in aggregation)
 - **Treatment:** `reform_year` (year of court-ordered SFR), `relative_year` (years since reform)
 - **Quality Flags:** `good_govid`, `good_tract`, `good_county` (baseline data completeness)
-- **Baseline Quartiles:** `pre_q1969`, `pre_q1970`, `pre_q1971` (pre-reform spending distribution)
+- **Baseline Quartiles:** `pre_q1969`, `pre_q1970`, `pre_q1971` (pre-reform spending quartiles)
 
 **Spatial Matching:**
 - Uses 1970 tract definitions from 1969-70 GRF
@@ -134,8 +132,8 @@ Where: SS = State FIPS, CCC = County FIPS, DDDDD = District code, BTCTSC = Basic
 - Counties collapsed from tracts using school-age population weights
 
 **Required Software:**
-- Stata (tested with Stata 16+)
-- Required Stata packages: `winsor2`, `rangestat`, `eststo/esttab`, `fred` (for CPI data)
+- Stata (tested with Stata 18+)
+- Required Stata packages: `winsor2`, `rangestat`, `fred` (for CPI data)
 - Install packages via: `ssc install [package_name]`
 
 ---
