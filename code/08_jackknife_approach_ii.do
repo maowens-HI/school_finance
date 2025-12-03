@@ -634,17 +634,26 @@ foreach s of local states {
         drop if state_fips == "`s'"
 
         * Run Spec C regression excluding state `s'
-        areg lexp_ma_strict ///
-            i.lag_*##i.pre_q     i.lead_*##i.pre_q ///
-            i.lag_*##i.inc_q     i.lead_*##i.inc_q ///
-            i.lag_*##i.reform_eq i.lead_*##i.reform_eq ///
-            i.lag_*##i.reform_mfp i.lead_*##i.reform_mfp ///
-            i.lag_*##i.reform_ep i.lead_*##i.reform_ep ///
-            i.lag_*##i.reform_le i.lead_*##i.reform_le ///
-            i.lag_*##i.reform_sl i.lead_*##i.reform_sl ///
-            i.year_unified##(i.pre_q i.inc_q i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
-            [aw = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
-            absorb(county_id) vce(cluster county_id)
+areg lexp_ma_strict                                                     ///
+    i.lag_*##i.pre_q                i.lead_*##i.pre_q                   ///
+    i.lag_*##i.pre_q##i.reform_eq   i.lead_*##i.pre_q##i.reform_eq      ///
+    i.lag_*##i.pre_q##i.reform_mfp  i.lead_*##i.pre_q##i.reform_mfp     ///
+    i.lag_*##i.pre_q##i.reform_ep   i.lead_*##i.pre_q##i.reform_ep      ///
+    i.lag_*##i.pre_q##i.reform_le   i.lead_*##i.pre_q##i.reform_le      ///
+    i.lag_*##i.pre_q##i.reform_sl   i.lead_*##i.pre_q##i.reform_sl      ///
+    i.year_unified##(                                                   ///
+        i.pre_q                                                         ///
+        i.inc_q                                                         ///
+        i.reform_eq                                                     ///
+        i.reform_mfp                                                    ///
+        i.reform_ep                                                     ///
+        i.reform_le                                                     ///
+        i.reform_sl                                                     ///
+    )                                                                   ///
+    [aw = school_age_pop]                                               ///
+    if (never_treated == 1 | reform_year < 2000),                       ///
+    absorb(county_id) vce(cluster county_id)
+
 
         * Save estimates
         estimates save jackknife_C_state_`s', replace
