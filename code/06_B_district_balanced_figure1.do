@@ -346,7 +346,8 @@ keep if year_unified == 1971
 keep if !missing(exp, state_fips, LEAID)
 
 
-*--- Within-state quartiles
+*--- Within-state quartiles (stable sort for reproducibility)
+sort state_fips LEAID
 bysort state_fips: egen pre_q1971 = xtile(exp), n(4)
 keep state_fips LEAID pre_q1971
 
@@ -447,6 +448,8 @@ drop if good_71 != 1
 keep if year_unified == 1971
 keep if !missing(exp, state_fips, LEAID)
 
+*--- Stable sort for reproducibility
+sort state_fips LEAID
 bysort state_fips: egen pre_q1971 = xtile(exp), n(4)
 keep state_fips LEAID pre_q1971
 
@@ -480,8 +483,8 @@ keep LEAID weight_share obs_share
 order LEAID obs_share weight_share
 duplicates drop
 
-* Rank by weight_share
-gsort -weight_share
+* Rank by weight_share (stable sort for reproducibility)
+gsort -weight_share LEAID
 gen rank = _n
 keep LEAID rank
 tempfile rank

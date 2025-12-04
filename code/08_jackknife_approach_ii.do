@@ -824,7 +824,8 @@ foreach spec in A B C{
     *--- Definition A: High = (pred_spend > 0) ---
     gen high_def_A = (pred_spend > 0) if !missing(pred_spend) & ever_treated == 1
 	replace high_def_A = 0 if never_treated == 1
-    *--- Definition B: High = Top 2 Quartiles ---
+    *--- Definition B: High = Top 2 Quartiles (stable sort for reproducibility) ---
+    sort county_id
     xtile pred_q = pred_spend if ever_treated == 1, nq(4)
     gen high_def_B = (pred_q >= 3) if !missing(pred_q)
 
@@ -918,7 +919,8 @@ foreach spec in A B C { //
     gen high_def_A = (pred_spend > 0) if !missing(pred_spend) & ever_treated == 1
 		replace high_def_A = 0 if never_treated == 1
 
-    *--- Definition B: High = Top 2 Quartiles ---
+    *--- Definition B: High = Top 2 Quartiles (stable sort for reproducibility) ---
+    sort county_id
     xtile pred_q = pred_spend if ever_treated == 1, nq(4)
     gen high_def_B = (pred_q >= 3) if !missing(pred_q)
 

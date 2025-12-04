@@ -106,7 +106,8 @@ keep if year_unified == 1971
 keep if !missing(exp, state_fips, county_id)
 
 
-*--- Within-state quartiles
+*--- Within-state quartiles (stable sort for reproducibility)
+sort state_fips county_id
 bysort state_fips: egen pre_q1971 = xtile(exp), n(4)
 keep state_fips county_id pre_q1971
 
@@ -129,7 +130,8 @@ destring med_fam_inc, replace
 drop median_family_income
 duplicates drop
 keep if !missing(med_fam_inc, state_fips, county_id)
-*--- Within-state quartiles
+*--- Within-state quartiles (stable sort for reproducibility)
+sort state_fips county_id
 bysort state_fips: egen inc_q = xtile(med_fam_inc), n(4)
 keep state_fips county_id inc_q
 
@@ -252,8 +254,8 @@ keep county_id county_name weight_share obs_share
 order county_id county_name obs_share weight_share
 duplicates drop
 
-* Rank by weight_share
-gsort -weight_share
+* Rank by weight_share (stable sort for reproducibility)
+gsort -weight_share county_id
 gen rank = _n
 keep county_id rank
 save wt_rank,replace

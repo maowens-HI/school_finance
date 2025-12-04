@@ -130,7 +130,8 @@ foreach y of local years {
         continue
     }
 
-    *--- Within-state quartiles
+    *--- Within-state quartiles (stable sort for reproducibility)
+    sort state_fips county_id
     bysort state_fips: egen pre_q`y' = xtile(exp), n(4)
     keep state_fips county_id pre_q`y'
 
@@ -154,14 +155,17 @@ foreach n of local number {
     rename base_`n'_max base_`n'
 }
 
-* Create combined baseline quartiles
-egen base_exp = rowmean(base_66 base_69 base_70 base_71) 
+* Create combined baseline quartiles (stable sort for reproducibility)
+egen base_exp = rowmean(base_66 base_69 base_70 base_71)
+sort state_fips county_id
 bys state_fips: egen pre_q_66_71 = xtile(base_exp), n(4)
 
-egen base_exp2 = rowmean(base_66 base_69 base_70) 
+egen base_exp2 = rowmean(base_66 base_69 base_70)
+sort state_fips county_id
 bys state_fips: egen pre_q_66_70 = xtile(base_exp2), n(4)
 
-egen base_exp3 = rowmean(base_69 base_70 base_71) 
+egen base_exp3 = rowmean(base_69 base_70 base_71)
+sort state_fips county_id
 bys state_fips: egen pre_q_69_71 = xtile(base_exp3), n(4)
 
 *** ---------------------------------------------------------------------------
@@ -173,9 +177,10 @@ gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
 destring med_fam_inc, replace
 drop median_family_income
 
-*--- Create income quartiles (within state)
+*--- Create income quartiles (within state, stable sort for reproducibility)
 preserve
 duplicates drop county_id, force
+sort state_fips county_id
 bysort state_fips: egen inc_q = xtile(med_fam_inc), n(4)
 keep state_fips county_id inc_q
 tempfile inc_q69
@@ -441,12 +446,14 @@ foreach s of local states {
 *** Section 12: Create High/Low Predicted Spending Groups (REFORMED)
 *** ---------------------------------------------------------------------------
 
-*--- Create median split among treated counties
+*--- Create median split among treated counties (stable sort for reproducibility)
+sort county_id
 xtile pred_group = pred_spend if ever_treated == 1, nq(2)
 gen high_treated = pred_group == 2
 gen low_treated  = pred_group == 1
 
-*--- Create quartiles of predicted spending
+*--- Create quartiles of predicted spending (stable sort for reproducibility)
+sort county_id
 xtile pred_q = pred_spend if ever_treated == 1, nq(4)
 
 *--- Label quartiles

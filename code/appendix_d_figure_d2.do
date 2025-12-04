@@ -299,7 +299,8 @@ preserve
     keep if year4 == 1972
     keep if !missing(pp_exp_real, state_fips, LEAID)
 
-    * Within-state quartiles of 1972 spending
+    * Within-state quartiles of 1972 spending (stable sort for reproducibility)
+    sort state_fips LEAID
     bysort state_fips: egen pre_q1972 = xtile(pp_exp_real), n(4)
 
     keep LEAID state_fips pre_q1972
