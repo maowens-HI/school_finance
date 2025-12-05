@@ -96,9 +96,9 @@ save `no_tract_fix',replace
 * 2)--------------------------------- Merge untracted area flags
 use grf_id_tractlevel,clear
 keep tract70 no_tract
-*--- Stable sort before duplicates drop for reproducibility
+*--- Keep first row per tract70 (stable sort ensures reproducibility)
 sort tract70 no_tract
-duplicates drop tract70,force
+by tract70: keep if _n == 1
 merge 1:m tract70 using `no_tract_fix'
 
 * 3)--------------------------------- Identify counties with untracted areas
