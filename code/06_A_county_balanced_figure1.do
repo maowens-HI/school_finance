@@ -128,6 +128,8 @@ keep state_fips county_id median_family_income
 gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
 destring med_fam_inc, replace
 drop median_family_income
+*--- Stable sort before duplicates drop for reproducibility
+sort state_fips county_id med_fam_inc
 duplicates drop
 keep if !missing(med_fam_inc, state_fips, county_id)
 *--- Within-state quartiles (stable sort for reproducibility)
@@ -195,6 +197,8 @@ bys county_id: replace n_nonmiss = n_nonmiss[_N]
 keep if min_rel == -5 & max_rel == 17 & n_rel == 23 & n_nonmiss == 23
 
 keep county_id
+*--- Stable sort before duplicates drop for reproducibility
+sort county_id
 duplicates drop
 gen balance = 1
 tempfile balance
@@ -250,8 +254,10 @@ bys county_id: egen county_obs = count(county_id)
 gen obs_share = county_obs / total_obs
 
 * Create ranking dataset: one row per county
-keep county_id county_name weight_share obs_share 
+keep county_id county_name weight_share obs_share
 order county_id county_name obs_share weight_share
+*--- Stable sort before duplicates drop for reproducibility
+sort county_id county_name weight_share obs_share
 duplicates drop
 
 * Rank by weight_share (stable sort for reproducibility)

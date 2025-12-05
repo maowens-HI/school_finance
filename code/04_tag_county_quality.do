@@ -96,6 +96,8 @@ save `no_tract_fix',replace
 * 2)--------------------------------- Merge untracted area flags
 use grf_id_tractlevel,clear
 keep tract70 no_tract
+*--- Stable sort before duplicates drop for reproducibility
+sort tract70 no_tract
 duplicates drop tract70,force
 merge 1:m tract70 using `no_tract_fix'
 
@@ -138,6 +140,9 @@ gen state_fips = substr(county,1,2)
 keep county good_county good_county_6771 good_county_7072 good_county_1967 ///
 	good_county_1970 good_county_1971 good_county_1972
 
+*--- Stable sort before duplicates drop for reproducibility
+sort county good_county good_county_6771 good_county_7072 good_county_1967 ///
+	good_county_1970 good_county_1971 good_county_1972
 duplicates drop
 drop if missing(county)
 save county_clean, replace // list of each county tagged

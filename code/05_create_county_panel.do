@@ -531,6 +531,8 @@ gen str5 county_code = string(statea, "%02.0f") + string(countya, "%03.0f")
 
 *Preserve a list of county codes and names
 preserve
+*--- Stable sort before duplicates drop for reproducibility
+sort county_code county
 duplicates drop county_code,force
 rename county county_name
 keep county_code county_name
@@ -638,6 +640,8 @@ replace LEAID = LEAID2 + LEAID3 if missing(LEAID)
 *** Create county-level lookup for merging back later
 preserve
 keep county_name county
+*--- Stable sort before duplicates drop for reproducibility
+sort county county_name
 duplicates drop county county_name, force
 save county_lookup,replace
 restore
@@ -775,6 +779,8 @@ save `mytemp2'
 
 *** Merge county names back into collapsed panel
 use county_lookup
+*--- Stable sort before duplicates drop for reproducibility
+sort county county_name
 duplicates drop county,force
 merge 1:m county using `mytemp2'
 keep if _merge==3
