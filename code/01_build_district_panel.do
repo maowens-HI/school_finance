@@ -86,6 +86,7 @@ cd "$SchoolSpending/data/raw/nces/build_f33_in_dir"
 
 * 1)--------------------------------- Identify all F-33 raw SAS files
 local files : dir "." files "*.sas7bdat"
+local files : list sort files // Sort for reproducibility
 
 * 2)--------------------------------- Convert each SAS file to .dta format
 foreach f of local files {
@@ -103,6 +104,7 @@ foreach f of local files {
 
 * 1)--------------------------------- Prepare list of converted .dta files
 local files : dir "." files "*.dta"
+local files : list sort files // Sort for reproducibility
 tempfile base
 
 local first = 1
@@ -282,6 +284,7 @@ cd "$SchoolSpending/data/raw/nces/build_f33_in_dir"
 
 * 1)--------------------------------- Convert SAS files to Stata
 local files : dir "." files "*.sas7bdat"
+local files : list sort files // Sort for reproducibility
 
 foreach f of local files {
     disp "Processing `f'"
@@ -298,6 +301,7 @@ foreach f of local files {
 
 * 1)--------------------------------- Prepare list of .dta files
 local files : dir "." files "*.dta"
+local files : list sort files // Sort for reproducibility
 tempfile base
 
 local first = 1
