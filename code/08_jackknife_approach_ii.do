@@ -84,7 +84,7 @@ areg lexp_ma_strict ///
     absorb(county_id) vce(cluster county_id)
 
 estimates save model_baseline_A, replace
-
+/*
 *--- 1.B. Spending + Income Quartiles ---
 
 areg lexp_ma_strict ///
@@ -108,7 +108,7 @@ areg lexp_ma_strict ///
     absorb(county_id) vce(cluster county_id)
 
 estimates save model_baseline_C, replace
-
+*/
 
 
 *** ---------------------------------------------------------------------------
@@ -169,7 +169,7 @@ save baseline_predictions_spec_A, replace
 
 
 *--- 1.B Predictions: Spending + Income Quartiles ---
-
+/*
 use jjp_jackknife_prep, clear
 estimates use model_baseline_B
 
@@ -366,7 +366,7 @@ foreach r of local reforms {
 }
 
 save baseline_predictions_spec_C, replace
-
+*/
 *** ---------------------------------------------------------------------------
 *** PHASE 2: JACKKNIFE PROCEDURE (Leave-One-State-Out)
 *** Following JJP (2016) Approach II methodology
@@ -492,7 +492,7 @@ save jackknife_predictions_spec_A, replace
 *** ---------------------------------------------------------------------------
 *** 2.B. Jackknife: Spending + Income Quartiles
 *** ---------------------------------------------------------------------------
-
+/*
 local state_count = 0
 foreach s of local states {
     local state_count = `state_count' + 1
@@ -620,11 +620,11 @@ foreach s of local states {
 
 save jackknife_predictions_spec_B, replace
 
-
+*/
 *** ---------------------------------------------------------------------------
 *** 2.C. Jackknife: Full Heterogeneity (Spending + Income + Reform Types)
 *** ---------------------------------------------------------------------------
-
+/*
 local state_count = 0
 foreach s of local states {
     local state_count = `state_count' + 1
@@ -808,7 +808,7 @@ foreach s of local states {
 
 save jackknife_predictions_spec_C, replace
 
-
+*/
 
 *** ---------------------------------------------------------------------------
 *** PHASE 3: GRAPH GENERATION
@@ -822,7 +822,7 @@ save jackknife_predictions_spec_C, replace
 
 
 * Process Phase 1 baseline predictions
-foreach spec in A B C{ 
+foreach spec in A { 
 
     use baseline_predictions_spec_`spec', clear
 
@@ -920,14 +920,14 @@ foreach def in A {
 
 
 * Process each jackknife specification
-foreach spec in  A B C{ // 
+foreach spec in  A { // 
 
     use jackknife_predictions_spec_`spec', clear
 
     *--- Definition A: High = (pred_spend > 0) ---
     gen high_def_A = (pred_spend > 0) if !missing(pred_spend) & ever_treated == 1
 		replace high_def_A = 0 if never_treated == 1
-
+		*replace high_def_A = 0 if (state_fips == "39" & pre_q == 4) | (state_fips == "48" & pre_q == 3)
     *--- Definition B: High = Top 2 Quartiles (stable sort for reproducibility) ---
     sort county_id
     xtile pred_q = pred_spend if ever_treated == 1, nq(4)
@@ -941,10 +941,10 @@ foreach spec in  A B C{ //
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
-foreach spec in  A B C{ // C
+foreach spec in  A { // C
     foreach def in A  {
         use jk_reg_`spec', clear
-
+		
         * Run event study
         areg lexp_ma_strict ///
             i.lag_*##i.high_def_`def' i.lead_*##i.high_def_`def' ///
