@@ -74,7 +74,7 @@ save jjp_jackknife_prep, replace
 
 
 use jjp_jackknife_prep, clear
-drop if good_71 != 1
+
 *--- 1.A. Spending Quartile Only ---
 
 areg lexp_ma_strict ///
@@ -519,7 +519,7 @@ foreach s of local states {
 local counter = 0
 foreach s of local states {
     local counter = `counter' + 1
-    di as text "  [`counter'/`n_states'] Extracting enhanced coefficients for state `s'..."
+
 
     preserve
     use `master_data', clear
@@ -721,16 +721,22 @@ foreach r of local reforms {
 foreach r of local reforms {
     forvalues t = 2/7 {
         forvalues q = 2/4 {
-            
-            * Get component coefficients
-            scalar coeff_ref    = _b[1.lag_`t'#1.reform_`r']
-            scalar coeff_inc    = _b[1.lag_`t'#`q'.inc_q]
-            scalar coeff_triple = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
-            
-            * Sum them up
+
+            * Pull each coefficient; default to 0 when missing
+            capture scalar coeff_ref = _b[1.lag_`t'#1.reform_`r']
+            if _rc scalar coeff_ref = 0
+
+            capture scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
+            if _rc scalar coeff_inc = 0
+
+            capture scalar coeff_triple = ///
+                _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+            if _rc scalar coeff_triple = 0
+
+            * Combine components
             scalar coeff_total = coeff_ref + coeff_inc + coeff_triple
-            
-            * Single replace at the end
+
+            * Assign across full dataset (correct for jackknife)
             replace comb_`r'_`t'_`q' = coeff_total
         }
     }
@@ -793,7 +799,7 @@ use `master_data', clear
 levelsof state_fips, local(states)
 
 clear
-tempfile jk_empty_B\C
+tempfile jk_empty_C
 save `jk_empty_C', emptyok
 
 *--- Append predicted spending from all states
@@ -824,7 +830,8 @@ foreach spec in A B C{
     *--- Definition A: High = (pred_spend > 0) ---
     gen high_def_A = (pred_spend > 0) if !missing(pred_spend) & ever_treated == 1
 	replace high_def_A = 0 if never_treated == 1
-    *--- Definition B: High = Top 2 Quartiles ---
+    *--- Definition B: High = Top 2 Quartiles (stable sort for reproducibility) ---
+    sort county_id
     xtile pred_q = pred_spend if ever_treated == 1, nq(4)
     gen high_def_B = (pred_q >= 3) if !missing(pred_q)
 
@@ -833,14 +840,14 @@ foreach spec in A B C{
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Baseline Predictions (Both Definitions)
     *---------------------------------------------------------------------------
-    foreach def in A {
+foreach def in A {
         use baseline_reg_`spec', clear
 			
         * Run event study
         areg lexp_ma_strict ///
             i.lag_*##i.high_def_`def' i.lead_*##i.high_def_`def' ///
-            i.year_unified ///
-            [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
+            i.year_unified [aw = school_age_pop] ///
+            if (reform_year < 2000 | never_treated == 1), ///
             absorb(county_id) vce(cluster county_id)
 
         * Extract coefficients for High group
@@ -881,6 +888,9 @@ foreach spec in A B C{
 
         * Title text
         local def_text = cond("`def'" == "A", "High = Predicted > 0", "High = Top 2 Quartiles")
+        local spec_label = cond("`spec'"=="A","Spending", ///
+                           cond("`spec'"=="B","Spending + Income", ///
+                                               "Spending + Income + Reform"))
 
         twoway ///
             (rarea ci_lo ci_hi t if group == "High", color(blue%20) lw(none)) ///
@@ -891,8 +901,8 @@ foreach spec in A B C{
             xline(0, lcolor(gs10) lpattern(dash)) ///
             xline(2 7, lcolor(blue) lwidth(vthin)) ///
             legend(order(2 "High Predicted" 4 "Low Predicted") pos(6) col(2)) ///
-            title("BASELINE Spec `spec' - Definition `def': High vs Low") ///
-            subtitle("`def_text' | Full-sample estimates (no jackknife)") ///
+            title("`spec_label'") ///
+            subtitle("Full-sample estimates (no jackknife)") ///
             ytitle("Change in ln(13-yr rolling avg PPE)") ///
             xtitle("Years relative to reform") ///
             note("Averaging window: lags 2-7 (vertical lines)") ///
@@ -904,13 +914,14 @@ foreach spec in A B C{
 
 
 
+
 *==============================================================================
 * PART 3B: PHASE 2 JACKKNIFE PREDICTIONS GRAPHS
 *==============================================================================
 
 
 * Process each jackknife specification
-foreach spec in A B C { // 
+foreach spec in  A B C{ // 
 
     use jackknife_predictions_spec_`spec', clear
 
@@ -918,7 +929,8 @@ foreach spec in A B C { //
     gen high_def_A = (pred_spend > 0) if !missing(pred_spend) & ever_treated == 1
 		replace high_def_A = 0 if never_treated == 1
 
-    *--- Definition B: High = Top 2 Quartiles ---
+    *--- Definition B: High = Top 2 Quartiles (stable sort for reproducibility) ---
+    sort county_id
     xtile pred_q = pred_spend if ever_treated == 1, nq(4)
     gen high_def_B = (pred_q >= 3) if !missing(pred_q)
 
@@ -930,15 +942,15 @@ foreach spec in A B C { //
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
-foreach spec in A B { // C
+foreach spec in  A B C{ // C
     foreach def in A  {
-		use jk_reg_`spec', clear
+        use jk_reg_`spec', clear
 
         * Run event study
         areg lexp_ma_strict ///
             i.lag_*##i.high_def_`def' i.lead_*##i.high_def_`def' ///
-            i.year_unified ///
-            [aw = school_age_pop] if (reform_year < 2000 | never_treated == 1), ///
+            i.year_unified [aw = school_age_pop] ///
+            if (reform_year < 2000 | never_treated == 1), ///
             absorb(county_id) vce(cluster county_id)
 
         * Extract coefficients for High group
@@ -960,12 +972,12 @@ foreach spec in A B { // C
         postfile h_low str15 term float t b se str10 group using `results_low'
 
         forvalues k = 5(-1)1 {
-             lincom 1.lead_`k'
+            lincom 1.lead_`k'
             post h_low ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Low")
         }
         post h_low ("base") (0) (0) (0) ("Low")
         forvalues k = 1/17 {
-             lincom 1.lag_`k'
+            lincom 1.lag_`k'
             post h_low ("lag`k'") (`k') (r(estimate)) (r(se)) ("Low")
         }
         postclose h_low
@@ -979,6 +991,7 @@ foreach spec in A B { // C
 
         * Title text
         local def_text = cond("`def'" == "A", "High = Predicted > 0", "High = Top 2 Quartiles")
+        local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending + Income","Spending + Income + Reform"))
 
         twoway ///
             (rarea ci_lo ci_hi t if group == "High", color(blue%20) lw(none)) ///
@@ -989,8 +1002,8 @@ foreach spec in A B { // C
             xline(0, lcolor(gs10) lpattern(dash)) ///
             xline(2 7, lcolor(blue) lwidth(vthin)) ///
             legend(order(2 "High Predicted" 4 "Low Predicted") pos(6) col(2)) ///
-            title("JACKKNIFE Spec `spec' - Definition `def': High vs Low") ///
-            subtitle("`def_text' | Leave-one-state-out predictions") ///
+            title("JACKKNIFE: `spec_label'") ///
+            subtitle("Leave-one-state-out predictions") ///
             ytitle("Change in ln(13-yr rolling avg PPE)") ///
             xtitle("Years relative to reform") ///
             note("Averaging window: lags 2-7 (vertical lines)") ///
@@ -999,8 +1012,7 @@ foreach spec in A B { // C
         graph export "$SchoolSpending/output/jk/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
-
-foreach spec in A B  C{
+foreach spec in A   {
 	use baseline_reg_`spec',clear
 	display "Spec `spec'"
 	tab pre_q high_def_A
@@ -1008,24 +1020,125 @@ foreach spec in A B  C{
 
 
 
-foreach spec in A B  {
+foreach spec in A   {
 	use jk_reg_`spec',clear
 		display "Spec `spec'"
 	tab pre_q high_def_A
 }
 
+/*
+	use baseline_reg_A,clear
+	keep if pre_q >= 3
+	tab state_fips high_def_A
+
+
+	use jk_reg_A,clear
+	keep if pre_q >= 3
+	tab state_fips high_def_A
+
+
+
+use jk_reg_A, clear
+keep if state_fips == "39"
+tab pre_q pred_q
+
+
+use jk_reg_A, clear
+keep if state_fips == "48"
+tab pre_q pred_q
+
+
+
+use baseline_reg_A,clear
+keep if inlist(state_fips, "39", "48")
 
 
 
 
+* Full sample
+estimates use model_baseline_A
+scalar full_main = _b[1.lag_4]
+scalar full_ppe3 = _b[1.lag_4#3.pre_q]
+scalar full_ppe4 = _b[1.lag_4#4.pre_q]
+
+* Leave-Ohio
+estimates use jackknife_A_state_39
+scalar oh_main = _b[1.lag_4]
+scalar oh_ppe3 = _b[1.lag_4#3.pre_q]
+scalar oh_ppe4 = _b[1.lag_4#4.pre_q]
+
+* Leave-Texas
+estimates use jackknife_A_state_48
+scalar tx_main = _b[1.lag_4]
+scalar tx_ppe3 = _b[1.lag_4#3.pre_q]
+scalar tx_ppe4 = _b[1.lag_4#4.pre_q]
+
+di "Full:  main=" full_main " ppe3=" full_ppe3 " ppe4=" full_ppe4
+di "No-OH: main=" oh_main   " ppe3=" oh_ppe3   " ppe4=" oh_ppe4
+di "No-TX: main=" tx_main   " ppe3=" tx_ppe3   " ppe4=" tx_ppe4
 
 
 
+* Full sample
+estimates use model_baseline_A
 
+scalar full_main = 0
+scalar full_ppe3 = 0
+scalar full_ppe4 = 0
 
+forvalues t = 2/7 {
+    scalar full_main = full_main + _b[1.lag_`t']
+    scalar full_ppe3 = full_ppe3 + _b[1.lag_`t'#3.pre_q]
+    scalar full_ppe4 = full_ppe4 + _b[1.lag_`t'#4.pre_q]
+}
 
+scalar full_main = full_main / 6
+scalar full_ppe3 = full_ppe3 / 6
+scalar full_ppe4 = full_ppe4 / 6
 
+* Leave-Ohio
+estimates use jackknife_A_state_39
 
+scalar oh_main = 0
+scalar oh_ppe3 = 0
+scalar oh_ppe4 = 0
 
+forvalues t = 2/7 {
+    scalar oh_main = oh_main + _b[1.lag_`t']
+    scalar oh_ppe3 = oh_ppe3 + _b[1.lag_`t'#3.pre_q]
+    scalar oh_ppe4 = oh_ppe4 + _b[1.lag_`t'#4.pre_q]
+}
 
+scalar oh_main = oh_main / 6
+scalar oh_ppe3 = oh_ppe3 / 6
+scalar oh_ppe4 = oh_ppe4 / 6
 
+* Leave-Texas
+estimates use jackknife_A_state_48
+
+scalar tx_main = 0
+scalar tx_ppe3 = 0
+scalar tx_ppe4 = 0
+
+forvalues t = 2/7 {
+    scalar tx_main = tx_main + _b[1.lag_`t']
+    scalar tx_ppe3 = tx_ppe3 + _b[1.lag_`t'#3.pre_q]
+    scalar tx_ppe4 = tx_ppe4 + _b[1.lag_`t'#4.pre_q]
+}
+
+scalar tx_main = tx_main / 6
+scalar tx_ppe3 = tx_ppe3 / 6
+scalar tx_ppe4 = tx_ppe4 / 6
+
+* Display results
+di "Averaged over lags 2-7:"
+di "Full:  main=" full_main " ppe3=" full_ppe3 " ppe4=" full_ppe4
+di "No-OH: main=" oh_main   " ppe3=" oh_ppe3   " ppe4=" oh_ppe4
+di "No-TX: main=" tx_main   " ppe3=" tx_ppe3   " ppe4=" tx_ppe4
+
+* Compute predicted values
+di " "
+di "Predicted spending (main + ppe_q):"
+di "Full:  pred_q3=" full_main + full_ppe3 " pred_q4=" full_main + full_ppe4
+di "No-OH: pred_q3=" oh_main + oh_ppe3     " pred_q4=" oh_main + oh_ppe4
+di "No-TX: pred_q3=" tx_main + tx_ppe3     " pred_q4=" tx_main + tx_ppe4
