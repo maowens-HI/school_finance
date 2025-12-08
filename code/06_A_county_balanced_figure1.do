@@ -62,7 +62,7 @@ gen year_unified = year4 - 1
 *--- Winsorize spending at 1st and 99th percentiles
 winsor2 county_exp, replace c(1 99) by(year_unified)
 
-rename good_county_1971 good_71
+rename good_county_1972 good_71
 drop if good_71 != 1
 *** ---------------------------------------------------------------------------
 *** Section 2: Create 13-Year Strict Rolling Mean
@@ -95,6 +95,8 @@ replace relative_year = . if missing(reform_year)
 encode county_id, gen(county_num)
 
 save interp_temp, replace
+
+
 
 *** ---------------------------------------------------------------------------
 *** Section 4a: Create Baseline Spending Quartiles (1971 only)
@@ -141,6 +143,60 @@ restore
 
 *--- Merge quartiles back to main data
 merge m:1 state_fips county_id using `inc_q', nogen
+
+
+*** ---------------------------------------------------------------------------
+*** Section 4a: Create Baseline Spending Quartiles (1971 only) NATIONAL
+*** ---------------------------------------------------------------------------
+/*
+preserve
+use interp_temp, clear
+keep if year_unified == 1971
+keep if !missing(exp, state_fips, county_id)
+
+*--- National quartiles (stable sort for reproducibility)
+sort exp county_id
+xtile pre_q1971 = exp, nq(4)
+
+keep state_fips county_id pre_q1971
+tempfile q1971
+save `q1971', replace
+restore
+
+*--- Merge quartiles back to main data
+merge m:1 state_fips county_id using `q1971', nogen
+
+*** ---------------------------------------------------------------------------
+*** Section 4b: Create Baseline Income Quartiles
+*** ---------------------------------------------------------------------------
+
+preserve
+use interp_temp, clear
+keep state_fips county_id median_family_income
+gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
+destring med_fam_inc, replace
+drop median_family_income
+duplicates drop
+keep if !missing(med_fam_inc, state_fips, county_id)
+
+*--- National quartiles (stable sort for reproducibility)
+sort med_fam_inc county_id
+xtile inc_q = med_fam_inc, nq(4)
+
+keep state_fips county_id inc_q
+tempfile inc_q
+save `inc_q', replace
+restore
+
+*--- Merge quartiles back to main data
+merge m:1 state_fips county_id using `inc_q', nogen
+
+
+
+*/
+
+
+
 
 
 *** ---------------------------------------------------------------------------
@@ -214,25 +270,12 @@ keep if balance ==1 | never_treated2 ==1 // keep balanced counties & never treat
 *** ---------------------------------------------------------------------------
 *** Section 8: Recalculate Baseline Quartiles on Balanced Sample (1971 only)
 *** ---------------------------------------------------------------------------
-/*
-drop pre_q*
-preserve
-drop if good_71 != 1
-keep if year_unified == 1971
-keep if !missing(exp, state_fips, county_id)
-
-bysort state_fips: egen pre_q1971 = xtile(lexp_ma_strict), n(20)
-keep state_fips county_id pre_q1971
-
-tempfile q1971
-save `q1971', replace
-restore
-
-merge m:1 state_fips county_id using `q1971', nogen
-*/
 drop _merge
 
 save jjp_balance, replace
+
+tab state_fips pre_q1971
+
 
 /**************************************************************************
 *  Weight Investigation
@@ -312,15 +355,19 @@ foreach v of local var {
         gen ci_hi = b + 1.645*se
 
         twoway ///
-            (rarea ci_lo ci_hi rel_year, color("59 91 132%20") cmissing(n)) ///
-            (line b rel_year, lcolor("42 66 94") lwidth(medium)), ///
+            (rarea ci_lo ci_hi rel_year, color("59 91 132%20") lw(none)) ///
+            (line b rel_year, lcolor("42 66 94") lwidth(medthick)), ///
             yline(0, lpattern(dash) lcolor(gs10)) ///
             xline(0, lpattern(dash) lcolor(gs10)) ///
-            ytitle("Δ ln(13-yr rolling avg PPE)", size(medsmall) margin(medium)) ///
+            ytitle("Δ ln(13-yr rolling avg PPE)") ///
             title(" `v' | `q' | 1971", size(medlarge) color("35 45 60")) ///
             graphregion(color(white)) ///
             legend(off) ///
             scheme(s2mono)
+			
+			
+	
+
 
 	*graph export "$SchoolSpending/output/5_perc_reg_`q'.png", replace
     }

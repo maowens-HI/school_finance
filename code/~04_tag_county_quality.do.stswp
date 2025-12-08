@@ -102,5 +102,5 @@ restore
 
 preserve
 use county_clean,clear
-keep if good_county_1970 == 1
+keep if good_county_1971 == 1
 restore

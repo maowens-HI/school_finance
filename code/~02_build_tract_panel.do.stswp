@@ -352,7 +352,6 @@ preserve
 bysort tract70 sdtc alloc_pop: gen n_ties = _N
 tab n_ties state_fips if n_ties > 1 
 restore
-
 * Pick exactly one LEAID per (tract70 sdtc):
 gsort tract70 sdtc -alloc_pop LEAID // Highest population per tract-sdtc x LEAID
 drop if missing(sdtc)

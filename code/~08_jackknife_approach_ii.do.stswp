@@ -84,7 +84,7 @@ areg lexp_ma_strict ///
     absorb(county_id) vce(cluster county_id)
 
 estimates save model_baseline_A, replace
-/*
+
 *--- 1.B. Spending + Income Quartiles ---
 
 areg lexp_ma_strict ///
@@ -169,7 +169,7 @@ save baseline_predictions_spec_A, replace
 
 
 *--- 1.B Predictions: Spending + Income Quartiles ---
-/*
+
 use jjp_jackknife_prep, clear
 estimates use model_baseline_B
 
@@ -492,7 +492,7 @@ save jackknife_predictions_spec_A, replace
 *** ---------------------------------------------------------------------------
 *** 2.B. Jackknife: Spending + Income Quartiles
 *** ---------------------------------------------------------------------------
-/*
+
 local state_count = 0
 foreach s of local states {
     local state_count = `state_count' + 1
@@ -822,7 +822,7 @@ save jackknife_predictions_spec_C, replace
 
 
 * Process Phase 1 baseline predictions
-foreach spec in A { 
+foreach spec in A B C{ 
 
     use baseline_predictions_spec_`spec', clear
 
@@ -839,7 +839,7 @@ foreach spec in A {
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Baseline Predictions (Both Definitions)
     *---------------------------------------------------------------------------
-foreach def in A {
+foreach def in A{
         use baseline_reg_`spec', clear
 			
         * Run event study
@@ -920,7 +920,7 @@ foreach def in A {
 
 
 * Process each jackknife specification
-foreach spec in  A { // 
+foreach spec in  A B { // 
 
     use jackknife_predictions_spec_`spec', clear
 
@@ -941,7 +941,7 @@ foreach spec in  A { //
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
-foreach spec in  A { // C
+foreach spec in  A B{ // C
     foreach def in A  {
         use jk_reg_`spec', clear
 		
@@ -1011,6 +1011,7 @@ foreach spec in  A { // C
         graph export "$SchoolSpending/output/jk/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
+/*
 foreach spec in A   {
 	use baseline_reg_`spec',clear
 	display "Spec `spec'"
@@ -1025,14 +1026,14 @@ foreach spec in A   {
 	tab pre_q high_def_A
 }
 
-/*
+
 	use baseline_reg_A,clear
-	keep if pre_q >= 3
+	keep if pre_q >= 4
 	tab state_fips high_def_A
 
 
 	use jk_reg_A,clear
-	keep if pre_q >= 3
+	keep if pre_q == 4
 	tab state_fips high_def_A
 
 
