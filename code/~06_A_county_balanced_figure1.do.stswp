@@ -110,7 +110,7 @@ keep if !missing(exp, state_fips, county_id)
 
 *--- Within-state quartiles (stable sort for reproducibility)
 sort state_fips county_id
-bysort state_fips: egen pre_q1971 = xtile(exp), n(4)
+bysort state_fips: astile pre_q1971 = exp, n(4)
 keep state_fips county_id pre_q1971
 
 tempfile q1971
@@ -134,7 +134,7 @@ duplicates drop
 keep if !missing(med_fam_inc, state_fips, county_id)
 *--- Within-state quartiles (stable sort for reproducibility)
 sort state_fips county_id
-bysort state_fips: egen inc_q = xtile(med_fam_inc), n(4)
+bysort state_fips: astile inc_q = med_fam_inc, n(4)
 keep state_fips county_id inc_q
 
 tempfile inc_q
@@ -274,7 +274,25 @@ drop _merge
 
 save jjp_balance, replace
 
-tab state_fips pre_q1971
+
+use jjp_balance, clear
+
+* restrict to baseline year
+keep if year_unified == 1971
+
+
+
+* Summary stats by good/bad
+table good_71, ///
+    stat(mean exp) ///
+    stat(mean inc_q) ///
+    stat(mean school_age_pop) ///
+	stat(sum never_treated) 
+
+tab state_fips good_71
+
+
+
 
 
 /**************************************************************************
@@ -316,7 +334,7 @@ save jjp_rank,replace
 local var lexp_ma_strict
 
 foreach v of local var {
-    forvalues q = 1/4 {
+    forvalues q = 4/4 {
         use jjp_balance, clear
  
 
@@ -360,14 +378,14 @@ foreach v of local var {
             yline(0, lpattern(dash) lcolor(gs10)) ///
             xline(0, lpattern(dash) lcolor(gs10)) ///
             ytitle("Δ ln(13-yr rolling avg PPE)") ///
-            title(" `v' | `q' | 1971", size(medlarge) color("35 45 60")) ///
+            title(" `v' | Q: `q' | Good & Bad ", size(medlarge) color("35 45 60")) ///
             graphregion(color(white)) ///
             legend(off) ///
             scheme(s2mono)
 			
 			
 	
-
+ *graph export "$SchoolSpending\output\fig1\good_bad\bad_county_`q'.png", replace
 
 	*graph export "$SchoolSpending/output/5_perc_reg_`q'.png", replace
     }
@@ -423,12 +441,12 @@ foreach v of local var {
         yline(0, lpattern(dash) lcolor(gs10)) ///
         xline(0, lpattern(dash) lcolor(gs10)) ///
         ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
-        title("County Level: `v' | Quartiles 1-3 | 1971", size(medlarge) color("35 45 60")) ///
+        title(" `v' | Q: 1-3 | Good & Bad", size(medlarge) color("35 45 60")) ///
         graphregion(color(white)) ///
         legend(off) ///
         scheme(s2mono)
 
-    *graph export "$SchoolSpending/output/county_btm_`v'.png", replace
+    *graph export "$SchoolSpending\output\fig1\good_bad\bad_county_btm.png", replace 
 *graph export "$SchoolSpending/output/county_btm_`v'.png", replace
 }
 

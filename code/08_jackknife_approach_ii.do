@@ -246,122 +246,110 @@ forvalues q = 2/4 {
 save baseline_predictions_spec_B, replace
 
 *--- 1.C Predictions: Spending + Income Quartiles + Reforms ---
-* Model 1.C has triple interactions: lag_*##inc_q##reform_*
-* We need to extract:
-* 1. Main effect: 1.lag_t
-* 2. Spending quartile interaction: 1.lag_t#q.pre_q
-* 3-5. Combined Reform Context: (Income + Reform + Triple Interaction)
+
 
 use jjp_jackknife_prep, clear
-
-
-
 estimates use model_baseline_C
 
-* Define reforms local for reuse
+* Define reforms local
 local reforms "eq mfp ep le sl"
 
-** ---------------------------------------------------------
-** 1. Generate Main Effect Coefficients (lags 2-7)
-** ---------------------------------------------------------
+/* ---------------------------------------------------------
+   1. Generate Global Time Trend (Lags 2-7)
+   --------------------------------------------------------- */
 forvalues t = 2/7 {
     gen main_`t' = .
-}
-
-* Fill with coefficient values
-forvalues t = 2/7 {
     scalar coeff_main = _b[1.lag_`t']
     replace main_`t' = coeff_main
 }
+egen avg_main = rowmean(main_2-main_7)
 
-** ---------------------------------------------------------
-** 2. Generate Baseline Spending Quartile Interaction Coefficients
-** ---------------------------------------------------------
+/* ---------------------------------------------------------
+   2. Generate Spending Trends
+   --------------------------------------------------------- */
 forvalues t = 2/7 {
     forvalues q = 2/4 {
         gen ppe_`t'_`q' = .
+        /* Capture is good practice, though these should exist */
+        scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
+        replace ppe_`t'_`q' = coeff_ppe
     }
 }
+forvalues q = 2/4 {
+    egen avg_ppe_`q' = rowmean(ppe_2_`q'-ppe_7_`q')
+}
 
-* Fill with coefficient values
+/* ---------------------------------------------------------
+   3. Generate Base Income Trends (Applies to EVERYONE)
+   --------------------------------------------------------- */
+/* This was missing/buried in your previous code */
 forvalues t = 2/7 {
     forvalues q = 2/4 {
-         scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
-         replace ppe_`t'_`q' = coeff_ppe
+        gen inc_`t'_`q' = .
+        /* Fetch the base income trend: lag # inc_q */
+        scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
+        replace inc_`t'_`q' = coeff_inc
     }
 }
-
-** ---------------------------------------------------------
-** 3, 4 & 5. Generate Combined Income + Reform + Triple Coefficients
-** ---------------------------------------------------------
-* Step A: Initialize variables for quartiles 2-4 
-foreach r of local reforms {
-    forvalues t = 2/7 {
-        forvalues q = 2/4 {
-            gen comb_`r'_`t'_`q' = .
-        }
-    }
-}
-
-* Step B: Calculate intermediate coefficients and sum them.
-foreach r of local reforms {
-    forvalues t = 2/7 {
-        forvalues q = 2/4 {
-            
-            * Get component coefficients
-            scalar coeff_ref    = _b[1.lag_`t'#1.reform_`r']
-            scalar coeff_inc    = _b[1.lag_`t'#`q'.inc_q]
-            scalar coeff_triple = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
-            
-            * Sum them up
-            scalar coeff_total = coeff_ref + coeff_inc + coeff_triple
-            
-            * Single replace at the end
-            replace comb_`r'_`t'_`q' = coeff_total
-        }
-    }
-}
-
-** ---------------------------------------------------------
-** Calculate Averages Across Lags 2-7
-** ---------------------------------------------------------
-
-*--- Average main effect
-egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
-
-*--- Average baseline spending interactions
 forvalues q = 2/4 {
-    egen avg_ppe_`q' = rowmean( ///
-        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
+    egen avg_inc_`q' = rowmean(inc_2_`q'-inc_7_`q')
 }
 
-*--- Average Combined Interactions (3+4+5)
+/* ---------------------------------------------------------
+   4. Generate Reform Effects (Two Parts)
+   --------------------------------------------------------- */
 foreach r of local reforms {
+    
+    /* A. Main Reform Effect (The Base Effect for Q1) */
+    forvalues t = 2/7 {
+        gen ref_main_`r'_`t' = .
+        /* Fetch lag # reform */
+        scalar c_ref = _b[1.lag_`t'#1.reform_`r']
+        replace ref_main_`r'_`t' = c_ref
+    }
+    egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 - ref_main_`r'_7)
+
+    /* B. Triple Interaction (The Extra Effect for Q2-4) */
+    forvalues t = 2/7 {
+        forvalues q = 2/4 {
+            gen triple_`r'_`t'_`q' = .
+            scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+            replace triple_`r'_`t'_`q' = c_trip
+        }
+    }
     forvalues q = 2/4 {
-        egen avg_comb_`r'_`q' = rowmean( ///
-            comb_`r'_2_`q' comb_`r'_3_`q' comb_`r'_4_`q' ///
-            comb_`r'_5_`q' comb_`r'_6_`q' comb_`r'_7_`q')
+        egen avg_triple_`r'_`q' = rowmean(triple_`r'_2_`q' - triple_`r'_7_`q')
     }
 }
 
-** ---------------------------------------------------------
-** Calculate Predicted Spending Increase
-** ---------------------------------------------------------
+/* ---------------------------------------------------------
+   5. Calculate Total Predicted Spending
+   --------------------------------------------------------- */
 
-* Sum all applicable components for each observation
+/* A. Start with Global Time Trend */
 gen pred_spend = avg_main if !missing(pre_q)
 
-*--- Add baseline spending interaction effects (for pre_q = 2, 3, 4)
+/* B. Add Pre-Reform Spending Quartile Trends (Applies to all) */
 forvalues q = 2/4 {
     replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
 }
 
-*--- Add Combined Effects (Income + Reform + Triple)
+/* C. Add Base Income Quartile Trends (Applies to all) - FIXES BUG 2 */
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+}
 
+/* D. Add Reform Effects (Applies only to Reform States) */
 foreach r of local reforms {
+    
+    /* 1. Add Main Reform Effect (Base for everyone in reform state, including Q1) */
+    /* FIXES BUG 1 */
+    replace pred_spend = pred_spend + avg_ref_main_`r' if reform_`r' == 1
+    
+    /* 2. Add Triple Interaction (Adjustment for Q2, Q3, Q4 in reform state) */
     forvalues q = 2/4 {
-        replace pred_spend = pred_spend + avg_comb_`r'_`q' ///
-            if inc_q == `q' & reform_`r' == 1 & !missing(pre_q)
+        replace pred_spend = pred_spend + avg_triple_`r'_`q' ///
+            if reform_`r' == 1 & inc_q == `q'
     }
 }
 
@@ -635,11 +623,11 @@ foreach s of local states {
         * Run Spec C regression excluding state `s'
 areg lexp_ma_strict                                                     ///
     i.lag_*##i.pre_q                i.lead_*##i.pre_q                   ///
-    i.lag_*##i.pre_q##i.reform_eq   i.lead_*##i.pre_q##i.reform_eq      ///
-    i.lag_*##i.pre_q##i.reform_mfp  i.lead_*##i.pre_q##i.reform_mfp     ///
-    i.lag_*##i.pre_q##i.reform_ep   i.lead_*##i.pre_q##i.reform_ep      ///
-    i.lag_*##i.pre_q##i.reform_le   i.lead_*##i.pre_q##i.reform_le      ///
-    i.lag_*##i.pre_q##i.reform_sl   i.lead_*##i.pre_q##i.reform_sl      ///
+    i.lag_*##i.inc_q##i.reform_eq   i.lead_*##i.inc_q##i.reform_eq      ///
+    i.lag_*##i.inc_q##i.reform_mfp  i.lead_*##i.inc_q##i.reform_mfp     ///
+    i.lag_*##i.inc_q##i.reform_ep   i.lead_*##i.inc_q##i.reform_ep      ///
+    i.lag_*##i.inc_q##i.reform_le   i.lead_*##i.inc_q##i.reform_le      ///
+    i.lag_*##i.inc_q##i.reform_sl   i.lead_*##i.inc_q##i.reform_sl      ///
     i.year_unified##(                                                   ///
         i.pre_q                                                         ///
         i.inc_q                                                         ///
@@ -722,15 +710,15 @@ foreach r of local reforms {
         forvalues q = 2/4 {
 
             * Pull each coefficient; default to 0 when missing
-            capture scalar coeff_ref = _b[1.lag_`t'#1.reform_`r']
-            if _rc scalar coeff_ref = 0
+             scalar coeff_ref = _b[1.lag_`t'#1.reform_`r']
+          
 
-            capture scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
-            if _rc scalar coeff_inc = 0
+             scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
+            
 
-            capture scalar coeff_triple = ///
+            scalar coeff_triple = ///
                 _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
-            if _rc scalar coeff_triple = 0
+         
 
             * Combine components
             scalar coeff_total = coeff_ref + coeff_inc + coeff_triple
@@ -822,7 +810,7 @@ save jackknife_predictions_spec_C, replace
 
 
 * Process Phase 1 baseline predictions
-foreach spec in A B C{ 
+foreach spec in  C{ 
 
     use baseline_predictions_spec_`spec', clear
 
@@ -889,7 +877,7 @@ foreach def in A{
         local def_text = cond("`def'" == "A", "High = Predicted > 0", "High = Top 2 Quartiles")
         local spec_label = cond("`spec'"=="A","Spending", ///
                            cond("`spec'"=="B","Spending + Income", ///
-                                               "Spending + Income + Reform"))
+                                               "Spending + Income * Reform"))
 
         twoway ///
             (rarea ci_lo ci_hi t if group == "High", color(blue%20) lw(none)) ///
@@ -920,7 +908,7 @@ foreach def in A{
 
 
 * Process each jackknife specification
-foreach spec in  A B { // 
+foreach spec in  A B C{ // 
 
     use jackknife_predictions_spec_`spec', clear
 
@@ -941,7 +929,7 @@ foreach spec in  A B { //
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
-foreach spec in  A B{ // C
+foreach spec in  A B C{ // C
     foreach def in A  {
         use jk_reg_`spec', clear
 		
@@ -990,7 +978,7 @@ foreach spec in  A B{ // C
 
         * Title text
         local def_text = cond("`def'" == "A", "High = Predicted > 0", "High = Top 2 Quartiles")
-        local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending + Income","Spending + Income + Reform"))
+        local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending + Income","Spending + Income * Reform"))
 
         twoway ///
             (rarea ci_lo ci_hi t if group == "High", color(blue%20) lw(none)) ///
@@ -1011,7 +999,219 @@ foreach spec in  A B{ // C
         graph export "$SchoolSpending/output/jk/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
+
+*==============================================================================
+* PART 3C: PREDICTION QUARTILES HETEROGENEITY (4-LINE CHART)
+*==============================================================================
+
+*==============================================================================
+* PART 3C: JACKKNIFE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
+*==============================================================================
+
+foreach spec in A B C {
+
+    * 1. Initialize results file
+    tempfile combined_results
+    postfile handle str15 term float(rel_year b se) int q_group using `combined_results'
+
+    * 2. Loop through Quartiles
+    forvalues q = 1/4 {
+
+        * Load Data (JACKKNIFE)
+        use jk_reg_`spec', clear
+
+        * Generate Quartiles
+        drop pred_q 
+        astile pred_q = pred_spend if ever_treated == 1, nq(4)
+        
+        * --- FIX: The closing bracket '}' was here. I removed it. ---
+
+        * Setup Groups: Keep only specific Quartile (q) AND Control Group (0)
+        replace pred_q = 0 if never_treated == 1
+        keep if pred_q == `q' | pred_q == 0
+
+        *--- Weighted Event-Study Regression ---
+        areg lexp_ma_strict ///
+            i.lag_* i.lead_* ///
+            i.year_unified [aw=school_age_pop] ///
+            if (reform_year < 2000 | never_treated == 1), ///
+            absorb(county_id) vce(cluster county_id)
+
+        *--- Extract coefficients (Direct Lincoms) ---
+
+        * Leads
+        forvalues k = 5(-1)1 {
+            lincom 1.lead_`k'
+            post handle ("lead`k'") (-`k') (r(estimate)) (r(se)) (`q')
+        }
+
+        * Base
+        post handle ("base") (0) (0) (0) (`q')
+
+        * Lags
+        forvalues k = 1/17 {
+            lincom 1.lag_`k'
+            post handle ("lag`k'") (`k') (r(estimate)) (r(se)) (`q')
+        }
+    }  // <--- FIX: The closing bracket belongs here
+    
+    postclose handle
+
+    *---------------------------------------------------------------------------
+    * 3. Plot
+    *---------------------------------------------------------------------------
+    use `combined_results', clear
+
+    * Formatting
+    local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending + Income", "Spending + Income * Reform"))
+    gen ci_lo = b - 1.645*se
+    gen ci_hi = b + 1.645*se
+    sort q_group rel_year
+
+    * Define Colors: Bright / Vibrant (Standard Saturated Colors)
+    local c1 "red"
+    local c2 "orange"
+    local c3 "forest_green"  // Vivid Green
+    local c4 "blue"
+
+    twoway ///
+        (rarea ci_lo ci_hi rel_year if q_group == 1, fcolor(`c1'%10) lwidth(none)) ///
+        (rarea ci_lo ci_hi rel_year if q_group == 2, fcolor(`c2'%10) lwidth(none)) ///
+        (rarea ci_lo ci_hi rel_year if q_group == 3, fcolor(`c3'%10) lwidth(none)) ///
+        (rarea ci_lo ci_hi rel_year if q_group == 4, fcolor(`c4'%10) lwidth(none)) ///
+        (line b rel_year if q_group == 1, lcolor(`c1') lpattern(solid) lwidth(medthick)) ///
+        (line b rel_year if q_group == 2, lcolor(`c2') lpattern(solid) lwidth(medthick)) ///
+        (line b rel_year if q_group == 3, lcolor(`c3') lpattern(solid) lwidth(medthick)) ///
+        (line b rel_year if q_group == 4, lcolor(`c4') lpattern(solid) lwidth(medthick)), ///
+        yline(0, lcolor(gs12) lpattern(solid)) ///
+        xline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(2 7, lcolor(blue) lpattern(dash)) /// 
+        legend(order(5 "Q1 (Lowest)" 6 "Q2" 7 "Q3" 8 "Q4 (Highest)") ///
+               pos(6) rows(1) region(lcolor(none))) ///
+        title("Jackknife: `spec_label'") ///
+        subtitle("Estimates by Quartile of Predicted Spending") ///
+        ytitle("Change in ln(13-yr rolling avg PPE)", size(small)) ///
+        xtitle("Years relative to reform", size(small)) ///
+        graphregion(color(white)) plotregion(margin(medium))
+
+    * Save with 'jk' prefix
+    graph export "$SchoolSpending/output/jk/jk_q_`spec'_quartiles.png", replace
+
+}
+*==============================================================================
+* PART 3C: BASELINE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
+*==============================================================================
+
+foreach spec in A B C{
+
+    * 1. Initialize results file
+    tempfile combined_results
+    postfile handle str15 term float(rel_year b se) int q_group using `combined_results'
+
+    * 2. Loop through Quartiles
+    forvalues q = 1/4 {
+
+        * Load Data
+        use baseline_reg_`spec', clear
+        drop pred_q
+        * --- CONDITIONAL QUARTILE CREATION ---
+        if "`spec'" == "A" {
+			
+gen pred_q = .
+
+replace pred_q = 1 if pre_q == 4 & ever_treated
+replace pred_q = 2 if pre_q == 3 & ever_treated
+replace pred_q = 3 if pre_q == 1 & ever_treated
+replace pred_q = 4 if pre_q == 2 & ever_treated
+
+
+		
+        }
+        else {
+            * SPEC B & C STRATEGY: Standard Quantiles (using astile)
+            astile pred_q = pred_spend if ever_treated == 1, nq(4)
+        }
+
+        * Setup Groups: Keep only specific Quartile (q) AND Control Group (0)
+        replace pred_q = 0 if never_treated == 1
+        keep if pred_q == `q' | pred_q == 0
+
+        *--- Weighted Event-Study Regression ---
+        areg lexp_ma_strict ///
+            i.lag_* i.lead_* ///
+            i.year_unified [aw=school_age_pop] ///
+            if (reform_year < 2000 | never_treated == 1), ///
+            absorb(county_id) vce(cluster county_id)
+
+        *--- Extract coefficients (Direct Lincoms) ---
+
+        * Leads
+        forvalues k = 5(-1)1 {
+            lincom 1.lead_`k'
+            post handle ("lead`k'") (-`k') (r(estimate)) (r(se)) (`q')
+        }
+
+        * Base
+        post handle ("base") (0) (0) (0) (`q')
+
+        * Lags
+        forvalues k = 1/17 {
+            lincom 1.lag_`k'
+            post handle ("lag`k'") (`k') (r(estimate)) (r(se)) (`q')
+        }
+    }
+    postclose handle
+
+    *---------------------------------------------------------------------------
+    * 3. Plot
+    *---------------------------------------------------------------------------
+    use `combined_results', clear
+
+    * Formatting
+    local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending + Income", "Spending + Income * Reform"))
+    gen ci_lo = b - 1.645*se
+    gen ci_hi = b + 1.645*se
+    sort q_group rel_year
+
+
+* Define Colors: Bright / Vibrant (Standard Saturated Colors)
+    local c1 "red"
+    local c2 "orange"
+    local c3 "forest_green"  // 'green' can be too light; forest_green is vivid but readable
+    local c4 "blue"
+
+    twoway ///
+        (rarea ci_lo ci_hi rel_year if q_group == 1, fcolor(`c1'%10) lwidth(none)) ///
+        (rarea ci_lo ci_hi rel_year if q_group == 2, fcolor(`c2'%10) lwidth(none)) ///
+        (rarea ci_lo ci_hi rel_year if q_group == 3, fcolor(`c3'%10) lwidth(none)) ///
+        (rarea ci_lo ci_hi rel_year if q_group == 4, fcolor(`c4'%10) lwidth(none)) ///
+        (line b rel_year if q_group == 1, lcolor(`c1') lpattern(solid) lwidth(medthick)) ///
+        (line b rel_year if q_group == 2, lcolor(`c2') lpattern(solid) lwidth(medthick)) ///
+        (line b rel_year if q_group == 3, lcolor(`c3') lpattern(solid) lwidth(medthick)) ///
+        (line b rel_year if q_group == 4, lcolor(`c4') lpattern(solid) lwidth(medthick)), ///
+        yline(0, lcolor(gs12) lpattern(solid)) ///
+        xline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(2 7, lcolor(blue) lpattern(dash)) /// Note: Changed to gray (gs10) to avoid confusion with Q4 Blue line
+        legend(order(5 "Q1 (Lowest)" 6 "Q2" 7 "Q3" 8 "Q4 (Highest)") ///
+               pos(6) rows(1) region(lcolor(none))) ///
+        title("No Jackknife:`spec_label'") ///
+        subtitle("Estimates by Quartile of Predicted Spending") ///
+        ytitle("Change in ln(13-yr rolling avg PPE)", size(small)) ///
+        xtitle("Years relative to reform", size(small)) ///
+        graphregion(color(white)) plotregion(margin(medium))
+
+    graph export "$SchoolSpending/output/jk/base_q_`spec'_quartiles_separate.png", replace
+}
+
 /*
+        use baseline_reg_A, clear
+        drop pred_q
+			
+		xtile pred_q = pred_spend if ever_treated == 1, nq(4)
+		replace pred_q = 4 if pre_q == 4 & ever_treated == 1
+		        replace pred_q = 0 if never_treated == 1
+
+
 foreach spec in A   {
 	use baseline_reg_`spec',clear
 	display "Spec `spec'"
@@ -1020,20 +1220,16 @@ foreach spec in A   {
 
 
 
-foreach spec in A   {
-	use jk_reg_`spec',clear
-		display "Spec `spec'"
-	tab pre_q high_def_A
-}
+
 
 
 	use baseline_reg_A,clear
-	keep if pre_q >= 4
+	keep if pre_q == 3
 	tab state_fips high_def_A
 
 
 	use jk_reg_A,clear
-	keep if pre_q == 4
+	keep if pre_q == 3
 	tab state_fips high_def_A
 
 
