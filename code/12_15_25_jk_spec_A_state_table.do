@@ -21,5 +21,22 @@ collapse (count) n = county_id, by(state_fips pre_q pred_spend_q)
 * Reshape so states are columns
 reshape wide n, i(pre_q pred_spend_q) j(state_fips) string
 
+* Rename to state abbreviations
+capture rename n01 AL
+capture rename n04 AZ
+capture rename n05 AR
+capture rename n16 ID
+capture rename n21 KY
+capture rename n25 MA
+capture rename n26 MI
+capture rename n29 MO
+capture rename n30 MT
+capture rename n33 NH
+capture rename n35 NM
+capture rename n39 OH
+capture rename n47 TN
+capture rename n48 TX
+capture rename n50 VT
+
 * Show table with pre_q as rows, states as columns
 list, sepby(pre_q) noobs abbreviate(20)
