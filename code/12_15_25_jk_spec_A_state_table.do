@@ -18,17 +18,8 @@ bysort county_id: keep if _n == 1
 keep if ever_treated == 1
 collapse (count) n = county_id, by(state_fips pre_q pred_spend_q)
 
-* Reshape wide so pred_spend_q values become columns
-reshape wide n, i(state_fips pre_q) j(pred_spend_q)
+* Reshape so states are columns
+reshape wide n, i(pre_q pred_spend_q) j(state_fips) string
 
-* Clean up
-foreach v in n1 n2 n3 n4 {
-    replace `v' = 0 if missing(`v')
-}
-
-rename n1 pred_q1
-rename n2 pred_q2
-rename n3 pred_q3
-rename n4 pred_q4
-
-list state_fips pre_q pred_q1 pred_q2 pred_q3 pred_q4, sepby(state_fips) noobs
+* Show table with pre_q as rows, states as columns
+list, sepby(pre_q) noobs abbreviate(20)
