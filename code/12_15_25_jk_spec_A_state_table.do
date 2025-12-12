@@ -19,5 +19,5 @@ levelsof state_fips if ever_treated == 1, local(states)
 
 foreach s of local states {
     display "State: `s'"
-    tab pre_q pred_spend_q if state_fips == "`s'", row
+    tab pre_q pred_spend_q if state_fips == "`s'"
 }
