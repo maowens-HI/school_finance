@@ -14,10 +14,21 @@ astile pred_spend_q = pred_spend if ever_treated == 1, nq(4)
 * Keep one obs per county
 bysort county_id: keep if _n == 1
 
-* Loop through treated states
-levelsof state_fips if ever_treated == 1, local(states)
+* Collapse to counts by state × pre_q × pred_spend_q
+keep if ever_treated == 1
+collapse (count) n = county_id, by(state_fips pre_q pred_spend_q)
 
-foreach s of local states {
-    display "State: `s'"
-    tab pre_q pred_spend_q if state_fips == "`s'"
+* Reshape wide so pred_spend_q values become columns
+reshape wide n, i(state_fips pre_q) j(pred_spend_q)
+
+* Clean up
+foreach v in n1 n2 n3 n4 {
+    replace `v' = 0 if missing(`v')
 }
+
+rename n1 pred_q1
+rename n2 pred_q2
+rename n3 pred_q3
+rename n4 pred_q4
+
+list state_fips pre_q pred_q1 pred_q2 pred_q3 pred_q4, sepby(state_fips) noobs
