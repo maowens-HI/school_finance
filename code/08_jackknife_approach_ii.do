@@ -374,7 +374,7 @@ save `master_data'
 *** 2.A. Jackknife: Spending Quartile Only
 *** ---------------------------------------------------------------------------
 
-
+/*
 local state_count = 0
 foreach s of local states {
     local state_count = `state_count' + 1
@@ -396,7 +396,7 @@ foreach s of local states {
 
 }
 
-
+*/
 *--- Extract coefficients and calculate predicted spending for Spec A ---
 
 local counter = 0
@@ -480,7 +480,7 @@ save jackknife_predictions_spec_A, replace
 *** ---------------------------------------------------------------------------
 *** 2.B. Jackknife: Spending + Income Quartiles
 *** ---------------------------------------------------------------------------
-
+/*
 local state_count = 0
 foreach s of local states {
     local state_count = `state_count' + 1
@@ -500,7 +500,7 @@ foreach s of local states {
         estimates save jackknife_B_state_`s', replace
     }
 
-
+*/
 
 *--- Extract coefficients and calculate predicted spending for Spec B ---
 local counter = 0
@@ -712,7 +712,8 @@ foreach r of local reforms {
     forvalues t = 2/7 {
         gen ref_main_`r'_`t' = .
         /* Fetch lag # reform */
-        scalar c_ref = _b[1.lag_`t'#1.reform_`r']
+        capture scalar c_ref = _b[1.lag_`t'#1.reform_`r']
+		if _rc scalar c_ref = 0
         replace ref_main_`r'_`t' = c_ref
     }
     egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 - ref_main_`r'_7)
@@ -721,7 +722,8 @@ foreach r of local reforms {
     forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen triple_`r'_`t'_`q' = .
-            scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+            capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+					if _rc scalar c_trip = 0
             replace triple_`r'_`t'_`q' = c_trip
         }
     }
