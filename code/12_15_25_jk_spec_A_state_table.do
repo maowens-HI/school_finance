@@ -58,3 +58,12 @@ rename pred_spend_q49 UT
 rename pred_spend_q50 VT
 
 list, noobs clean
+
+* Average pred_spend_q by pre_q
+use jk_reg_A, clear
+capture drop pred_spend_q
+astile pred_spend_q = pred_spend if ever_treated == 1, nq(4)
+bysort county_id: keep if _n == 1
+keep if ever_treated == 1
+
+table pre_q, statistic(mean pred_spend_q)
