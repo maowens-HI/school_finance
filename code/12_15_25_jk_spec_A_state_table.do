@@ -14,7 +14,7 @@ astile pred_spend_q = pred_spend if ever_treated == 1, nq(4)
 * Keep one obs per county
 bysort county_id: keep if _n == 1
 
-* Keep only treated, get modal pred_spend_q per state × pre_q
+* Keep only treated, get pred_spend_q per state × pre_q
 keep if ever_treated == 1
 collapse (median) pred_spend_q, by(state_fips pre_q)
 
@@ -22,40 +22,39 @@ collapse (median) pred_spend_q, by(state_fips pre_q)
 reshape wide pred_spend_q, i(pre_q) j(state_fips) string
 
 * Rename to state abbreviations
-capture rename pred_spend_q01 AL
-capture rename pred_spend_q04 AZ
-capture rename pred_spend_q05 AR
-capture rename pred_spend_q08 CO
-capture rename pred_spend_q10 DE
-capture rename pred_spend_q12 FL
-capture rename pred_spend_q13 GA
-capture rename pred_spend_q16 ID
-capture rename pred_spend_q17 IL
-capture rename pred_spend_q18 IN
-capture rename pred_spend_q19 IA
-capture rename pred_spend_q21 KY
-capture rename pred_spend_q22 LA
-capture rename pred_spend_q23 ME
-capture rename pred_spend_q25 MA
-capture rename pred_spend_q26 MI
-capture rename pred_spend_q27 MN
-capture rename pred_spend_q28 MS
-capture rename pred_spend_q29 MO
-capture rename pred_spend_q30 MT
-capture rename pred_spend_q31 NE
-capture rename pred_spend_q32 NV
-capture rename pred_spend_q33 NH
-capture rename pred_spend_q35 NM
-capture rename pred_spend_q38 ND
-capture rename pred_spend_q39 OH
-capture rename pred_spend_q40 OK
-capture rename pred_spend_q42 PA
-capture rename pred_spend_q44 RI
-capture rename pred_spend_q46 SD
-capture rename pred_spend_q47 TN
-capture rename pred_spend_q48 TX
-capture rename pred_spend_q49 UT
-capture rename pred_spend_q50 VT
+rename pred_spend_q01 AL
+rename pred_spend_q04 AZ
+rename pred_spend_q05 AR
+rename pred_spend_q08 CO
+rename pred_spend_q10 DE
+rename pred_spend_q12 FL
+rename pred_spend_q13 GA
+rename pred_spend_q16 ID
+rename pred_spend_q17 IL
+rename pred_spend_q18 IN
+rename pred_spend_q19 IA
+rename pred_spend_q21 KY
+rename pred_spend_q22 LA
+rename pred_spend_q23 ME
+rename pred_spend_q25 MA
+rename pred_spend_q26 MI
+rename pred_spend_q27 MN
+rename pred_spend_q28 MS
+rename pred_spend_q29 MO
+rename pred_spend_q30 MT
+rename pred_spend_q31 NE
+rename pred_spend_q32 NV
+rename pred_spend_q33 NH
+rename pred_spend_q35 NM
+rename pred_spend_q38 ND
+rename pred_spend_q39 OH
+rename pred_spend_q40 OK
+rename pred_spend_q42 PA
+rename pred_spend_q44 RI
+rename pred_spend_q46 SD
+rename pred_spend_q47 TN
+rename pred_spend_q48 TX
+rename pred_spend_q49 UT
+rename pred_spend_q50 VT
 
-* Show table with pre_q as rows, states as columns
-list, sepby(pre_q) noobs abbreviate(20)
+list, noobs clean
