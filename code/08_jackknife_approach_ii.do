@@ -72,7 +72,7 @@ save jjp_jackknife_prep, replace
 *** Store models for comparison and understanding
 *** ---------------------------------------------------------------------------
 
-
+/*
 use jjp_jackknife_prep, clear
 
 *--- 1.A. Spending Quartile Only ---
@@ -612,7 +612,7 @@ save jackknife_predictions_spec_B, replace
 *** ---------------------------------------------------------------------------
 *** 2.C. Jackknife: Full Heterogeneity (Spending + Income + Reform Types)
 *** ---------------------------------------------------------------------------
-
+/*
 local state_count = 0
 foreach s of local states {
     local state_count = `state_count' + 1
@@ -646,7 +646,7 @@ areg lexp_ma_strict                                                     ///
         estimates save jackknife_C_state_`s', replace
 
 }
-
+*/
 
 local state_count = 0
 foreach s of local states {
@@ -659,118 +659,109 @@ foreach s of local states {
         use `master_data', clear
         estimates use jackknife_C_state_`s'
 
-* Define reforms local for reuse
+* Define reforms local
 local reforms "eq mfp ep le sl"
 
-** ---------------------------------------------------------
-** 1. Generate Main Effect Coefficients (lags 2-7)
-** ---------------------------------------------------------
+/* ---------------------------------------------------------
+   1. Generate Global Time Trend (Lags 2-7)
+   --------------------------------------------------------- */
 forvalues t = 2/7 {
     gen main_`t' = .
-}
-
-* Fill with coefficient values
-forvalues t = 2/7 {
     scalar coeff_main = _b[1.lag_`t']
     replace main_`t' = coeff_main
 }
+egen avg_main = rowmean(main_2-main_7)
 
-** ---------------------------------------------------------
-** 2. Generate Baseline Spending Quartile Interaction Coefficients
-** ---------------------------------------------------------
+/* ---------------------------------------------------------
+   2. Generate Spending Trends
+   --------------------------------------------------------- */
 forvalues t = 2/7 {
     forvalues q = 2/4 {
         gen ppe_`t'_`q' = .
+        /* Capture is good practice, though these should exist */
+        scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
+        replace ppe_`t'_`q' = coeff_ppe
     }
 }
+forvalues q = 2/4 {
+    egen avg_ppe_`q' = rowmean(ppe_2_`q'-ppe_7_`q')
+}
 
-* Fill with coefficient values
+/* ---------------------------------------------------------
+   3. Generate Base Income Trends (Applies to EVERYONE)
+   --------------------------------------------------------- */
+/* This was missing/buried in your previous code */
 forvalues t = 2/7 {
     forvalues q = 2/4 {
-         scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
-         replace ppe_`t'_`q' = coeff_ppe
+        gen inc_`t'_`q' = .
+        /* Fetch the base income trend: lag # inc_q */
+        scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
+        replace inc_`t'_`q' = coeff_inc
     }
 }
-
-** ---------------------------------------------------------
-** 3, 4 & 5. Generate Combined Income + Reform + Triple Coefficients
-** ---------------------------------------------------------
-* Step A: Initialize variables for quartiles 2-4 
-foreach r of local reforms {
-    forvalues t = 2/7 {
-        forvalues q = 2/4 {
-            gen comb_`r'_`t'_`q' = .
-        }
-    }
-}
-
-* Step B: Calculate intermediate coefficients and sum them.
-foreach r of local reforms {
-    forvalues t = 2/7 {
-        forvalues q = 2/4 {
-
-            * Pull each coefficient; default to 0 when missing
-             scalar coeff_ref = _b[1.lag_`t'#1.reform_`r']
-          
-
-             scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
-            
-
-            scalar coeff_triple = ///
-                _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
-         
-
-            * Combine components
-            scalar coeff_total = coeff_ref + coeff_inc + coeff_triple
-
-            * Assign across full dataset (correct for jackknife)
-            replace comb_`r'_`t'_`q' = coeff_total
-        }
-    }
-}
-
-** ---------------------------------------------------------
-** Calculate Averages Across Lags 2-7
-** ---------------------------------------------------------
-
-*--- Average main effect
-egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
-
-*--- Average baseline spending interactions
 forvalues q = 2/4 {
-    egen avg_ppe_`q' = rowmean( ///
-        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
+    egen avg_inc_`q' = rowmean(inc_2_`q'-inc_7_`q')
 }
 
-*--- Average Combined Interactions (3+4+5)
+/* ---------------------------------------------------------
+   4. Generate Reform Effects (Two Parts)
+   --------------------------------------------------------- */
 foreach r of local reforms {
+    
+    /* A. Main Reform Effect (The Base Effect for Q1) */
+    forvalues t = 2/7 {
+        gen ref_main_`r'_`t' = .
+        /* Fetch lag # reform */
+        scalar c_ref = _b[1.lag_`t'#1.reform_`r']
+        replace ref_main_`r'_`t' = c_ref
+    }
+    egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 - ref_main_`r'_7)
+
+    /* B. Triple Interaction (The Extra Effect for Q2-4) */
+    forvalues t = 2/7 {
+        forvalues q = 2/4 {
+            gen triple_`r'_`t'_`q' = .
+            scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+            replace triple_`r'_`t'_`q' = c_trip
+        }
+    }
     forvalues q = 2/4 {
-        egen avg_comb_`r'_`q' = rowmean( ///
-            comb_`r'_2_`q' comb_`r'_3_`q' comb_`r'_4_`q' ///
-            comb_`r'_5_`q' comb_`r'_6_`q' comb_`r'_7_`q')
+        egen avg_triple_`r'_`q' = rowmean(triple_`r'_2_`q' - triple_`r'_7_`q')
     }
 }
 
-** ---------------------------------------------------------
-** Calculate Predicted Spending Increase
-** ---------------------------------------------------------
+/* ---------------------------------------------------------
+   5. Calculate Total Predicted Spending
+   --------------------------------------------------------- */
 
-* Sum all applicable components for each observation
+/* A. Start with Global Time Trend */
 gen pred_spend = avg_main if !missing(pre_q)
 
-*--- Add baseline spending interaction effects (for pre_q = 2, 3, 4)
+/* B. Add Pre-Reform Spending Quartile Trends (Applies to all) */
 forvalues q = 2/4 {
     replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
 }
 
-*--- Add Combined Effects (Income + Reform + Triple)
+/* C. Add Base Income Quartile Trends (Applies to all) - FIXES BUG 2 */
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+}
 
+/* D. Add Reform Effects (Applies only to Reform States) */
 foreach r of local reforms {
+    
+    /* 1. Add Main Reform Effect (Base for everyone in reform state, including Q1) */
+    /* FIXES BUG 1 */
+    replace pred_spend = pred_spend + avg_ref_main_`r' if reform_`r' == 1
+    
+    /* 2. Add Triple Interaction (Adjustment for Q2, Q3, Q4 in reform state) */
     forvalues q = 2/4 {
-        replace pred_spend = pred_spend + avg_comb_`r'_`q' ///
-            if inc_q == `q' & reform_`r' == 1 & !missing(pre_q)
+        replace pred_spend = pred_spend + avg_triple_`r'_`q' ///
+            if reform_`r' == 1 & inc_q == `q'
     }
 }
+
+
         * Keep only the excluded state's predictions
         keep if state_fips == "`s'"
 
