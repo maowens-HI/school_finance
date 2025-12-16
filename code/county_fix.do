@@ -1,52 +1,235 @@
 /*==============================================================================
-Project    : School Spending – Jackknife Regression Estimation (Approach II)
-File       : 08_jackknife_approach_ii.do
-Purpose    : Implement JJP (2016) Approach II - Leave-One-State-Out Jackknife
-             with comprehensive heterogeneity analysis
+
+Project    : School Spending – Count Counties by State
+
+File       : count_counties_by_state.do
+
+Purpose    : Generate count of counties per state for sample restriction analysis
+			 and then restimate fig 1 anf fig 2
+
 Author     : Myles Owens
+
 Institution: Hoover Institution, Stanford University
-Date       : 2025-01-24
+
+Date       : 2025-12-16
+
 ───────────────────────────────────────────────────────────────────────────────
 
-METHODOLOGY (Following JJP 2016 Approach II):
-  This file implements the leave-one-state-out jackknife approach described in
-  Jackson, Johnson, and Persico (2016) footnotes 20-21. The predicted spending
-  change for each state is calculated using coefficients estimated from all
-  OTHER states, creating an instrumental variable for heterogeneity analysis.
+WHAT THIS FILE DOES:
 
+  • Loads county panel data
 
-  PHASE 1: BASELINE ESTIMATION (No Jackknife)
-    1.A. Spending Quartile only
-    1.B. Spending + Income Quartile
-    1.C. Spending + Income + Reform types
+  • Counts unique counties per state
 
-  PHASE 2: JACKKNIFE (Leave-One-Out) - MIRRORS PHASE 1 STRUCTURE
-    2.A. Spending Quartile only
-    2.B. Spending + Income Quartile
-    2.C. Spending + Income + Reform types
+  • Shows which states would be affected by "≥10 counties" restriction
 
-  PHASE 3: GRAPHS
-    Definition A: high = (pred_spend > 0)
-    Definition B: high = (quartile(pred_spend) > 2)
+  • Identifies treatment status by state
 
-    Graph I:  High vs Low groups
-    Graph II: All 4 predicted spending quartiles
+ 
 
 INPUTS:
-  - jjp_balance.dta        (balanced panel from 06_A_county_balanced_figure1.do)
+
+  - jjp_interp.dta (or county_exp_final.dta)
+
+ 
 
 OUTPUTS:
-  - jackknife_predictions_spec_[A|B|C].dta  (predicted spending by specification)
-  - Event-study graphs by definition and specification
 
-KEY VARIABLES:
-  - lexp_ma_strict         : Log per-pupil expenditure (13-yr rolling mean)
-  - pre_q1971              : Baseline spending quartile (1971)
-  - inc_q                  : Income quartile (1969 median family income)
-  - reform_eq, reform_mfp, etc. : Reform type indicators
-  - pred_spend             : Predicted spending increase from jackknife
+  - Console output showing county counts by state
+
+  - state_county_counts.dta (optional saved output)
 
 ==============================================================================*/
+
+ 
+* House Keeping
+clear all
+
+set more off
+
+cd "$SchoolSpending/data"
+
+use jjp_balance,clear
+ 
+keep county_id state_fips
+
+duplicates drop
+
+tab state_fips
+
+/*
+
+ state_fips |      Freq.     Percent        Cum.
+------------+-----------------------------------
+         01 |         50        3.36        3.36
+         04 |          1        0.07        3.43
+         05 |         17        1.14        4.57
+         08 |         50        3.36        7.92
+         10 |          3        0.20        8.13
+         12 |         67        4.50       12.63
+         13 |        155       10.41       23.04
+         16 |         36        2.42       25.45
+         17 |         89        5.98       31.43
+         18 |         86        5.78       37.21
+         19 |         95        6.38       43.59
+         21 |         34        2.28       45.87
+         22 |         64        4.30       50.17
+         23 |          7        0.47       50.64
+         25 |          9        0.60       51.24
+         26 |         65        4.37       55.61
+         27 |         71        4.77       60.38
+         28 |         75        5.04       65.41
+         29 |         85        5.71       71.12
+         30 |          3        0.20       71.32
+         31 |         37        2.48       73.81
+         32 |         17        1.14       74.95
+         33 |          7        0.47       75.42
+         35 |         20        1.34       76.76
+         38 |         10        0.67       77.43
+         39 |         74        4.97       82.40
+         40 |         65        4.37       86.77
+         42 |         57        3.83       90.60
+         44 |          3        0.20       90.80
+         46 |         45        3.02       93.82
+         47 |          2        0.13       93.96
+         48 |         54        3.63       97.58
+         49 |         29        1.95       99.53
+         50 |          7        0.47      100.00
+------------+-----------------------------------
+      Total |      1,489      100.00
+
+*/
+
+bysort state_fips: egen n_county = nvals(county_id)
+
+
+keep county_id n_county
+
+merge 1:m county_id using jjp_balance
+
+keep if n_county >= 10
+
+save jjp_balance2, replace
+
+
+local var lexp_ma_strict
+
+foreach v of local var {
+    forvalues q = 1/4 {
+        use jjp_balance2, clear
+ 
+
+
+
+        *--- Weighted event-study regression
+        areg  `v' ///
+            i.lag_* i.lead_* ///
+            i.year_unified [w=school_age_pop] ///
+            if pre_q1971==`q' & (reform_year < 2000 | never_treated == 1), ///
+            absorb(county_id) vce(cluster county_id)
+
+        *--- Extract coefficients
+        tempfile results
+        postfile handle str15 term float rel_year b se using `results', replace
+
+        forvalues k = 5(-1)1 {
+            lincom 1.lead_`k'
+             post handle ("lead`k'") (-`k') (r(estimate)) (r(se))
+        }
+
+        post handle ("base0") (0) (0) (0)
+
+        forvalues k = 1/17 {
+            lincom 1.lag_`k'
+             post handle ("lag`k'") (`k') (r(estimate)) (r(se))
+        }
+
+        postclose handle
+
+        *--- Create event-study plot
+        use `results', clear
+        sort rel_year
+
+        gen ci_lo = b - 1.645*se
+        gen ci_hi = b + 1.645*se
+
+        twoway ///
+            (rarea ci_lo ci_hi rel_year, color("59 91 132%20") lw(none)) ///
+            (line b rel_year, lcolor("42 66 94") lwidth(medthick)), ///
+            yline(0, lpattern(dash) lcolor(gs10)) ///
+            xline(0, lpattern(dash) lcolor(gs10)) ///
+            ytitle("Δ ln(13-yr rolling avg PPE)") ///
+            title(" `v' | Q: `q' | Good & Bad ", size(medlarge) color("35 45 60")) ///
+            graphregion(color(white)) ///
+            legend(off) ///
+            scheme(s2mono)
+			
+			
+	
+ *graph export "$SchoolSpending\output\fig1\good_bad\bad_county_`q'.png", replace
+
+	*graph export "$SchoolSpending/output/5_perc_reg_`q'.png", replace
+    }
+}
+
+
+
+*** ---------------------------------------------------------------------------
+*** Section 10: Event-Study Regressions - Bottom 3 Quartiles (Exclude Top)
+*** ---------------------------------------------------------------------------
+
+local var lexp_ma_strict
+
+foreach v of local var {
+    use jjp_balance2, clear
+
+
+    *--- Weighted regression excluding top quartile
+    areg `v' ///
+        i.lag_* i.lead_* ///
+        i.year_unified [w=school_age_pop] ///
+        if pre_q1971 < 4 & (reform_year < 2000 | never_treated == 1) , ///
+        absorb(county_id) vce(cluster county_id)
+
+    *--- Extract coefficients
+    tempfile results
+    postfile handle str15 term float rel_year b se using `results', replace
+
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k'
+         post handle ("lead`k'") (-`k') (r(estimate)) (r(se))
+    }
+
+    post handle ("base0") (0) (0) (0)
+
+    forvalues k = 1/17 {
+        lincom 1.lag_`k'
+        post handle ("lag`k'") (`k') (r(estimate)) (r(se))
+    }
+
+    postclose handle
+
+    *--- Create event-study plot
+    use `results', clear
+    sort rel_year
+
+    gen ci_lo = b - 1.645*se
+    gen ci_hi = b + 1.645*se
+
+    twoway ///
+        (rarea ci_lo ci_hi rel_year, color("59 91 132%20") cmissing(n)) ///
+        (line b rel_year, lcolor("42 66 94") lwidth(medium)), ///
+        yline(0, lpattern(dash) lcolor(gs10)) ///
+        xline(0, lpattern(dash) lcolor(gs10)) ///
+        ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
+        title(" `v' | Q: 1-3 | Good & Bad", size(medlarge) color("35 45 60")) ///
+        graphregion(color(white)) ///
+        legend(off) ///
+        scheme(s2mono)
+
+    *graph export "$SchoolSpending\output\fig1\good_bad\bad_county_btm.png", replace 
+*graph export "$SchoolSpending/output/county_btm_`v'.png", replace
+}
 
 *** ---------------------------------------------------------------------------
 *** Section 0: Setup
@@ -72,7 +255,7 @@ save jjp_jackknife_prep, replace
 *** Store models for comparison and understanding
 *** ---------------------------------------------------------------------------
 
-/*
+
 use jjp_jackknife_prep, clear
 
 *--- 1.A. Spending Quartile Only ---
@@ -108,7 +291,6 @@ areg lexp_ma_strict ///
     absorb(county_id) vce(cluster county_id)
 
 estimates save model_baseline_C, replace
-*/
 
 
 *** ---------------------------------------------------------------------------
@@ -159,7 +341,7 @@ forvalues q = 2/4 {
 
 **# Calculate Predicted Spending Increase
 gen pred_spend = avg_main if !missing(pre_q)
-
+*gen pred_spend = 0
 *--- Add baseline spending interaction effects
 forvalues q = 2/4 {
     replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
@@ -246,7 +428,6 @@ forvalues q = 2/4 {
 save baseline_predictions_spec_B, replace
 
 *--- 1.C Predictions: Spending + Income Quartiles + Reforms ---
-
 
 use jjp_jackknife_prep, clear
 estimates use model_baseline_C
@@ -354,7 +535,7 @@ foreach r of local reforms {
 }
 
 save baseline_predictions_spec_C, replace
-*/
+
 *** ---------------------------------------------------------------------------
 *** PHASE 2: JACKKNIFE PROCEDURE (Leave-One-State-Out)
 *** Following JJP (2016) Approach II methodology
@@ -364,7 +545,7 @@ save baseline_predictions_spec_C, replace
 *--- Get list of all states
 use jjp_jackknife_prep, clear
 levelsof state_fips, local(states)
-local n_states : word count `states'
+
 
 *--- Save master file for repeated loading
 tempfile master_data
@@ -374,13 +555,10 @@ save `master_data'
 *** 2.A. Jackknife: Spending Quartile Only
 *** ---------------------------------------------------------------------------
 
-/*
-local state_count = 0
+
+
 foreach s of local states {
-    local state_count = `state_count' + 1
-
-
- 
+  
         use `master_data', clear
         drop if state_fips == "`s'"
 
@@ -396,18 +574,17 @@ foreach s of local states {
 
 }
 
-*/
+
 *--- Extract coefficients and calculate predicted spending for Spec A ---
 
-local counter = 0
+
 foreach s of local states {
-    local counter = `counter' + 1
 
     preserve
     use `master_data', clear
     estimates use jackknife_A_state_`s'
 
-    **# Generate Main Effect Coefficients (REFORMED: lags 2-7 focus)
+    **# Generate Main Effect Coefficients 
     forvalues t = 2/7 {
         gen main_`t' = .
     }
@@ -434,7 +611,7 @@ foreach s of local states {
     }
 
 
-    **# Calculate Averages Across Lags 2-7 (REFORMED: focused window)
+    **# Calculate Averages Across Lags 2-7 
     
     *--- Average main effect
     egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
@@ -480,11 +657,9 @@ save jackknife_predictions_spec_A, replace
 *** ---------------------------------------------------------------------------
 *** 2.B. Jackknife: Spending + Income Quartiles
 *** ---------------------------------------------------------------------------
-/*
-local state_count = 0
-foreach s of local states {
-    local state_count = `state_count' + 1
 
+
+foreach s of local states {
         use `master_data', clear
         drop if state_fips == "`s'"
 
@@ -500,19 +675,16 @@ foreach s of local states {
         estimates save jackknife_B_state_`s', replace
     }
 
-*/
+
 
 *--- Extract coefficients and calculate predicted spending for Spec B ---
-local counter = 0
+
 foreach s of local states {
-    local counter = `counter' + 1
-
-
     preserve
     use `master_data', clear
     estimates use jackknife_B_state_`s'
 
-    **# Generate Main Effect Coefficients (REFORMED: lags 2-7 focus)
+    **# Generate Main Effect Coefficients 
     forvalues t = 2/7 {
         gen main_`t' = .
     }
@@ -553,7 +725,7 @@ foreach s of local states {
         }
     }
 
-    **# Calculate Averages Across Lags 2-7 (REFORMED: focused window)
+    **# Calculate Averages Across Lags 2-7 
     
     *--- Average main effect
     egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
@@ -612,11 +784,9 @@ save jackknife_predictions_spec_B, replace
 *** ---------------------------------------------------------------------------
 *** 2.C. Jackknife: Full Heterogeneity (Spending + Income + Reform Types)
 *** ---------------------------------------------------------------------------
-/*
-local state_count = 0
-foreach s of local states {
-    local state_count = `state_count' + 1
 
+
+foreach s of local states {
         use `master_data', clear
         drop if state_fips == "`s'"
 
@@ -646,15 +816,12 @@ areg lexp_ma_strict                                                     ///
         estimates save jackknife_C_state_`s', replace
 
 }
-*/
 
-local state_count = 0
+
+/
+
+
 foreach s of local states {
-    local state_count = `state_count' + 1
-
-
-
-
         * Load master data and estimates for this state
         use `master_data', clear
         estimates use jackknife_C_state_`s'
@@ -670,7 +837,7 @@ forvalues t = 2/7 {
     scalar coeff_main = _b[1.lag_`t']
     replace main_`t' = coeff_main
 }
-egen avg_main = rowmean(main_2-main_7)
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
 
 /* ---------------------------------------------------------
    2. Generate Spending Trends
@@ -678,13 +845,12 @@ egen avg_main = rowmean(main_2-main_7)
 forvalues t = 2/7 {
     forvalues q = 2/4 {
         gen ppe_`t'_`q' = .
-        /* Capture is good practice, though these should exist */
         scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
         replace ppe_`t'_`q' = coeff_ppe
     }
 }
 forvalues q = 2/4 {
-    egen avg_ppe_`q' = rowmean(ppe_2_`q'-ppe_7_`q')
+    egen avg_ppe_`q' = rowmean(ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
 }
 
 /* ---------------------------------------------------------
@@ -700,7 +866,7 @@ forvalues t = 2/7 {
     }
 }
 forvalues q = 2/4 {
-    egen avg_inc_`q' = rowmean(inc_2_`q'-inc_7_`q')
+    egen avg_inc_`q' = rowmean(inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
 }
 
 /* ---------------------------------------------------------
@@ -711,12 +877,16 @@ foreach r of local reforms {
     /* A. Main Reform Effect (The Base Effect for Q1) */
     forvalues t = 2/7 {
         gen ref_main_`r'_`t' = .
-        /* Fetch lag # reform */
+        /* We use capture due to reform_sl only occuring in one state.
+		   It is given the value of 0 when it is missing.
+		*/
         capture scalar c_ref = _b[1.lag_`t'#1.reform_`r']
 		if _rc scalar c_ref = 0
         replace ref_main_`r'_`t' = c_ref
     }
-    egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 - ref_main_`r'_7)
+    egen avg_ref_main_`r' = rowmean( ///
+	ref_main_`r'_2 ref_main_`r'_3 ref_main_`r'_4 ///
+	ref_main_`r'_5 ref_main_`r'_6 ref_main_`r'_7)
 
     /* B. Triple Interaction (The Extra Effect for Q2-4) */
     forvalues t = 2/7 {
@@ -728,7 +898,9 @@ foreach r of local reforms {
         }
     }
     forvalues q = 2/4 {
-        egen avg_triple_`r'_`q' = rowmean(triple_`r'_2_`q' - triple_`r'_7_`q')
+        egen avg_triple_`r'_`q' = rowmean( ///
+		triple_`r'_2_`q' triple_`r'_3_`q' triple_`r'_4_`q' ///
+		triple_`r'_5_`q' triple_`r'_6_`q' triple_`r'_7_`q')
     }
 }
 
@@ -753,7 +925,7 @@ forvalues q = 2/4 {
 foreach r of local reforms {
     
     /* 1. Add Main Reform Effect (Base for everyone in reform state, including Q1) */
-    /* FIXES BUG 1 */
+
     replace pred_spend = pred_spend + avg_ref_main_`r' if reform_`r' == 1
     
     /* 2. Add Triple Interaction (Adjustment for Q2, Q3, Q4 in reform state) */
@@ -773,7 +945,6 @@ foreach r of local reforms {
 }
 
 
-*** 
 
 use `master_data', clear
 levelsof state_fips, local(states)
@@ -788,6 +959,7 @@ foreach s of local states {
 }
 
 save jackknife_predictions_spec_C, replace
+*/
 
 
 
@@ -796,6 +968,54 @@ save jackknife_predictions_spec_C, replace
 *** Create high/low classifications and event-study plots
 *** First: Phase 1 baseline predictions, Then: Phase 2 jackknife predictions
 *** ---------------------------------------------------------------------------
+*==============================================================================
+* PREP Quartiles
+*==============================================================================
+* QUARTILES BASELINE
+foreach spec in A B C{
+	use baseline_predictions_spec_`spec',clear
+
+
+        * --- CONDITIONAL QUARTILE CREATION ---
+        if "`spec'" == "A" {
+			
+gen pred_q = .
+
+replace pred_q = 1 if pre_q == 4 & ever_treated
+replace pred_q = 2 if pre_q == 3 & ever_treated
+replace pred_q = 3 if pre_q == 1 & ever_treated
+replace pred_q = 4 if pre_q == 2 & ever_treated
+
+
+		
+        }
+        else {
+            * SPEC B & C STRATEGY: Standard Quantiles (using astile)
+            xtile pred_q = pred_spend if ever_treated == 1, nq(4)
+        }
+
+        * Setup Groups: Keep only specific Quartile (q) AND Control Group (0)
+        replace pred_q = 0 if never_treated == 1
+
+		tab pred_q
+		save base_q_`spec', replace
+	
+}
+
+* QUARTILES JACKKNIFE
+foreach spec in A{
+	use jackknife_predictions_spec_`spec',clear
+	xtile pred_q = pred_spend if ever_treated == 1, nq(4)
+
+        * Setup Groups: Keep only specific Quartile (q) AND Control Group (0)
+        replace pred_q = 0 if never_treated == 1
+		tab pred_q,m
+		
+		save jk_q_`spec', replace
+	
+
+}
+
 
 *==============================================================================
 * PART 3A: PHASE 1 BASELINE PREDICTIONS GRAPHS
@@ -803,7 +1023,7 @@ save jackknife_predictions_spec_C, replace
 
 
 * Process Phase 1 baseline predictions
-foreach spec in  C{ 
+foreach spec in  A B C{ 
 
     use baseline_predictions_spec_`spec', clear
 
@@ -922,7 +1142,7 @@ foreach spec in  A B C{ //
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
-foreach spec in  A B C{ // C
+foreach spec in  A { // C
     foreach def in A  {
         use jk_reg_`spec', clear
 		
@@ -1001,7 +1221,7 @@ foreach spec in  A B C{ // C
 * PART 3C: JACKKNIFE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in A B C {
+foreach spec in A B C  {
 
     * 1. Initialize results file
     tempfile combined_results
@@ -1011,16 +1231,12 @@ foreach spec in A B C {
     forvalues q = 1/4 {
 
         * Load Data (JACKKNIFE)
-        use jk_reg_`spec', clear
+        use jk_q_`spec', clear
 
-        * Generate Quartiles
-        drop pred_q 
-        astile pred_q = pred_spend if ever_treated == 1, nq(4)
         
         * --- FIX: The closing bracket '}' was here. I removed it. ---
 
         * Setup Groups: Keep only specific Quartile (q) AND Control Group (0)
-        replace pred_q = 0 if never_treated == 1
         keep if pred_q == `q' | pred_q == 0
 
         *--- Weighted Event-Study Regression ---
@@ -1095,7 +1311,7 @@ foreach spec in A B C {
 * PART 3C: BASELINE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in A B C{
+foreach spec in D {
 
     * 1. Initialize results file
     tempfile combined_results
@@ -1103,31 +1319,10 @@ foreach spec in A B C{
 
     * 2. Loop through Quartiles
     forvalues q = 1/4 {
-
-        * Load Data
-        use baseline_reg_`spec', clear
-        drop pred_q
-        * --- CONDITIONAL QUARTILE CREATION ---
-        if "`spec'" == "A" {
-			
-gen pred_q = .
-
-replace pred_q = 1 if pre_q == 4 & ever_treated
-replace pred_q = 2 if pre_q == 3 & ever_treated
-replace pred_q = 3 if pre_q == 1 & ever_treated
-replace pred_q = 4 if pre_q == 2 & ever_treated
-
-
+		use base_q_`spec',clear
 		
-        }
-        else {
-            * SPEC B & C STRATEGY: Standard Quantiles (using astile)
-            astile pred_q = pred_spend if ever_treated == 1, nq(4)
-        }
+		        keep if pred_q == `q' | pred_q == 0
 
-        * Setup Groups: Keep only specific Quartile (q) AND Control Group (0)
-        replace pred_q = 0 if never_treated == 1
-        keep if pred_q == `q' | pred_q == 0
 
         *--- Weighted Event-Study Regression ---
         areg lexp_ma_strict ///
@@ -1196,138 +1391,3 @@ replace pred_q = 4 if pre_q == 2 & ever_treated
     graph export "$SchoolSpending/output/jk/base_q_`spec'_quartiles_separate.png", replace
 }
 
-/*
-        use baseline_reg_A, clear
-        drop pred_q
-			
-		xtile pred_q = pred_spend if ever_treated == 1, nq(4)
-		replace pred_q = 4 if pre_q == 4 & ever_treated == 1
-		        replace pred_q = 0 if never_treated == 1
-
-
-foreach spec in A   {
-	use baseline_reg_`spec',clear
-	display "Spec `spec'"
-	tab pre_q high_def_A
-}
-
-
-
-
-
-
-	use baseline_reg_A,clear
-	keep if pre_q == 3
-	tab state_fips high_def_A
-
-
-	use jk_reg_A,clear
-	keep if pre_q == 3
-	tab state_fips high_def_A
-
-
-
-use jk_reg_A, clear
-keep if state_fips == "39"
-tab pre_q pred_q
-
-
-use jk_reg_A, clear
-keep if state_fips == "48"
-tab pre_q pred_q
-
-
-
-use baseline_reg_A,clear
-keep if inlist(state_fips, "39", "48")
-
-
-
-
-* Full sample
-estimates use model_baseline_A
-scalar full_main = _b[1.lag_4]
-scalar full_ppe3 = _b[1.lag_4#3.pre_q]
-scalar full_ppe4 = _b[1.lag_4#4.pre_q]
-
-* Leave-Ohio
-estimates use jackknife_A_state_39
-scalar oh_main = _b[1.lag_4]
-scalar oh_ppe3 = _b[1.lag_4#3.pre_q]
-scalar oh_ppe4 = _b[1.lag_4#4.pre_q]
-
-* Leave-Texas
-estimates use jackknife_A_state_48
-scalar tx_main = _b[1.lag_4]
-scalar tx_ppe3 = _b[1.lag_4#3.pre_q]
-scalar tx_ppe4 = _b[1.lag_4#4.pre_q]
-
-di "Full:  main=" full_main " ppe3=" full_ppe3 " ppe4=" full_ppe4
-di "No-OH: main=" oh_main   " ppe3=" oh_ppe3   " ppe4=" oh_ppe4
-di "No-TX: main=" tx_main   " ppe3=" tx_ppe3   " ppe4=" tx_ppe4
-
-
-
-* Full sample
-estimates use model_baseline_A
-
-scalar full_main = 0
-scalar full_ppe3 = 0
-scalar full_ppe4 = 0
-
-forvalues t = 2/7 {
-    scalar full_main = full_main + _b[1.lag_`t']
-    scalar full_ppe3 = full_ppe3 + _b[1.lag_`t'#3.pre_q]
-    scalar full_ppe4 = full_ppe4 + _b[1.lag_`t'#4.pre_q]
-}
-
-scalar full_main = full_main / 6
-scalar full_ppe3 = full_ppe3 / 6
-scalar full_ppe4 = full_ppe4 / 6
-
-* Leave-Ohio
-estimates use jackknife_A_state_39
-
-scalar oh_main = 0
-scalar oh_ppe3 = 0
-scalar oh_ppe4 = 0
-
-forvalues t = 2/7 {
-    scalar oh_main = oh_main + _b[1.lag_`t']
-    scalar oh_ppe3 = oh_ppe3 + _b[1.lag_`t'#3.pre_q]
-    scalar oh_ppe4 = oh_ppe4 + _b[1.lag_`t'#4.pre_q]
-}
-
-scalar oh_main = oh_main / 6
-scalar oh_ppe3 = oh_ppe3 / 6
-scalar oh_ppe4 = oh_ppe4 / 6
-
-* Leave-Texas
-estimates use jackknife_A_state_48
-
-scalar tx_main = 0
-scalar tx_ppe3 = 0
-scalar tx_ppe4 = 0
-
-forvalues t = 2/7 {
-    scalar tx_main = tx_main + _b[1.lag_`t']
-    scalar tx_ppe3 = tx_ppe3 + _b[1.lag_`t'#3.pre_q]
-    scalar tx_ppe4 = tx_ppe4 + _b[1.lag_`t'#4.pre_q]
-}
-
-scalar tx_main = tx_main / 6
-scalar tx_ppe3 = tx_ppe3 / 6
-scalar tx_ppe4 = tx_ppe4 / 6
-
-* Display results
-di "Averaged over lags 2-7:"
-di "Full:  main=" full_main " ppe3=" full_ppe3 " ppe4=" full_ppe4
-di "No-OH: main=" oh_main   " ppe3=" oh_ppe3   " ppe4=" oh_ppe4
-di "No-TX: main=" tx_main   " ppe3=" tx_ppe3   " ppe4=" tx_ppe4
-
-* Compute predicted values
-di " "
-di "Predicted spending (main + ppe_q):"
-di "Full:  pred_q3=" full_main + full_ppe3 " pred_q4=" full_main + full_ppe4
-di "No-OH: pred_q3=" oh_main + oh_ppe3     " pred_q4=" oh_main + oh_ppe4
-di "No-TX: pred_q3=" tx_main + tx_ppe3     " pred_q4=" tx_main + tx_ppe4

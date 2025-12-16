@@ -334,7 +334,7 @@ save jjp_rank,replace
 local var lexp_ma_strict
 
 foreach v of local var {
-    forvalues q = 4/4 {
+    forvalues q = 1/4 {
         use jjp_balance, clear
  
 
