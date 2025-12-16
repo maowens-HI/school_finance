@@ -1,114 +1,76 @@
 /*==============================================================================
-
-Project    : School Spending – Count Counties by State
-
-File       : count_counties_by_state.do
-
-Purpose    : Generate count of counties per state for sample restriction analysis
-			 and then restimate fig 1 anf fig 2
-
+Project    : School Spending – Filtered Sample Analysis (≥10 Counties/State)
+File       : county_fix.do
 Author     : Myles Owens
-
 Institution: Hoover Institution, Stanford University
-
 Date       : 2025-12-16
-
 ───────────────────────────────────────────────────────────────────────────────
+PURPOSE:
+    Re-estimate Figure 1 and Figure 2 (3 specifications each) with sample
+    restricted to states that are either:
+        (i)  Never treated, OR
+        (ii) Ever-treated with ≥10 counties meeting the balance criteria
 
-WHAT THIS FILE DOES:
+    This addresses potential instability from states with few counties.
 
-  • Loads county panel data
-
-  • Counts unique counties per state
-
-  • Shows which states would be affected by "≥10 counties" restriction
-
-  • Identifies treatment status by state
-
- 
+SPECIFICATIONS:
+    A. Pre-reform spending quartile only (pre_q)
+    B. Pre-reform spending + income quartile (pre_q + inc_q)
+    C. Pre-reform spending + income × reform types (pre_q + inc_q*reform_types)
 
 INPUTS:
+    - jjp_balance.dta : Balanced county panel with reform variables
 
-  - jjp_interp.dta (or county_exp_final.dta)
-
- 
-
-OUTPUTS:
-
-  - Console output showing county counts by state
-
-  - state_county_counts.dta (optional saved output)
-
+OUTPUTS (saved to output/12_16_meeting/):
+    - Event-study graphs for each specification
+    - Jackknife heterogeneity analysis graphs
+    - Intermediate data files for analysis
 ==============================================================================*/
 
- 
-* House Keeping
+*** ---------------------------------------------------------------------------
+*** SETUP: Initialize environment
+*** ---------------------------------------------------------------------------
+
 clear all
-
 set more off
-
 cd "$SchoolSpending/data"
 
-use jjp_balance,clear
- 
-keep county_id state_fips
+*** ---------------------------------------------------------------------------
+*** SECTION 1: Count Counties by State and Apply Sample Restriction
+*** ---------------------------------------------------------------------------
+* Goal: Keep only states with ≥10 counties in the balanced sample
+*       This ensures stable estimates and avoids undue influence from
+*       states with very few counties.
 
+*--- Load balanced panel
+use jjp_balance, clear
+
+*--- Create state-level county counts
+* Keep unique county-state pairs
+preserve
+keep county_id state_fips
 duplicates drop
 
-tab state_fips
-
-/*
-
- state_fips |      Freq.     Percent        Cum.
-------------+-----------------------------------
-         01 |         50        3.36        3.36
-         04 |          1        0.07        3.43
-         05 |         17        1.14        4.57
-         08 |         50        3.36        7.92
-         10 |          3        0.20        8.13
-         12 |         67        4.50       12.63
-         13 |        155       10.41       23.04
-         16 |         36        2.42       25.45
-         17 |         89        5.98       31.43
-         18 |         86        5.78       37.21
-         19 |         95        6.38       43.59
-         21 |         34        2.28       45.87
-         22 |         64        4.30       50.17
-         23 |          7        0.47       50.64
-         25 |          9        0.60       51.24
-         26 |         65        4.37       55.61
-         27 |         71        4.77       60.38
-         28 |         75        5.04       65.41
-         29 |         85        5.71       71.12
-         30 |          3        0.20       71.32
-         31 |         37        2.48       73.81
-         32 |         17        1.14       74.95
-         33 |          7        0.47       75.42
-         35 |         20        1.34       76.76
-         38 |         10        0.67       77.43
-         39 |         74        4.97       82.40
-         40 |         65        4.37       86.77
-         42 |         57        3.83       90.60
-         44 |          3        0.20       90.80
-         46 |         45        3.02       93.82
-         47 |          2        0.13       93.96
-         48 |         54        3.63       97.58
-         49 |         29        1.95       99.53
-         50 |          7        0.47      100.00
-------------+-----------------------------------
-      Total |      1,489      100.00
-
-*/
-
+*--- Count counties per state
 bysort state_fips: egen n_county = nvals(county_id)
 
+*--- Preview distribution (for reference)
+tab state_fips
+restore
 
+*--- Compute county counts in main dataset
+keep county_id state_fips
+duplicates drop
+bysort state_fips: egen n_county = nvals(county_id)
 keep county_id n_county
 
+*--- Merge counts back to full panel
 merge 1:m county_id using jjp_balance
 
+*--- Apply restriction: keep only states with ≥10 counties
 keep if n_county >= 10
 
+*--- Save filtered sample
 save jjp_balance2, replace
 
 
@@ -1108,7 +1070,7 @@ foreach def in A{
             note("Averaging window: lags 2-7 (vertical lines)") ///
             graphregion(color(white))
 
-        graph export "$SchoolSpending/output/jk/baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
+        graph export "$SchoolSpending/output/12_16_meeting/baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
 
@@ -1209,7 +1171,7 @@ foreach spec in  A { // C
             note("Averaging window: lags 2-7 (vertical lines)") ///
             graphregion(color(white))
 
-        graph export "$SchoolSpending/output/jk/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
+        graph export "$SchoolSpending/output/12_16_meeting/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
     }
 }
 
@@ -1304,7 +1266,7 @@ foreach spec in A B C  {
         graphregion(color(white)) plotregion(margin(medium))
 
     * Save with 'jk' prefix
-    graph export "$SchoolSpending/output/jk/jk_q_`spec'_quartiles.png", replace
+    graph export "$SchoolSpending/output/12_16_meeting/jk_q_`spec'_quartiles.png", replace
 
 }
 *==============================================================================
@@ -1388,6 +1350,6 @@ foreach spec in D {
         xtitle("Years relative to reform", size(small)) ///
         graphregion(color(white)) plotregion(margin(medium))
 
-    graph export "$SchoolSpending/output/jk/base_q_`spec'_quartiles_separate.png", replace
+    graph export "$SchoolSpending/output/12_16_meeting/base_q_`spec'_quartiles_separate.png", replace
 }
 
