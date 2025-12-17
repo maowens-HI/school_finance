@@ -128,9 +128,7 @@ foreach v of local var {
 			
 			
 	
- *graph export "$SchoolSpending\output\fig1\good_bad\bad_county_`q'.png", replace
-
-	*graph export "$SchoolSpending/output/5_perc_reg_`q'.png", replace
+	graph export "$SchoolSpending/output/12_16_meeting/bad_county_`q'.png", replace
     }
 }
 
@@ -189,8 +187,7 @@ foreach v of local var {
         legend(off) ///
         scheme(s2mono)
 
-    *graph export "$SchoolSpending\output\fig1\good_bad\bad_county_btm.png", replace 
-*graph export "$SchoolSpending/output/county_btm_`v'.png", replace
+    graph export "$SchoolSpending/output/12_16_meeting/bad_county_btm.png", replace
 }
 
 *** ---------------------------------------------------------------------------
@@ -265,41 +262,40 @@ estimates save model_baseline_C, replace
 use jjp_jackknife_prep, clear
 estimates use model_baseline_A
 
-**# Generate Main Effect Coefficients (lags 2-12)
-forvalues t = 2/12 {
+**# Generate Main Effect Coefficients (lags 2-7)
+forvalues t = 2/7 {
     gen main_`t' = .
 }
 
 * Fill with coefficient values
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     scalar coeff_main = _b[1.lag_`t']
     replace main_`t' = coeff_main
 }
 
 **# Generate Baseline Spending Quartile Interaction Coefficients
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     forvalues q = 2/4 {
         gen ppe_`t'_`q' = .
     }
 }
 
 * Fill with coefficient values
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     forvalues q = 2/4 {
         scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
         replace ppe_`t'_`q' = coeff_ppe
     }
 }
 
-**# Calculate Averages Across Lags 2-12
+**# Calculate Averages Across Lags 2-7
 *--- Average main effect
-egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7 main_8 main_9 main_10 main_11 main_12)
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
 
 *--- Average baseline spending interactions
 forvalues q = 2/4 {
     egen avg_ppe_`q' = rowmean( ///
-        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q' ///
-        ppe_8_`q' ppe_9_`q' ppe_10_`q' ppe_11_`q' ppe_12_`q')
+        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
 }
 
 **# Calculate Predicted Spending Increase
@@ -318,26 +314,26 @@ save baseline_predictions_spec_A, replace
 use jjp_jackknife_prep, clear
 estimates use model_baseline_B
 
-**# Generate Main Effect Coefficients (lags 2-12)
-forvalues t = 2/12 {
+**# Generate Main Effect Coefficients (lags 2-7)
+forvalues t = 2/7 {
     gen main_`t' = .
 }
 
 * Fill with coefficient values
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     scalar coeff_main = _b[1.lag_`t']
     replace main_`t' = coeff_main
 }
 
 **# Generate Baseline Spending Quartile Interaction Coefficients
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     forvalues q = 2/4 {
         gen ppe_`t'_`q' = .
     }
 }
 
 * Fill with coefficient values
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     forvalues q = 2/4 {
         scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
         replace ppe_`t'_`q' = coeff_ppe
@@ -345,36 +341,34 @@ forvalues t = 2/12 {
 }
 
 **# Generate Income Quartile Interaction Coefficients
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     forvalues q = 2/4 {
         gen inc_`t'_`q' = .
     }
 }
 
 * Fill with coefficient values
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     forvalues q = 2/4 {
         scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
         replace inc_`t'_`q' = coeff_inc
     }
 }
 
-**# Calculate Averages Across Lags 2-12
+**# Calculate Averages Across Lags 2-7
 *--- Average main effect
-egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7 main_8 main_9 main_10 main_11 main_12)
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
 
 *--- Average baseline spending interactions
 forvalues q = 2/4 {
     egen avg_ppe_`q' = rowmean( ///
-        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q' ///
-        ppe_8_`q' ppe_9_`q' ppe_10_`q' ppe_11_`q' ppe_12_`q')
+        ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
 }
 
 *--- Average income interactions
 forvalues q = 2/4 {
     egen avg_inc_`q' = rowmean( ///
-        inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q' ///
-        inc_8_`q' inc_9_`q' inc_10_`q' inc_11_`q' inc_12_`q')
+        inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
 }
 
 **# Calculate Predicted Spending Increase
@@ -401,19 +395,19 @@ estimates use model_baseline_C
 local reforms "eq mfp ep le sl"
 
 /* ---------------------------------------------------------
-   1. Generate Global Time Trend (Lags 2-12)
+   1. Generate Global Time Trend (Lags 2-7)
    --------------------------------------------------------- */
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     gen main_`t' = .
     scalar coeff_main = _b[1.lag_`t']
     replace main_`t' = coeff_main
 }
-egen avg_main = rowmean(main_2-main_12)
+egen avg_main = rowmean(main_2-main_7)
 
 /* ---------------------------------------------------------
    2. Generate Spending Trends
    --------------------------------------------------------- */
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     forvalues q = 2/4 {
         gen ppe_`t'_`q' = .
         /* Capture is good practice, though these should exist */
@@ -422,14 +416,14 @@ forvalues t = 2/12 {
     }
 }
 forvalues q = 2/4 {
-    egen avg_ppe_`q' = rowmean(ppe_2_`q'-ppe_12_`q')
+    egen avg_ppe_`q' = rowmean(ppe_2_`q'-ppe_7_`q')
 }
 
 /* ---------------------------------------------------------
    3. Generate Base Income Trends (Applies to EVERYONE)
    --------------------------------------------------------- */
 /* This was missing/buried in your previous code */
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     forvalues q = 2/4 {
         gen inc_`t'_`q' = .
         /* Fetch the base income trend: lag # inc_q */
@@ -439,7 +433,7 @@ forvalues t = 2/12 {
     }
 }
 forvalues q = 2/4 {
-    egen avg_inc_`q' = rowmean(inc_2_`q'-inc_12_`q')
+    egen avg_inc_`q' = rowmean(inc_2_`q'-inc_7_`q')
 }
 
 /* ---------------------------------------------------------
@@ -448,17 +442,17 @@ forvalues q = 2/4 {
 foreach r of local reforms {
 
     /* A. Main Reform Effect (The Base Effect for Q1) */
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         gen ref_main_`r'_`t' = .
         /* Fetch lag # reform */
         capture scalar c_ref = _b[1.lag_`t'#1.reform_`r']
 		if _rc scalar ref_main_`r'_`t' = 0
         replace ref_main_`r'_`t' = c_ref
     }
-    egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 - ref_main_`r'_12)
+    egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 - ref_main_`r'_7)
 
     /* B. Triple Interaction (The Extra Effect for Q2-4) */
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen triple_`r'_`t'_`q' = .
            capture  scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
@@ -467,7 +461,7 @@ foreach r of local reforms {
         }
     }
     forvalues q = 2/4 {
-        egen avg_triple_`r'_`q' = rowmean(triple_`r'_2_`q' - triple_`r'_12_`q')
+        egen avg_triple_`r'_`q' = rowmean(triple_`r'_2_`q' - triple_`r'_7_`q')
     }
 }
 
@@ -553,25 +547,25 @@ foreach s of local states {
     estimates use jackknife_A_state_`s'
 
     **# Generate Main Effect Coefficients
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         gen main_`t' = .
     }
 
     * Fill with coefficient values
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         scalar coeff_main = _b[1.lag_`t']
         replace main_`t' = coeff_main
     }
 
     **# Generate Baseline Spending Quartile Interaction Coefficients
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen ppe_`t'_`q' = .
         }
     }
 
     * Fill with coefficient values
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         forvalues q = 2/4 {
             scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
             replace ppe_`t'_`q' = coeff_ppe
@@ -579,16 +573,15 @@ foreach s of local states {
     }
 
 
-    **# Calculate Averages Across Lags 2-12
+    **# Calculate Averages Across Lags 2-7
 
     *--- Average main effect
-    egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7 main_8 main_9 main_10 main_11 main_12)
+    egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
 
     *--- Average baseline spending interactions
     forvalues q = 2/4 {
         egen avg_ppe_`q' = rowmean( ///
-            ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q' ///
-            ppe_8_`q' ppe_9_`q' ppe_10_`q' ppe_11_`q' ppe_12_`q')
+            ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
     }
 
     
@@ -654,25 +647,25 @@ foreach s of local states {
     estimates use jackknife_B_state_`s'
 
     **# Generate Main Effect Coefficients
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         gen main_`t' = .
     }
 
     * Fill with coefficient values
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         scalar coeff_main = _b[1.lag_`t']
         replace main_`t' = coeff_main
     }
 
     **# Generate Baseline Spending Quartile Interaction Coefficients
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen ppe_`t'_`q' = .
         }
     }
 
     * Fill with coefficient values
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         forvalues q = 2/4 {
             scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
             replace ppe_`t'_`q' = coeff_ppe
@@ -680,37 +673,35 @@ foreach s of local states {
     }
 
 	 **# Generate Income Quartile Interaction Coefficients
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen inc_`t'_`q' = .
         }
     }
 
     * Fill with coefficient values
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         forvalues q = 2/4 {
             scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
             replace inc_`t'_`q' = coeff_inc
         }
     }
 
-    **# Calculate Averages Across Lags 2-12
+    **# Calculate Averages Across Lags 2-7
 
     *--- Average main effect
-    egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7 main_8 main_9 main_10 main_11 main_12)
+    egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
 
     *--- Average baseline spending interactions
     forvalues q = 2/4 {
         egen avg_ppe_`q' = rowmean( ///
-            ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q' ///
-            ppe_8_`q' ppe_9_`q' ppe_10_`q' ppe_11_`q' ppe_12_`q')
+            ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
     }
 
 	 *--- Average income interactions
     forvalues q = 2/4 {
         egen avg_inc_`q' = rowmean( ///
-            inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q' ///
-            inc_8_`q' inc_9_`q' inc_10_`q' inc_11_`q' inc_12_`q')
+            inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
     }
 
 
@@ -801,19 +792,19 @@ foreach s of local states {
 local reforms "eq mfp ep le sl"
 
 /* ---------------------------------------------------------
-   1. Generate Global Time Trend (Lags 2-12)
+   1. Generate Global Time Trend (Lags 2-7)
    --------------------------------------------------------- */
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     gen main_`t' = .
     scalar coeff_main = _b[1.lag_`t']
     replace main_`t' = coeff_main
 }
-egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7 main_8 main_9 main_10 main_11 main_12)
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
 
 /* ---------------------------------------------------------
    2. Generate Spending Trends
    --------------------------------------------------------- */
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     forvalues q = 2/4 {
         gen ppe_`t'_`q' = .
         scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
@@ -821,14 +812,14 @@ forvalues t = 2/12 {
     }
 }
 forvalues q = 2/4 {
-    egen avg_ppe_`q' = rowmean(ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q' ppe_8_`q' ppe_9_`q' ppe_10_`q' ppe_11_`q' ppe_12_`q')
+    egen avg_ppe_`q' = rowmean(ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
 }
 
 /* ---------------------------------------------------------
    3. Generate Base Income Trends (Applies to EVERYONE)
    --------------------------------------------------------- */
 /* This was missing/buried in your previous code */
-forvalues t = 2/12 {
+forvalues t = 2/7 {
     forvalues q = 2/4 {
         gen inc_`t'_`q' = .
         /* Fetch the base income trend: lag # inc_q */
@@ -837,7 +828,7 @@ forvalues t = 2/12 {
     }
 }
 forvalues q = 2/4 {
-    egen avg_inc_`q' = rowmean(inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q' inc_8_`q' inc_9_`q' inc_10_`q' inc_11_`q' inc_12_`q')
+    egen avg_inc_`q' = rowmean(inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
 }
 
 /* ---------------------------------------------------------
@@ -846,7 +837,7 @@ forvalues q = 2/4 {
 foreach r of local reforms {
 
     /* A. Main Reform Effect (The Base Effect for Q1) */
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         gen ref_main_`r'_`t' = .
         /* We use capture due to reform_sl only occuring in one state.
 		   It is given the value of 0 when it is missing.
@@ -857,12 +848,10 @@ foreach r of local reforms {
     }
     egen avg_ref_main_`r' = rowmean( ///
 	ref_main_`r'_2 ref_main_`r'_3 ref_main_`r'_4 ///
-	ref_main_`r'_5 ref_main_`r'_6 ref_main_`r'_7 ///
-	ref_main_`r'_8 ref_main_`r'_9 ref_main_`r'_10 ///
-	ref_main_`r'_11 ref_main_`r'_12)
+	ref_main_`r'_5 ref_main_`r'_6 ref_main_`r'_7)
 
     /* B. Triple Interaction (The Extra Effect for Q2-4) */
-    forvalues t = 2/12 {
+    forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen triple_`r'_`t'_`q' = .
             capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
@@ -873,9 +862,7 @@ foreach r of local reforms {
     forvalues q = 2/4 {
         egen avg_triple_`r'_`q' = rowmean( ///
 		triple_`r'_2_`q' triple_`r'_3_`q' triple_`r'_4_`q' ///
-		triple_`r'_5_`q' triple_`r'_6_`q' triple_`r'_7_`q' ///
-		triple_`r'_8_`q' triple_`r'_9_`q' triple_`r'_10_`q' ///
-		triple_`r'_11_`q' triple_`r'_12_`q')
+		triple_`r'_5_`q' triple_`r'_6_`q' triple_`r'_7_`q')
     }
 }
 
@@ -1074,13 +1061,13 @@ foreach def in A{
             (line b t if group == "Low", lcolor(red) lpattern(dash) lwidth(medthick)), ///
             yline(0, lcolor(gs10) lpattern(dash)) ///
             xline(0, lcolor(gs10) lpattern(dash)) ///
-            xline(2 12, lcolor(blue) lwidth(vthin)) ///
+            xline(2 7, lcolor(blue) lwidth(vthin)) ///
             legend(order(2 "High Predicted" 4 "Low Predicted") pos(6) col(2)) ///
             title("`spec_label'") ///
             subtitle("Full-sample estimates (no jackknife)") ///
             ytitle("Change in ln(13-yr rolling avg PPE)") ///
             xtitle("Years relative to reform") ///
-            note("Averaging window: lags 2-12 (vertical lines)") ///
+            note("Averaging window: lags 2-7 (vertical lines)") ///
             graphregion(color(white))
 
         graph export "$SchoolSpending/output/12_16_meeting/baseline_spec_`spec'_def_`def'_high_vs_low.png", replace
@@ -1175,13 +1162,13 @@ foreach spec in  A B{ // C
             (line b t if group == "Low", lcolor(red) lpattern(dash) lwidth(medthick)), ///
             yline(0, lcolor(gs10) lpattern(dash)) ///
             xline(0, lcolor(gs10) lpattern(dash)) ///
-            xline(2 12, lcolor(blue) lwidth(vthin)) ///
+            xline(2 7, lcolor(blue) lwidth(vthin)) ///
             legend(order(2 "High Predicted" 4 "Low Predicted") pos(6) col(2)) ///
             title("JACKKNIFE: `spec_label'") ///
             subtitle("Leave-one-state-out predictions") ///
             ytitle("Change in ln(13-yr rolling avg PPE)") ///
             xtitle("Years relative to reform") ///
-            note("Averaging window: lags 2-12 (vertical lines)") ///
+            note("Averaging window: lags 2-7 (vertical lines)") ///
             graphregion(color(white))
 
         graph export "$SchoolSpending/output/12_16_meeting/jackknife_spec_`spec'_def_`def'_high_vs_low.png", replace
@@ -1269,7 +1256,7 @@ foreach spec in A  C   {
         (line b rel_year if q_group == 4, lcolor(`c4') lpattern(solid) lwidth(medthick)), ///
         yline(0, lcolor(gs12) lpattern(solid)) ///
         xline(0, lcolor(gs10) lpattern(dash)) ///
-        xline(2 12, lcolor(blue) lpattern(dash)) /// 
+        xline(2 7, lcolor(blue) lpattern(dash)) ///
         legend(order(5 "Q1 (Lowest)" 6 "Q2" 7 "Q3" 8 "Q4 (Highest)") ///
                pos(6) rows(1) region(lcolor(none))) ///
         title("Jackknife: `spec_label'") ///
@@ -1354,7 +1341,7 @@ foreach spec in A B C {
         (line b rel_year if q_group == 4, lcolor(`c4') lpattern(solid) lwidth(medthick)), ///
         yline(0, lcolor(gs12) lpattern(solid)) ///
         xline(0, lcolor(gs10) lpattern(dash)) ///
-        xline(2 12, lcolor(blue) lpattern(dash)) /// Note: Changed to gray (gs10) to avoid confusion with Q4 Blue line
+        xline(2 7, lcolor(blue) lpattern(dash)) /// Note: Changed to gray (gs10) to avoid confusion with Q4 Blue line
         legend(order(5 "Q1 (Lowest)" 6 "Q2" 7 "Q3" 8 "Q4 (Highest)") ///
                pos(6) rows(1) region(lcolor(none))) ///
         title("No Jackknife:`spec_label'") ///
