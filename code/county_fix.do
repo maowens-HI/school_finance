@@ -71,6 +71,7 @@ merge 1:m county_id using jjp_balance
 keep if n_county >= 10
 
 *--- Save filtered sample
+
 save jjp_balance2, replace
 
 
@@ -79,15 +80,15 @@ local var lexp_ma_strict
 foreach v of local var {
     forvalues q = 1/4 {
         use jjp_balance2, clear
- 
-
+		
+			
 
 
         *--- Weighted event-study regression
         areg  `v' ///
             i.lag_* i.lead_* ///
             i.year_unified [w=school_age_pop] ///
-            if pre_q1971==`q' & (reform_year < 2000 | never_treated == 1), ///
+            if (pre_q == `q' | never_treated==1) & (reform_year < 2000 | never_treated == 1), ///
             absorb(county_id) vce(cluster county_id)
 
         *--- Extract coefficients
@@ -121,7 +122,7 @@ foreach v of local var {
             yline(0, lpattern(dash) lcolor(gs10)) ///
             xline(0, lpattern(dash) lcolor(gs10)) ///
             ytitle("Δ ln(13-yr rolling avg PPE)") ///
-            title(" `v' | Q: `q' | Good & Bad ", size(medlarge) color("35 45 60")) ///
+            title(" `v' | Q: `q' ", size(medlarge) color("35 45 60")) ///
             graphregion(color(white)) ///
             legend(off) ///
             scheme(s2mono)
@@ -148,7 +149,7 @@ foreach v of local var {
     areg `v' ///
         i.lag_* i.lead_* ///
         i.year_unified [w=school_age_pop] ///
-        if pre_q1971 < 4 & (reform_year < 2000 | never_treated == 1) , ///
+        if (pre_q1971 < 4 | never_treated==1) & (reform_year < 2000 | never_treated == 1) , ///
         absorb(county_id) vce(cluster county_id)
 
     *--- Extract coefficients
@@ -182,7 +183,7 @@ foreach v of local var {
         yline(0, lpattern(dash) lcolor(gs10)) ///
         xline(0, lpattern(dash) lcolor(gs10)) ///
         ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
-        title(" `v' | Q: 1-3 | Good & Bad", size(medlarge) color("35 45 60")) ///
+        title(" `v' | Q: 1-3 ", size(medlarge) color("35 45 60")) ///
         graphregion(color(white)) ///
         legend(off) ///
         scheme(s2mono)
@@ -934,7 +935,7 @@ save jackknife_predictions_spec_C, replace
 * PREP Quartiles
 *==============================================================================
 * QUARTILES BASELINE
-foreach spec in A B {
+foreach spec in A B C{
 	use baseline_predictions_spec_`spec',clear
 
 
@@ -945,8 +946,8 @@ gen pred_q = .
 
 replace pred_q = 1 if pre_q == 4 & ever_treated
 replace pred_q = 2 if pre_q == 3 & ever_treated
-replace pred_q = 3 if pre_q == 1 & ever_treated
-replace pred_q = 4 if pre_q == 2 & ever_treated
+replace pred_q = 3 if pre_q == 2 & ever_treated
+replace pred_q = 4 if pre_q == 1 & ever_treated
 
 
 		
@@ -965,7 +966,7 @@ replace pred_q = 4 if pre_q == 2 & ever_treated
 }
 
 * QUARTILES JACKKNIFE
-foreach spec in A{
+foreach spec in A B C{
 	use jackknife_predictions_spec_`spec',clear
 	xtile pred_q = pred_spend if ever_treated == 1, nq(4)
 
@@ -1083,7 +1084,7 @@ foreach def in A{
 
 
 * Process each jackknife specification
-foreach spec in  A B { // 
+foreach spec in  A B C{ // 
 
     use jackknife_predictions_spec_`spec', clear
 
@@ -1104,7 +1105,7 @@ foreach spec in  A B { //
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
-foreach spec in  A B{ // C
+foreach spec in  A B C{ // C
     foreach def in A  {
         use jk_reg_`spec', clear
 		
@@ -1183,7 +1184,7 @@ foreach spec in  A B{ // C
 * PART 3C: JACKKNIFE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in A  C   {
+foreach spec in A  B  C {
 
     * 1. Initialize results file
     tempfile combined_results
