@@ -302,7 +302,8 @@ foreach r of local reforms {
     forvalues t = 2/7 {
         gen ref_main_`r'_`t' = .
         /* Fetch lag # reform */
-        scalar c_ref = _b[1.lag_`t'#1.reform_`r']
+       capture scalar c_ref = _b[1.lag_`t'#1.reform_`r']
+	   if _rc scalar c_ref = 0
         replace ref_main_`r'_`t' = c_ref
     }
     egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 - ref_main_`r'_7)
@@ -311,7 +312,8 @@ foreach r of local reforms {
     forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen triple_`r'_`t'_`q' = .
-            scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+            capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+			if _rc scalar c_ref = 0
             replace triple_`r'_`t'_`q' = c_trip
         }
     }
@@ -602,7 +604,7 @@ save jackknife_predictions_spec_B, replace
 *** 2.C. Jackknife: Full Heterogeneity (Spending + Income + Reform Types)
 *** ---------------------------------------------------------------------------
 
-
+/*
 foreach s of local states {
         use `master_data', clear
         drop if state_fips == "`s'"
@@ -635,7 +637,7 @@ areg lexp_ma_strict                                                     ///
 }
 
 
-/
+
 
 
 foreach s of local states {
@@ -808,7 +810,7 @@ replace pred_q = 4 if pre_q == 2 & ever_treated
         }
         else {
             * SPEC B & C STRATEGY: Standard Quantiles (using astile)
-            xtile pred_q = pred_spend if ever_treated == 1, nq(4)
+            xtile pred_q = pred_spend if ever_treated == 1, nq(2)
         }
 
         * Setup Groups: Keep only specific Quartile (q) AND Control Group (0)
@@ -820,7 +822,7 @@ replace pred_q = 4 if pre_q == 2 & ever_treated
 }
 
 * QUARTILES JACKKNIFE
-foreach spec in A{
+foreach spec in A B{
 	use jackknife_predictions_spec_`spec',clear
 	xtile pred_q = pred_spend if ever_treated == 1, nq(4)
 
@@ -857,7 +859,7 @@ foreach spec in  A B C{
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Baseline Predictions (Both Definitions)
     *---------------------------------------------------------------------------
-foreach def in A{
+foreach def in A B C{
         use baseline_reg_`spec', clear
 			
         * Run event study
@@ -938,7 +940,7 @@ foreach def in A{
 
 
 * Process each jackknife specification
-foreach spec in  A B C{ // 
+foreach spec in  A B { // 
 
     use jackknife_predictions_spec_`spec', clear
 
@@ -959,7 +961,7 @@ foreach spec in  A B C{ //
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
-foreach spec in  A { // C
+foreach spec in  A  B{ // C
     foreach def in A  {
         use jk_reg_`spec', clear
 		
@@ -1038,14 +1040,14 @@ foreach spec in  A { // C
 * PART 3C: JACKKNIFE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in A B C  {
+foreach spec in A B   {
 
     * 1. Initialize results file
     tempfile combined_results
     postfile handle str15 term float(rel_year b se) int q_group using `combined_results'
 
     * 2. Loop through Quartiles
-    forvalues q = 1/4 {
+    forvalues q = 1/2 {
 
         * Load Data (JACKKNIFE)
         use jk_q_`spec', clear
@@ -1128,7 +1130,7 @@ foreach spec in A B C  {
 * PART 3C: BASELINE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in D {
+foreach spec in A B C {
 
     * 1. Initialize results file
     tempfile combined_results
