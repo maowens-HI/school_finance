@@ -205,7 +205,7 @@ cd "$SchoolSpending/data"
 *** Section 1: Load Balanced Panel and Prepare Variables
 *** ---------------------------------------------------------------------------
 
-use jjp_balance, clear
+use jjp_balance2, clear
 
 *--- Rename baseline spending quartile for simplicity
 rename pre_q1971 pre_q
@@ -431,6 +431,7 @@ forvalues t = 2/7 {
         gen inc_`t'_`q' = .
         /* Fetch the base income trend: lag # inc_q */
         scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
+		
         replace inc_`t'_`q' = coeff_inc
     }
 }
@@ -447,7 +448,8 @@ foreach r of local reforms {
     forvalues t = 2/7 {
         gen ref_main_`r'_`t' = .
         /* Fetch lag # reform */
-        scalar c_ref = _b[1.lag_`t'#1.reform_`r']
+        capture scalar c_ref = _b[1.lag_`t'#1.reform_`r']
+		if _rc scalar ref_main_`r'_`t' = 0
         replace ref_main_`r'_`t' = c_ref
     }
     egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 - ref_main_`r'_7)
@@ -456,7 +458,8 @@ foreach r of local reforms {
     forvalues t = 2/7 {
         forvalues q = 2/4 {
             gen triple_`r'_`t'_`q' = .
-            scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+           capture  scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+		   if _rc scalar triple_`r'_`t'_`q' = 0
             replace triple_`r'_`t'_`q' = c_trip
         }
     }
@@ -747,7 +750,7 @@ save jackknife_predictions_spec_B, replace
 *** 2.C. Jackknife: Full Heterogeneity (Spending + Income + Reform Types)
 *** ---------------------------------------------------------------------------
 
-
+/*
 foreach s of local states {
         use `master_data', clear
         drop if state_fips == "`s'"
@@ -780,9 +783,9 @@ areg lexp_ma_strict                                                     ///
 }
 
 
-/
+*/
 
-
+/*
 foreach s of local states {
         * Load master data and estimates for this state
         use `master_data', clear
@@ -934,7 +937,7 @@ save jackknife_predictions_spec_C, replace
 * PREP Quartiles
 *==============================================================================
 * QUARTILES BASELINE
-foreach spec in A B C{
+foreach spec in A B {
 	use baseline_predictions_spec_`spec',clear
 
 
@@ -1083,7 +1086,7 @@ foreach def in A{
 
 
 * Process each jackknife specification
-foreach spec in  A B C{ // 
+foreach spec in  A B { // 
 
     use jackknife_predictions_spec_`spec', clear
 
@@ -1104,7 +1107,7 @@ foreach spec in  A B C{ //
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
-foreach spec in  A { // C
+foreach spec in  A B{ // C
     foreach def in A  {
         use jk_reg_`spec', clear
 		
@@ -1183,7 +1186,7 @@ foreach spec in  A { // C
 * PART 3C: JACKKNIFE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in A B C  {
+foreach spec in A B   {
 
     * 1. Initialize results file
     tempfile combined_results
@@ -1273,7 +1276,7 @@ foreach spec in A B C  {
 * PART 3C: BASELINE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in D {
+foreach spec in A B C {
 
     * 1. Initialize results file
     tempfile combined_results
