@@ -205,6 +205,9 @@ cd "$SchoolSpending/data"
 
 use jjp_balance2, clear
 
+
+
+
 *--- Rename baseline spending quartile for simplicity
 rename pre_q1971 pre_q
 egen reform_types = group(reform_eq reform_mfp reform_ep reform_le reform_sl)
@@ -222,7 +225,7 @@ use jjp_jackknife_prep, clear
 
 areg lexp_ma_strict ///
     i.lag_*##i.pre_q i.lead_*##i.pre_q ///
-    i.year_unified///
+    i.year_unified ///
     [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
     absorb(county_id) vce(cluster county_id)
 
@@ -268,9 +271,9 @@ areg lexp_ma_strict ///
     [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
     absorb(county_id) vce(cluster county_id)
 */
-
+set emptycells drop
 areg lexp_ma_strict ///
-                  i.lag_*##i.pre_q##i.inc_q##i.reform_types i.lead_*##i.pre_q##i.inc_q##i.reform_types ///
+i.lag_*##i.pre_q##i.inc_q##i.reform_types i.lead_*##i.pre_q##i.inc_q##i.reform_types ///
                 i.year_unified  ///
                 [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
                 absorb(county_id) vce(cluster county_id)
@@ -690,7 +693,7 @@ foreach s of local states {
         * Run Spec A regression excluding state `s'
         areg lexp_ma_strict ///
             i.lag_*##i.pre_q i.lead_*##i.pre_q ///
-            i.year_unified##i.pre_q ///
+            i.year_unified ///
             [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
             absorb(county_id) vce(cluster county_id)
 
@@ -787,7 +790,7 @@ save jackknife_predictions_spec_A, replace
 foreach s of local states {
         use `master_data', clear
         drop if state_fips == "`s'"
-
+/*
         * Run Spec B regression excluding state `s'
         areg lexp_ma_strict ///
             i.lag_*##i.pre_q i.lead_*##i.pre_q ///
@@ -795,13 +798,117 @@ foreach s of local states {
             i.year_unified##(i.pre_q i.inc_q) ///
             [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
             absorb(county_id) vce(cluster county_id)
-
+*/
+areg lexp_ma_strict ///
+                  i.lag_*##i.pre_q##i.inc_q i.lead_*##i.pre_q##i.inc_q ///
+                i.year_unified  ///
+                [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
+                absorb(county_id) vce(cluster county_id)
         * Save estimates
         estimates save jackknife_B_state_`s', replace
     }
 
+foreach s of local states {
+    preserve
+    use `master_data', clear
+    estimates use jackknife_B_state_`s'
+
+**# Generate Main Effect Coefficients (lags 2-7)
+forvalues t = 2/7 {
+    gen main_`t' = _b[1.lag_`t']
+}
+
+**# Generate Baseline Spending Quartile Interaction Coefficients
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        gen ppe`t'_`q' = _b[1.lag_`t'#`q'.pre_q]
+    }
+}
+
+**# Generate Income Quartile Interaction Coefficients
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        gen inc`t'_`q' = _b[1.lag_`t'#`q'.inc_q]
+    }
+}
+
+**# Generate Triple Interaction Coefficients (NEW)
+* These capture: lag × baseline spending × income
+forvalues t = 2/7 {
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            gen triple`t'_`p'_`i' = _b[1.lag_`t'#`p'.pre_q#`i'.inc_q]
+        }
+    }
+}
+
+**# Calculate Averages Across Lags 2-7
+
+*--- Average main effect
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
+
+*--- Average baseline spending interactions
+forvalues q = 2/4 {
+    egen avg_ppe_`q' = rowmean(ppe2_`q' ppe3_`q' ppe4_`q' ppe5_`q' ppe6_`q' ppe7_`q')
+}
+
+*--- Average income interactions
+forvalues q = 2/4 {
+    egen avg_inc_`q' = rowmean(inc2_`q' inc3_`q' inc4_`q' inc5_`q' inc6_`q' inc7_`q')
+}
+
+*--- Average triple interactions (NEW)
+forvalues p = 2/4 {
+    forvalues i = 2/4 {
+        egen avg_triple_`p'_`i' = rowmean( ///
+            triple2_`p'_`i' triple3_`p'_`i' triple4_`p'_`i' ///
+            triple5_`p'_`i' triple6_`p'_`i' triple7_`p'_`i')
+    }
+}
+
+**# Calculate Predicted Spending Increase
+gen pred_spend = avg_main if !missing(pre_q) & !missing(inc_q)
+
+*--- Add baseline spending interaction effects
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+}
+
+*--- Add income interaction effects
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+}
+
+*--- Add triple interaction effects (NEW)
+forvalues p = 2/4 {
+    forvalues i = 2/4 {
+        replace pred_spend = pred_spend + avg_triple_`p'_`i' if pre_q == `p' & inc_q == `i'
+    }
+}
 
 
+    *--- Keep only observations from the excluded state
+    keep if state_fips == "`s'"
+    save pred_temp_B_`s', replace
+    restore
+}
+
+*** 
+
+use `master_data', clear
+levelsof state_fips, local(states)
+
+clear
+tempfile jk_empty_B
+save `jk_empty_B', emptyok
+
+*--- Append predicted spending from all states
+foreach s of local states {
+    append using pred_temp_B_`s'.dta
+}
+
+save jackknife_predictions_spec_B, replace
+/*
 *--- Extract coefficients and calculate predicted spending for Spec B ---
 
 foreach s of local states {
@@ -904,7 +1011,7 @@ foreach s of local states {
 }
 
 save jackknife_predictions_spec_B, replace
-
+*/
 
 *** ---------------------------------------------------------------------------
 *** 2.C. Jackknife: Full Heterogeneity (Spending + Income + Reform Types)
@@ -1097,7 +1204,7 @@ save jackknife_predictions_spec_C, replace
 * PREP Quartiles
 *==============================================================================
 * QUARTILES BASELINE
-foreach spec in A B C{
+foreach spec in A B {
 	use baseline_predictions_spec_`spec',clear
 
 
@@ -1128,7 +1235,7 @@ replace pred_q = 4 if pre_q == 1 & ever_treated
 }
 
 * QUARTILES JACKKNIFE
-foreach spec in A B C{
+foreach spec in A B {
 	use jackknife_predictions_spec_`spec',clear
 	xtile pred_q = pred_spend if ever_treated == 1, nq(4)
 
@@ -1148,7 +1255,7 @@ foreach spec in A B C{
 
 
 * Process Phase 1 baseline predictions
-foreach spec in   B { 
+foreach spec in   A B { 
 
     use baseline_predictions_spec_`spec', clear
 
@@ -1165,7 +1272,7 @@ foreach spec in   B {
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Baseline Predictions (Both Definitions)
     *---------------------------------------------------------------------------
-foreach def in A{
+foreach def in A {
         use baseline_reg_`spec', clear
 			
         * Run event study
@@ -1214,8 +1321,8 @@ foreach def in A{
         * Title text
         local def_text = cond("`def'" == "A", "High = Predicted > 0", "High = Top 2 Quartiles")
         local spec_label = cond("`spec'"=="A","Spending", ///
-                           cond("`spec'"=="B","Spending + Income", ///
-                                               "Spending + Income * Reform"))
+                           cond("`spec'"=="B","Spending * Income", ///
+                                               "Spending * Income * Reform"))
 
         twoway ///
             (rarea ci_lo ci_hi t if group == "High", color(blue%20) lw(none)) ///
@@ -1246,18 +1353,14 @@ foreach def in A{
 
 
 * Process each jackknife specification
-foreach spec in  A B C{ // 
+foreach spec in  A B { // 
 
     use jackknife_predictions_spec_`spec', clear
 
     *--- Definition A: High = (pred_spend > 0) ---
     gen high_def_A = (pred_spend > 0) if !missing(pred_spend) & ever_treated == 1
-		replace high_def_A = 0 if never_treated == 1
+		replace high_def_A = 2 if never_treated == 1
 		*replace high_def_A = 0 if (state_fips == "39" & pre_q == 4) | (state_fips == "48" & pre_q == 3)
-    *--- Definition B: High = Top 2 Quartiles (stable sort for reproducibility) ---
-    sort county_id
-    xtile pred_q = pred_spend if ever_treated == 1, nq(4)
-    gen high_def_B = (pred_q >= 3) if !missing(pred_q)
 
 
     save jk_reg_`spec', replace
@@ -1267,7 +1370,7 @@ foreach spec in  A B C{ //
     *---------------------------------------------------------------------------
     * GRAPH I: High vs Low Comparison for Jackknife (Both Definitions)
     *---------------------------------------------------------------------------
-foreach spec in  A B C{ // C
+foreach spec in  A B { // C
     foreach def in A  {
         use jk_reg_`spec', clear
 		
@@ -1316,7 +1419,7 @@ foreach spec in  A B C{ // C
 
         * Title text
         local def_text = cond("`def'" == "A", "High = Predicted > 0", "High = Top 2 Quartiles")
-        local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending + Income","Spending + Income * Reform"))
+        local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending * Income","Spending * Income * Reform"))
 
         twoway ///
             (rarea ci_lo ci_hi t if group == "High", color(blue%20) lw(none)) ///
@@ -1346,7 +1449,7 @@ foreach spec in  A B C{ // C
 * PART 3C: JACKKNIFE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in A  B  C {
+foreach spec in A  B  {
 
     * 1. Initialize results file
     tempfile combined_results
@@ -1397,7 +1500,7 @@ foreach spec in A  B  C {
     use `combined_results', clear
 
     * Formatting
-    local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending + Income", "Spending + Income * Reform"))
+    local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending * Income", "Spending * Income * Reform"))
     gen ci_lo = b - 1.645*se
     gen ci_hi = b + 1.645*se
     sort q_group rel_year
@@ -1436,7 +1539,7 @@ foreach spec in A  B  C {
 * PART 3C: BASELINE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in  B  {
+foreach spec in  A B  {
 
     * 1. Initialize results file
     tempfile combined_results
@@ -1487,7 +1590,7 @@ foreach spec in  B  {
     use `combined_results', clear
 
     * Formatting
-    local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending + Income", "Spending + Income * Reform"))
+    local spec_label = cond("`spec'"=="A","Spending", cond("`spec'"=="B","Spending * Income", "Spending * Income * Reform"))
     gen ci_lo = b - 1.645*se
     gen ci_hi = b + 1.645*se
     sort q_group rel_year
