@@ -34,7 +34,7 @@ COLLAPSED CATEGORIES:
   EQUITY   (Types 4-6): TX, NM, AR              → 3 states
 
 INPUTS:
-  - jjp_balance.dta        (balanced panel from 06_A_county_balanced_figure1.do)
+  - jjp_balance2.dta       (balanced panel from 06_A_county_balanced_figure1.do)
 
 OUTPUTS:
   - jackknife_predictions_spec_D.dta   (predicted spending with collapsed reform types)
@@ -54,7 +54,7 @@ cd "$SchoolSpending/data"
 *** Section 1: Load Balanced Panel and Create Collapsed Reform Categories
 *** ---------------------------------------------------------------------------
 
-use jjp_balance, clear
+use jjp_balance2, clear
 
 *--- Rename baseline spending quartile for simplicity
 rename pre_q1971 pre_q
