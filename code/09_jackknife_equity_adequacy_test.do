@@ -60,58 +60,11 @@ use jjp_balance2, clear
 rename pre_q1971 pre_q
 
 *--- Create collapsed reform type indicators ---
-* ADEQUACY reforms: focus on ensuring minimum spending levels
-* These are states with reform_mfp=1, reform_le=1, or pure adequacy
-* Based on JJP coding: adequacy-focused = AL, ID, MI, OH, KY, MO
+* reform_eq already indicates: 1 = Equity, 0 = Adequacy (among treated states)
+* Simply use reform_eq directly for equity, and its inverse for adequacy
 
-* EQUITY reforms: focus on equalizing spending across districts
-* These are states with reform_eq=1 or reform_ep=1 for equity purposes
-* Based on JJP coding: equity-focused = TX, NM, AR
-
-* First, let's check what reform variables exist and their overlap
-tab reform_eq reform_mfp, m
-tab reform_eq reform_ep, m
-tab reform_eq reform_le, m
-tab reform_eq reform_sl, m
-
-* Create binary indicators for the two broad categories
-* Adequacy: States where adequacy was a component of the reform
-* We'll define this as states WITHOUT pure equity focus
-
-* Check state-level reform types
-preserve
-keep state_fips reform_eq reform_mfp reform_ep reform_le reform_sl
-duplicates drop
-list if reform_eq == 1 | reform_mfp == 1 | reform_ep == 1 | reform_le == 1 | reform_sl == 1, sep(0)
-restore
-
-* Create simplified binary categories:
-* Method: Use the underlying reform type variable if it exists, otherwise derive from indicators
-
-* Option 1: If we have a grouped reform_types variable, use it
-capture confirm variable reform_types
-if _rc == 0 {
-    di "Using existing reform_types variable"
-    * Create adequacy/equity from the grouped variable
-    gen reform_adequacy = inlist(reform_types, 1, 2, 3) if !missing(reform_types)
-    gen reform_equity = inlist(reform_types, 4, 5, 6) if !missing(reform_types)
-}
-else {
-    di "Creating reform categories from individual indicators"
-    * Create based on primary reform focus
-    * Adequacy-focused: reform_mfp, reform_le, or reform_sl (spending level requirements)
-    * Equity-focused: reform_eq or reform_ep (equalization focus)
-
-    * Note: Some states may have both - we'll prioritize based on JJP's primary classification
-    gen reform_adequacy = (reform_mfp == 1 | reform_le == 1 | reform_sl == 1) if ever_treated == 1
-    gen reform_equity = (reform_eq == 1 | reform_ep == 1) if ever_treated == 1
-
-    * Handle overlap: if a state has both, we need to assign to one category
-    * Following JJP's classification priorities
-    * For states with both, keep adequacy if they have MFP or spending level requirements
-    replace reform_adequacy = 0 if reform_adequacy == 1 & reform_equity == 1 & reform_mfp == 0 & reform_sl == 0
-    replace reform_equity = 0 if reform_adequacy == 1 & reform_equity == 1 & reform_adequacy == 1
-}
+gen reform_equity = reform_eq
+gen reform_adequacy = (reform_eq == 0) if ever_treated == 1
 
 * Set to 0 for never-treated states
 replace reform_adequacy = 0 if never_treated == 1
