@@ -14,9 +14,9 @@ HYPOTHESIS BEING TESTED:
   its unique reform type cannot be estimated, leading to incomplete predictions.
 
   SOLUTION BEING TESTED:
-  Collapse the 6 reform types into 2 broader categories:
-    - ADEQUACY: States where reform focused on adequacy (AL, ID, MI, OH, KY, MO)
-    - EQUITY:   States where reform focused on equity (TX, NM, AR)
+  Use reform_eq directly to distinguish reform types:
+    - reform_eq = 0: Adequacy states (AL, ID, MI, OH, KY, MO)
+    - reform_eq = 1: Equity states (TX, NM, AR)
 
   This gives us 6 states in "adequacy" and 3 states in "equity", so when we
   drop any one state, we still have data to estimate that reform category's effect.
@@ -29,9 +29,9 @@ ORIGINAL REFORM TYPE BREAKDOWN (from JJP 2016):
   Type 5: Equity + Equalization Plan        - NM only (1 state)
   Type 6: Equity + Minimum Foundation Plan  - AR only (1 state)
 
-COLLAPSED CATEGORIES:
-  ADEQUACY (Types 1-3): AL, ID, MI, OH, KY, MO  → 6 states
-  EQUITY   (Types 4-6): TX, NM, AR              → 3 states
+COLLAPSED CATEGORIES (using reform_eq):
+  reform_eq = 0 (Adequacy, Types 1-3): AL, ID, MI, OH, KY, MO  → 6 states
+  reform_eq = 1 (Equity, Types 4-6):   TX, NM, AR              → 3 states
 
 INPUTS:
   - jjp_balance2.dta       (balanced panel from 06_A_county_balanced_figure1.do)
@@ -51,7 +51,7 @@ set more off
 cd "$SchoolSpending/data"
 
 *** ---------------------------------------------------------------------------
-*** Section 1: Load Balanced Panel and Create Collapsed Reform Categories
+*** Section 1: Load Balanced Panel and Verify reform_eq
 *** ---------------------------------------------------------------------------
 
 use jjp_balance2, clear
@@ -59,51 +59,37 @@ use jjp_balance2, clear
 *--- Rename baseline spending quartile for simplicity
 rename pre_q1971 pre_q
 
-*--- Create collapsed reform type indicators ---
-* reform_eq already indicates: 1 = Equity, 0 = Adequacy (among treated states)
-* Simply use reform_eq directly for equity, and its inverse for adequacy
-
-gen reform_equity = reform_eq
-gen reform_adequacy = (reform_eq == 0) if ever_treated == 1
-
-* Set to 0 for never-treated states
-replace reform_adequacy = 0 if never_treated == 1
-replace reform_equity = 0 if never_treated == 1
-
-* Diagnostic: Check the distribution of collapsed reform types by state
-di _n "===== REFORM TYPE DISTRIBUTION BY STATE ====="
-tab state_fips reform_adequacy if ever_treated == 1, m
-tab state_fips reform_equity if ever_treated == 1, m
+*--- Diagnostic: Check the distribution of reform_eq by state
+di _n "===== REFORM_EQ DISTRIBUTION BY STATE ====="
+tab state_fips reform_eq if ever_treated == 1, m
 
 * Count states in each category
 preserve
 keep if ever_treated == 1
-collapse (max) reform_adequacy reform_equity, by(state_fips)
-count if reform_adequacy == 1
-di "States in ADEQUACY category: `r(N)'"
-count if reform_equity == 1
-di "States in EQUITY category: `r(N)'"
-list state_fips reform_adequacy reform_equity, sep(0)
+collapse (max) reform_eq, by(state_fips)
+count if reform_eq == 0
+di "States in ADEQUACY category (reform_eq=0): `r(N)'"
+count if reform_eq == 1
+di "States in EQUITY category (reform_eq=1): `r(N)'"
+list state_fips reform_eq, sep(0)
 restore
 
 save jjp_jackknife_prep_D, replace
 
 *** ---------------------------------------------------------------------------
 *** Section 2: Baseline Estimation (No Jackknife) - Spec D
-*** Specification: Spending + Income + Collapsed Reform (Equity vs Adequacy)
+*** Specification: Spending + Income + reform_eq (Equity vs Adequacy)
 *** ---------------------------------------------------------------------------
 
 use jjp_jackknife_prep_D, clear
 
-*--- 2.D. Full Specification with Collapsed Reform Types ---
-*    Three-way interactions: lag/lead × income quartile × reform category
-*    This is the same structure as Spec C but with only 2 reform categories
+*--- Full Specification with reform_eq ---
+*    Three-way interactions: lag/lead × income quartile × reform_eq
 
 areg lexp_ma_strict ///
     i.lag_*##i.pre_q     i.lead_*##i.pre_q ///
-    i.lag_*##i.inc_q##i.reform_adequacy i.lead_*##i.inc_q##i.reform_adequacy ///
-    i.lag_*##i.inc_q##i.reform_equity   i.lead_*##i.inc_q##i.reform_equity ///
-    i.year_unified##(i.pre_q i.inc_q i.reform_adequacy i.reform_equity) ///
+    i.lag_*##i.inc_q##i.reform_eq i.lead_*##i.inc_q##i.reform_eq ///
+    i.year_unified##(i.pre_q i.inc_q i.reform_eq) ///
     [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
     absorb(county_id) vce(cluster county_id)
 
@@ -115,9 +101,6 @@ estimates save model_baseline_D, replace
 
 use jjp_jackknife_prep_D, clear
 estimates use model_baseline_D
-
-* Define reforms local (collapsed categories)
-local reforms "adequacy equity"
 
 /* ---------------------------------------------------------
    1. Generate Global Time Trend (Lags 2-7)
@@ -158,31 +141,29 @@ forvalues q = 2/4 {
 }
 
 /* ---------------------------------------------------------
-   4. Generate Reform Effects (Two Categories: Adequacy & Equity)
+   4. Generate Reform Effects (reform_eq: 0=Adequacy, 1=Equity)
    --------------------------------------------------------- */
-foreach r of local reforms {
 
-    /* A. Main Reform Effect (The Base Effect for Q1) */
-    forvalues t = 2/7 {
-        gen ref_main_`r'_`t' = .
-        capture scalar c_ref = _b[1.lag_`t'#1.reform_`r']
-        if _rc scalar c_ref = 0
-        replace ref_main_`r'_`t' = c_ref
-    }
-    egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 - ref_main_`r'_7)
+/* A. Main Reform Effect (for reform_eq = 1, i.e., Equity states) */
+forvalues t = 2/7 {
+    gen ref_main_`t' = .
+    capture scalar c_ref = _b[1.lag_`t'#1.reform_eq]
+    if _rc scalar c_ref = 0
+    replace ref_main_`t' = c_ref
+}
+egen avg_ref_main = rowmean(ref_main_2 - ref_main_7)
 
-    /* B. Triple Interaction (The Extra Effect for Q2-4) */
-    forvalues t = 2/7 {
-        forvalues q = 2/4 {
-            gen triple_`r'_`t'_`q' = .
-            capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
-            if _rc scalar c_trip = 0
-            replace triple_`r'_`t'_`q' = c_trip
-        }
-    }
+/* B. Triple Interaction (Extra Effect for Q2-4 in Equity states) */
+forvalues t = 2/7 {
     forvalues q = 2/4 {
-        egen avg_triple_`r'_`q' = rowmean(triple_`r'_2_`q' - triple_`r'_7_`q')
+        gen triple_`t'_`q' = .
+        capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_eq]
+        if _rc scalar c_trip = 0
+        replace triple_`t'_`q' = c_trip
     }
+}
+forvalues q = 2/4 {
+    egen avg_triple_`q' = rowmean(triple_2_`q' - triple_7_`q')
 }
 
 /* ---------------------------------------------------------
@@ -202,24 +183,18 @@ forvalues q = 2/4 {
     replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
 }
 
-/* D. Add Reform Effects (Applies only to Reform States) */
-foreach r of local reforms {
+/* D. Add Reform Effects (Equity adjustment for reform_eq = 1) */
+replace pred_spend = pred_spend + avg_ref_main if reform_eq == 1
 
-    /* 1. Add Main Reform Effect (Base for everyone in reform state, including Q1) */
-    replace pred_spend = pred_spend + avg_ref_main_`r' if reform_`r' == 1
-
-    /* 2. Add Triple Interaction (Adjustment for Q2, Q3, Q4 in reform state) */
-    forvalues q = 2/4 {
-        replace pred_spend = pred_spend + avg_triple_`r'_`q' ///
-            if reform_`r' == 1 & inc_q == `q'
-    }
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_triple_`q' if reform_eq == 1 & inc_q == `q'
 }
 
 save baseline_predictions_spec_D, replace
 
 *** ---------------------------------------------------------------------------
-*** Section 4: JACKKNIFE PROCEDURE - Spec D (Collapsed Reform Types)
-*** Leave-One-State-Out with Adequacy vs Equity
+*** Section 4: JACKKNIFE PROCEDURE - Spec D (Using reform_eq)
+*** Leave-One-State-Out with reform_eq
 *** ---------------------------------------------------------------------------
 
 *--- Get list of all states
@@ -247,12 +222,10 @@ foreach s of local states {
     drop if state_fips == "`s'"
 
     * Run Spec D regression excluding state `s'
-    * KEY CHANGE: Only 2 reform categories instead of 5
     areg lexp_ma_strict ///
         i.lag_*##i.pre_q     i.lead_*##i.pre_q ///
-        i.lag_*##i.inc_q##i.reform_adequacy i.lead_*##i.inc_q##i.reform_adequacy ///
-        i.lag_*##i.inc_q##i.reform_equity   i.lead_*##i.inc_q##i.reform_equity ///
-        i.year_unified##(i.pre_q i.inc_q i.reform_adequacy i.reform_equity) ///
+        i.lag_*##i.inc_q##i.reform_eq i.lead_*##i.inc_q##i.reform_eq ///
+        i.year_unified##(i.pre_q i.inc_q i.reform_eq) ///
         [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
         absorb(county_id) vce(cluster county_id)
 
@@ -274,9 +247,6 @@ foreach s of local states {
     preserve
     use `master_data', clear
     estimates use jackknife_D_state_`s'
-
-    * Define reforms local (collapsed categories)
-    local reforms "adequacy equity"
 
     /* ---------------------------------------------------------
        1. Generate Global Time Trend (Lags 2-7)
@@ -317,40 +287,36 @@ foreach s of local states {
     }
 
     /* ---------------------------------------------------------
-       4. Generate Reform Effects (Adequacy & Equity)
+       4. Generate Reform Effects (reform_eq: 0=Adequacy, 1=Equity)
        KEY: With collapsed categories, we should always have states
        remaining in each category even after dropping one state
        --------------------------------------------------------- */
-    foreach r of local reforms {
 
-        /* A. Main Reform Effect */
-        forvalues t = 2/7 {
-            gen ref_main_`r'_`t' = .
-            capture scalar c_ref = _b[1.lag_`t'#1.reform_`r']
-            if _rc {
-                di as text "    Note: Missing coefficient for lag_`t' # reform_`r' (setting to 0)"
-                scalar c_ref = 0
-            }
-            replace ref_main_`r'_`t' = c_ref
+    /* A. Main Reform Effect (for Equity states, reform_eq=1) */
+    forvalues t = 2/7 {
+        gen ref_main_`t' = .
+        capture scalar c_ref = _b[1.lag_`t'#1.reform_eq]
+        if _rc {
+            di as text "    Note: Missing coefficient for lag_`t' # reform_eq (setting to 0)"
+            scalar c_ref = 0
         }
-        egen avg_ref_main_`r' = rowmean( ///
-            ref_main_`r'_2 ref_main_`r'_3 ref_main_`r'_4 ///
-            ref_main_`r'_5 ref_main_`r'_6 ref_main_`r'_7)
+        replace ref_main_`t' = c_ref
+    }
+    egen avg_ref_main = rowmean(ref_main_2 ref_main_3 ref_main_4 ref_main_5 ref_main_6 ref_main_7)
 
-        /* B. Triple Interaction (Extra Effect for Q2-4) */
-        forvalues t = 2/7 {
-            forvalues q = 2/4 {
-                gen triple_`r'_`t'_`q' = .
-                capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
-                if _rc scalar c_trip = 0
-                replace triple_`r'_`t'_`q' = c_trip
-            }
-        }
+    /* B. Triple Interaction (Extra Effect for Q2-4 in Equity states) */
+    forvalues t = 2/7 {
         forvalues q = 2/4 {
-            egen avg_triple_`r'_`q' = rowmean( ///
-                triple_`r'_2_`q' triple_`r'_3_`q' triple_`r'_4_`q' ///
-                triple_`r'_5_`q' triple_`r'_6_`q' triple_`r'_7_`q')
+            gen triple_`t'_`q' = .
+            capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_eq]
+            if _rc scalar c_trip = 0
+            replace triple_`t'_`q' = c_trip
         }
+    }
+    forvalues q = 2/4 {
+        egen avg_triple_`q' = rowmean( ///
+            triple_2_`q' triple_3_`q' triple_4_`q' ///
+            triple_5_`q' triple_6_`q' triple_7_`q')
     }
 
     /* ---------------------------------------------------------
@@ -370,17 +336,11 @@ foreach s of local states {
         replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
     }
 
-    /* D. Add Reform Effects */
-    foreach r of local reforms {
+    /* D. Add Reform Effects (Equity adjustment for reform_eq = 1) */
+    replace pred_spend = pred_spend + avg_ref_main if reform_eq == 1
 
-        /* 1. Add Main Reform Effect */
-        replace pred_spend = pred_spend + avg_ref_main_`r' if reform_`r' == 1
-
-        /* 2. Add Triple Interaction */
-        forvalues q = 2/4 {
-            replace pred_spend = pred_spend + avg_triple_`r'_`q' ///
-                if reform_`r' == 1 & inc_q == `q'
-        }
+    forvalues q = 2/4 {
+        replace pred_spend = pred_spend + avg_triple_`q' if reform_eq == 1 & inc_q == `q'
     }
 
     * Keep only the excluded state's predictions
@@ -422,16 +382,15 @@ save jk_q_D, replace
 *** Section 6: Diagnostic - Compare Reform Type Distribution
 *** ---------------------------------------------------------------------------
 
-di _n "===== DIAGNOSTIC: REFORM TYPE BY PREDICTED SPENDING QUARTILE ====="
+di _n "===== DIAGNOSTIC: REFORM_EQ BY PREDICTED SPENDING QUARTILE ====="
 
 use jk_q_D, clear
 
-* Check how reform types are distributed across predicted spending quartiles
-tab pred_q reform_adequacy if ever_treated == 1, row
-tab pred_q reform_equity if ever_treated == 1, row
+* Check how reform_eq is distributed across predicted spending quartiles
+tab pred_q reform_eq if ever_treated == 1, row
 
-* Summary statistics for predicted spending by reform type
-bysort reform_adequacy reform_equity: summ pred_spend if ever_treated == 1
+* Summary statistics for predicted spending by reform_eq
+bysort reform_eq: summ pred_spend if ever_treated == 1
 
 *** ---------------------------------------------------------------------------
 *** Section 7: Generate Event-Study Graph (Quartiles)
@@ -514,7 +473,7 @@ twoway ///
     subtitle("Estimates by Quartile of Predicted Spending") ///
     ytitle("Change in ln(13-yr rolling avg PPE)", size(small)) ///
     xtitle("Years relative to reform", size(small)) ///
-    note("Reform types collapsed: Adequacy (AL,ID,MI,OH,KY,MO) vs Equity (TX,NM,AR)") ///
+    note("reform_eq: 0=Adequacy (AL,ID,MI,OH,KY,MO), 1=Equity (TX,NM,AR)") ///
     graphregion(color(white)) plotregion(margin(medium))
 
 * Save graph
