@@ -84,12 +84,12 @@ save jjp_jackknife_prep_D, replace
 use jjp_jackknife_prep_D, clear
 
 *--- Full Specification with reform_eq ---
-*    Three-way interactions: lag/lead × income quartile × reform_eq
+*    Four-way interactions: lag/lead × pre_q × inc_q × reform_eq
 
 areg lexp_ma_strict ///
-    i.lag_*##i.pre_q     i.lead_*##i.pre_q ///
-    i.lag_*##i.inc_q##i.reform_eq i.lead_*##i.inc_q##i.reform_eq ///
-    i.year_unified##(i.pre_q i.inc_q i.reform_eq) ///
+    i.lag_*##i.pre_q##i.inc_q##i.reform_eq ///
+    i.lead_*##i.pre_q##i.inc_q##i.reform_eq ///
+    i.year_unified ///
     [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
     absorb(county_id) vce(cluster county_id)
 
@@ -97,13 +97,14 @@ estimates save model_baseline_D, replace
 
 *** ---------------------------------------------------------------------------
 *** Section 3: Baseline Predictions (No Jackknife) - Spec D
+*** Four-way interaction: lag × pre_q × inc_q × reform_eq
 *** ---------------------------------------------------------------------------
 
 use jjp_jackknife_prep_D, clear
 estimates use model_baseline_D
 
 /* ---------------------------------------------------------
-   1. Generate Global Time Trend (Lags 2-7)
+   1. Main Effect: lag_t
    --------------------------------------------------------- */
 forvalues t = 2/7 {
     gen main_`t' = .
@@ -113,81 +114,159 @@ forvalues t = 2/7 {
 egen avg_main = rowmean(main_2-main_7)
 
 /* ---------------------------------------------------------
-   2. Generate Spending Trends
+   2. Two-way: lag_t × pre_q
    --------------------------------------------------------- */
 forvalues t = 2/7 {
-    forvalues q = 2/4 {
-        gen ppe_`t'_`q' = .
-        scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
-        replace ppe_`t'_`q' = coeff_ppe
+    forvalues p = 2/4 {
+        gen pre_`t'_`p' = .
+        capture scalar c = _b[1.lag_`t'#`p'.pre_q]
+        if _rc scalar c = 0
+        replace pre_`t'_`p' = c
     }
 }
-forvalues q = 2/4 {
-    egen avg_ppe_`q' = rowmean(ppe_2_`q'-ppe_7_`q')
+forvalues p = 2/4 {
+    egen avg_pre_`p' = rowmean(pre_2_`p' pre_3_`p' pre_4_`p' pre_5_`p' pre_6_`p' pre_7_`p')
 }
 
 /* ---------------------------------------------------------
-   3. Generate Base Income Trends (Applies to EVERYONE)
+   3. Two-way: lag_t × inc_q
    --------------------------------------------------------- */
 forvalues t = 2/7 {
-    forvalues q = 2/4 {
-        gen inc_`t'_`q' = .
-        scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
-        replace inc_`t'_`q' = coeff_inc
+    forvalues i = 2/4 {
+        gen inc_`t'_`i' = .
+        capture scalar c = _b[1.lag_`t'#`i'.inc_q]
+        if _rc scalar c = 0
+        replace inc_`t'_`i' = c
     }
 }
-forvalues q = 2/4 {
-    egen avg_inc_`q' = rowmean(inc_2_`q'-inc_7_`q')
+forvalues i = 2/4 {
+    egen avg_inc_`i' = rowmean(inc_2_`i' inc_3_`i' inc_4_`i' inc_5_`i' inc_6_`i' inc_7_`i')
 }
 
 /* ---------------------------------------------------------
-   4. Generate Reform Effects (reform_eq: 0=Adequacy, 1=Equity)
+   4. Two-way: lag_t × reform_eq
    --------------------------------------------------------- */
-
-/* A. Main Reform Effect (for reform_eq = 1, i.e., Equity states) */
 forvalues t = 2/7 {
-    gen ref_main_`t' = .
-    capture scalar c_ref = _b[1.lag_`t'#1.reform_eq]
-    if _rc scalar c_ref = 0
-    replace ref_main_`t' = c_ref
+    gen ref_`t' = .
+    capture scalar c = _b[1.lag_`t'#1.reform_eq]
+    if _rc scalar c = 0
+    replace ref_`t' = c
 }
-egen avg_ref_main = rowmean(ref_main_2 - ref_main_7)
+egen avg_ref = rowmean(ref_2 ref_3 ref_4 ref_5 ref_6 ref_7)
 
-/* B. Triple Interaction (Extra Effect for Q2-4 in Equity states) */
+/* ---------------------------------------------------------
+   5. Three-way: lag_t × pre_q × inc_q
+   --------------------------------------------------------- */
 forvalues t = 2/7 {
-    forvalues q = 2/4 {
-        gen triple_`t'_`q' = .
-        capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_eq]
-        if _rc scalar c_trip = 0
-        replace triple_`t'_`q' = c_trip
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            gen preinc_`t'_`p'_`i' = .
+            capture scalar c = _b[1.lag_`t'#`p'.pre_q#`i'.inc_q]
+            if _rc scalar c = 0
+            replace preinc_`t'_`p'_`i' = c
+        }
     }
 }
-forvalues q = 2/4 {
-    egen avg_triple_`q' = rowmean(triple_2_`q' - triple_7_`q')
+forvalues p = 2/4 {
+    forvalues i = 2/4 {
+        egen avg_preinc_`p'_`i' = rowmean(preinc_2_`p'_`i' preinc_3_`p'_`i' preinc_4_`p'_`i' ///
+            preinc_5_`p'_`i' preinc_6_`p'_`i' preinc_7_`p'_`i')
+    }
 }
 
 /* ---------------------------------------------------------
-   5. Calculate Total Predicted Spending
+   6. Three-way: lag_t × pre_q × reform_eq
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    forvalues p = 2/4 {
+        gen preref_`t'_`p' = .
+        capture scalar c = _b[1.lag_`t'#`p'.pre_q#1.reform_eq]
+        if _rc scalar c = 0
+        replace preref_`t'_`p' = c
+    }
+}
+forvalues p = 2/4 {
+    egen avg_preref_`p' = rowmean(preref_2_`p' preref_3_`p' preref_4_`p' preref_5_`p' preref_6_`p' preref_7_`p')
+}
+
+/* ---------------------------------------------------------
+   7. Three-way: lag_t × inc_q × reform_eq
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    forvalues i = 2/4 {
+        gen incref_`t'_`i' = .
+        capture scalar c = _b[1.lag_`t'#`i'.inc_q#1.reform_eq]
+        if _rc scalar c = 0
+        replace incref_`t'_`i' = c
+    }
+}
+forvalues i = 2/4 {
+    egen avg_incref_`i' = rowmean(incref_2_`i' incref_3_`i' incref_4_`i' incref_5_`i' incref_6_`i' incref_7_`i')
+}
+
+/* ---------------------------------------------------------
+   8. Four-way: lag_t × pre_q × inc_q × reform_eq
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            gen quad_`t'_`p'_`i' = .
+            capture scalar c = _b[1.lag_`t'#`p'.pre_q#`i'.inc_q#1.reform_eq]
+            if _rc scalar c = 0
+            replace quad_`t'_`p'_`i' = c
+        }
+    }
+}
+forvalues p = 2/4 {
+    forvalues i = 2/4 {
+        egen avg_quad_`p'_`i' = rowmean(quad_2_`p'_`i' quad_3_`p'_`i' quad_4_`p'_`i' ///
+            quad_5_`p'_`i' quad_6_`p'_`i' quad_7_`p'_`i')
+    }
+}
+
+/* ---------------------------------------------------------
+   9. Calculate Total Predicted Spending
+   Combines all interaction terms based on county's values
    --------------------------------------------------------- */
 
-/* A. Start with Global Time Trend */
+* Start with global time trend (main effect)
 gen pred_spend = avg_main if !missing(pre_q)
 
-/* B. Add Pre-Reform Spending Quartile Trends (Applies to all) */
-forvalues q = 2/4 {
-    replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+* Add two-way: lag × pre_q
+forvalues p = 2/4 {
+    replace pred_spend = pred_spend + avg_pre_`p' if pre_q == `p'
 }
 
-/* C. Add Base Income Quartile Trends (Applies to all) */
-forvalues q = 2/4 {
-    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+* Add two-way: lag × inc_q
+forvalues i = 2/4 {
+    replace pred_spend = pred_spend + avg_inc_`i' if inc_q == `i'
 }
 
-/* D. Add Reform Effects (Equity adjustment for reform_eq = 1) */
-replace pred_spend = pred_spend + avg_ref_main if reform_eq == 1
+* Add two-way: lag × reform_eq (Equity states only)
+replace pred_spend = pred_spend + avg_ref if reform_eq == 1
 
-forvalues q = 2/4 {
-    replace pred_spend = pred_spend + avg_triple_`q' if reform_eq == 1 & inc_q == `q'
+* Add three-way: lag × pre_q × inc_q
+forvalues p = 2/4 {
+    forvalues i = 2/4 {
+        replace pred_spend = pred_spend + avg_preinc_`p'_`i' if pre_q == `p' & inc_q == `i'
+    }
+}
+
+* Add three-way: lag × pre_q × reform_eq (Equity states only)
+forvalues p = 2/4 {
+    replace pred_spend = pred_spend + avg_preref_`p' if pre_q == `p' & reform_eq == 1
+}
+
+* Add three-way: lag × inc_q × reform_eq (Equity states only)
+forvalues i = 2/4 {
+    replace pred_spend = pred_spend + avg_incref_`i' if inc_q == `i' & reform_eq == 1
+}
+
+* Add four-way: lag × pre_q × inc_q × reform_eq (Equity states only)
+forvalues p = 2/4 {
+    forvalues i = 2/4 {
+        replace pred_spend = pred_spend + avg_quad_`p'_`i' if pre_q == `p' & inc_q == `i' & reform_eq == 1
+    }
 }
 
 save baseline_predictions_spec_D, replace
@@ -223,9 +302,9 @@ foreach s of local states {
 
     * Run Spec D regression excluding state `s'
     areg lexp_ma_strict ///
-        i.lag_*##i.pre_q     i.lead_*##i.pre_q ///
-        i.lag_*##i.inc_q##i.reform_eq i.lead_*##i.inc_q##i.reform_eq ///
-        i.year_unified##(i.pre_q i.inc_q i.reform_eq) ///
+        i.lag_*##i.pre_q##i.inc_q##i.reform_eq ///
+        i.lead_*##i.pre_q##i.inc_q##i.reform_eq ///
+        i.year_unified ///
         [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
         absorb(county_id) vce(cluster county_id)
 
@@ -249,7 +328,7 @@ foreach s of local states {
     estimates use jackknife_D_state_`s'
 
     /* ---------------------------------------------------------
-       1. Generate Global Time Trend (Lags 2-7)
+       1. Main Effect: lag_t
        --------------------------------------------------------- */
     forvalues t = 2/7 {
         gen main_`t' = .
@@ -259,88 +338,158 @@ foreach s of local states {
     egen avg_main = rowmean(main_2-main_7)
 
     /* ---------------------------------------------------------
-       2. Generate Spending Trends
+       2. Two-way: lag_t × pre_q
        --------------------------------------------------------- */
     forvalues t = 2/7 {
-        forvalues q = 2/4 {
-            gen ppe_`t'_`q' = .
-            scalar coeff_ppe = _b[1.lag_`t'#`q'.pre_q]
-            replace ppe_`t'_`q' = coeff_ppe
+        forvalues p = 2/4 {
+            gen pre_`t'_`p' = .
+            capture scalar c = _b[1.lag_`t'#`p'.pre_q]
+            if _rc scalar c = 0
+            replace pre_`t'_`p' = c
         }
     }
-    forvalues q = 2/4 {
-        egen avg_ppe_`q' = rowmean(ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
+    forvalues p = 2/4 {
+        egen avg_pre_`p' = rowmean(pre_2_`p' pre_3_`p' pre_4_`p' pre_5_`p' pre_6_`p' pre_7_`p')
     }
 
     /* ---------------------------------------------------------
-       3. Generate Base Income Trends
+       3. Two-way: lag_t × inc_q
        --------------------------------------------------------- */
     forvalues t = 2/7 {
-        forvalues q = 2/4 {
-            gen inc_`t'_`q' = .
-            scalar coeff_inc = _b[1.lag_`t'#`q'.inc_q]
-            replace inc_`t'_`q' = coeff_inc
+        forvalues i = 2/4 {
+            gen inc_`t'_`i' = .
+            capture scalar c = _b[1.lag_`t'#`i'.inc_q]
+            if _rc scalar c = 0
+            replace inc_`t'_`i' = c
         }
     }
-    forvalues q = 2/4 {
-        egen avg_inc_`q' = rowmean(inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
+    forvalues i = 2/4 {
+        egen avg_inc_`i' = rowmean(inc_2_`i' inc_3_`i' inc_4_`i' inc_5_`i' inc_6_`i' inc_7_`i')
     }
 
     /* ---------------------------------------------------------
-       4. Generate Reform Effects (reform_eq: 0=Adequacy, 1=Equity)
-       KEY: With collapsed categories, we should always have states
-       remaining in each category even after dropping one state
+       4. Two-way: lag_t × reform_eq
        --------------------------------------------------------- */
-
-    /* A. Main Reform Effect (for Equity states, reform_eq=1) */
     forvalues t = 2/7 {
-        gen ref_main_`t' = .
-        capture scalar c_ref = _b[1.lag_`t'#1.reform_eq]
-        if _rc {
-            di as text "    Note: Missing coefficient for lag_`t' # reform_eq (setting to 0)"
-            scalar c_ref = 0
-        }
-        replace ref_main_`t' = c_ref
+        gen ref_`t' = .
+        capture scalar c = _b[1.lag_`t'#1.reform_eq]
+        if _rc scalar c = 0
+        replace ref_`t' = c
     }
-    egen avg_ref_main = rowmean(ref_main_2 ref_main_3 ref_main_4 ref_main_5 ref_main_6 ref_main_7)
+    egen avg_ref = rowmean(ref_2 ref_3 ref_4 ref_5 ref_6 ref_7)
 
-    /* B. Triple Interaction (Extra Effect for Q2-4 in Equity states) */
+    /* ---------------------------------------------------------
+       5. Three-way: lag_t × pre_q × inc_q
+       --------------------------------------------------------- */
     forvalues t = 2/7 {
-        forvalues q = 2/4 {
-            gen triple_`t'_`q' = .
-            capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_eq]
-            if _rc scalar c_trip = 0
-            replace triple_`t'_`q' = c_trip
+        forvalues p = 2/4 {
+            forvalues i = 2/4 {
+                gen preinc_`t'_`p'_`i' = .
+                capture scalar c = _b[1.lag_`t'#`p'.pre_q#`i'.inc_q]
+                if _rc scalar c = 0
+                replace preinc_`t'_`p'_`i' = c
+            }
         }
     }
-    forvalues q = 2/4 {
-        egen avg_triple_`q' = rowmean( ///
-            triple_2_`q' triple_3_`q' triple_4_`q' ///
-            triple_5_`q' triple_6_`q' triple_7_`q')
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            egen avg_preinc_`p'_`i' = rowmean(preinc_2_`p'_`i' preinc_3_`p'_`i' preinc_4_`p'_`i' ///
+                preinc_5_`p'_`i' preinc_6_`p'_`i' preinc_7_`p'_`i')
+        }
     }
 
     /* ---------------------------------------------------------
-       5. Calculate Total Predicted Spending
+       6. Three-way: lag_t × pre_q × reform_eq
+       --------------------------------------------------------- */
+    forvalues t = 2/7 {
+        forvalues p = 2/4 {
+            gen preref_`t'_`p' = .
+            capture scalar c = _b[1.lag_`t'#`p'.pre_q#1.reform_eq]
+            if _rc scalar c = 0
+            replace preref_`t'_`p' = c
+        }
+    }
+    forvalues p = 2/4 {
+        egen avg_preref_`p' = rowmean(preref_2_`p' preref_3_`p' preref_4_`p' preref_5_`p' preref_6_`p' preref_7_`p')
+    }
+
+    /* ---------------------------------------------------------
+       7. Three-way: lag_t × inc_q × reform_eq
+       --------------------------------------------------------- */
+    forvalues t = 2/7 {
+        forvalues i = 2/4 {
+            gen incref_`t'_`i' = .
+            capture scalar c = _b[1.lag_`t'#`i'.inc_q#1.reform_eq]
+            if _rc scalar c = 0
+            replace incref_`t'_`i' = c
+        }
+    }
+    forvalues i = 2/4 {
+        egen avg_incref_`i' = rowmean(incref_2_`i' incref_3_`i' incref_4_`i' incref_5_`i' incref_6_`i' incref_7_`i')
+    }
+
+    /* ---------------------------------------------------------
+       8. Four-way: lag_t × pre_q × inc_q × reform_eq
+       --------------------------------------------------------- */
+    forvalues t = 2/7 {
+        forvalues p = 2/4 {
+            forvalues i = 2/4 {
+                gen quad_`t'_`p'_`i' = .
+                capture scalar c = _b[1.lag_`t'#`p'.pre_q#`i'.inc_q#1.reform_eq]
+                if _rc scalar c = 0
+                replace quad_`t'_`p'_`i' = c
+            }
+        }
+    }
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            egen avg_quad_`p'_`i' = rowmean(quad_2_`p'_`i' quad_3_`p'_`i' quad_4_`p'_`i' ///
+                quad_5_`p'_`i' quad_6_`p'_`i' quad_7_`p'_`i')
+        }
+    }
+
+    /* ---------------------------------------------------------
+       9. Calculate Total Predicted Spending
        --------------------------------------------------------- */
 
-    /* A. Start with Global Time Trend */
+    * Start with global time trend (main effect)
     gen pred_spend = avg_main if !missing(pre_q)
 
-    /* B. Add Pre-Reform Spending Quartile Trends */
-    forvalues q = 2/4 {
-        replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+    * Add two-way: lag × pre_q
+    forvalues p = 2/4 {
+        replace pred_spend = pred_spend + avg_pre_`p' if pre_q == `p'
     }
 
-    /* C. Add Base Income Quartile Trends */
-    forvalues q = 2/4 {
-        replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+    * Add two-way: lag × inc_q
+    forvalues i = 2/4 {
+        replace pred_spend = pred_spend + avg_inc_`i' if inc_q == `i'
     }
 
-    /* D. Add Reform Effects (Equity adjustment for reform_eq = 1) */
-    replace pred_spend = pred_spend + avg_ref_main if reform_eq == 1
+    * Add two-way: lag × reform_eq (Equity states only)
+    replace pred_spend = pred_spend + avg_ref if reform_eq == 1
 
-    forvalues q = 2/4 {
-        replace pred_spend = pred_spend + avg_triple_`q' if reform_eq == 1 & inc_q == `q'
+    * Add three-way: lag × pre_q × inc_q
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            replace pred_spend = pred_spend + avg_preinc_`p'_`i' if pre_q == `p' & inc_q == `i'
+        }
+    }
+
+    * Add three-way: lag × pre_q × reform_eq (Equity states only)
+    forvalues p = 2/4 {
+        replace pred_spend = pred_spend + avg_preref_`p' if pre_q == `p' & reform_eq == 1
+    }
+
+    * Add three-way: lag × inc_q × reform_eq (Equity states only)
+    forvalues i = 2/4 {
+        replace pred_spend = pred_spend + avg_incref_`i' if inc_q == `i' & reform_eq == 1
+    }
+
+    * Add four-way: lag × pre_q × inc_q × reform_eq (Equity states only)
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            replace pred_spend = pred_spend + avg_quad_`p'_`i' if pre_q == `p' & inc_q == `i' & reform_eq == 1
+        }
     }
 
     * Keep only the excluded state's predictions
