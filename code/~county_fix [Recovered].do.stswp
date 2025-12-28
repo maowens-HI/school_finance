@@ -501,6 +501,7 @@ save baseline_predictions_spec_B, replace
 
 
 use jjp_jackknife_prep, clear
+/*
 estimates use model_baseline_B
 
 **# Generate Main Effect Coefficients (lags 2-7)
@@ -552,9 +553,220 @@ forvalues q = 2/4 {
 
 save baseline_predictions_spec_B, replace
 */
-*--- 1.C Predictions: Spending + Income Quartiles + Reforms ---
+*=============================================================================
+* COEFFICIENT EXTRACTION FOR FOUR-WAY INTERACTION MODEL
+* Model: i.lag_*##i.pre_q##i.inc_q##i.reform_types
+*=============================================================================
 
 use jjp_jackknife_prep, clear
+estimates use model_baseline_C
+
+/* ---------------------------------------------------------
+   1. MAIN TIME EFFECT (Base: pre_q=1, inc_q=1, reform_types=1)
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    capture gen main_`t' = _b[1.lag_`t']
+    if _rc gen main_`t' = 0
+}
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
+
+/* ---------------------------------------------------------
+   2. TWO-WAY: lag × pre_q
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        capture gen ppe_`t'_`q' = _b[1.lag_`t'#`q'.pre_q]
+        if _rc gen ppe_`t'_`q' = 0
+    }
+}
+forvalues q = 2/4 {
+    egen avg_ppe_`q' = rowmean(ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
+}
+
+/* ---------------------------------------------------------
+   3. TWO-WAY: lag × inc_q
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        capture gen inc_`t'_`q' = _b[1.lag_`t'#`q'.inc_q]
+        if _rc gen inc_`t'_`q' = 0
+    }
+}
+forvalues q = 2/4 {
+    egen avg_inc_`q' = rowmean(inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
+}
+
+/* ---------------------------------------------------------
+   4. TWO-WAY: lag × reform_types (levels 2-6, since 1 is base)
+   --------------------------------------------------------- */
+forvalues r = 2/6 {
+    forvalues t = 2/7 {
+        capture gen ref_`t'_`r' = _b[1.lag_`t'#`r'.reform_types]
+        if _rc gen ref_`t'_`r' = 0
+    }
+    egen avg_ref_`r' = rowmean(ref_2_`r' ref_3_`r' ref_4_`r' ref_5_`r' ref_6_`r' ref_7_`r')
+}
+
+/* ---------------------------------------------------------
+   5. THREE-WAY: lag × pre_q × inc_q
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            capture gen tw_pi_`t'_`p'_`i' = _b[1.lag_`t'#`p'.pre_q#`i'.inc_q]
+            if _rc gen tw_pi_`t'_`p'_`i' = 0
+        }
+    }
+}
+forvalues p = 2/4 {
+    forvalues i = 2/4 {
+        egen avg_tw_pi_`p'_`i' = rowmean(tw_pi_2_`p'_`i' tw_pi_3_`p'_`i' tw_pi_4_`p'_`i' ///
+                                          tw_pi_5_`p'_`i' tw_pi_6_`p'_`i' tw_pi_7_`p'_`i')
+    }
+}
+
+/* ---------------------------------------------------------
+   6. THREE-WAY: lag × pre_q × reform_types
+   --------------------------------------------------------- */
+forvalues r = 2/6 {
+    forvalues t = 2/7 {
+        forvalues p = 2/4 {
+            capture gen tw_pr_`t'_`p'_`r' = _b[1.lag_`t'#`p'.pre_q#`r'.reform_types]
+            if _rc gen tw_pr_`t'_`p'_`r' = 0
+        }
+    }
+    forvalues p = 2/4 {
+        egen avg_tw_pr_`p'_`r' = rowmean(tw_pr_2_`p'_`r' tw_pr_3_`p'_`r' tw_pr_4_`p'_`r' ///
+                                          tw_pr_5_`p'_`r' tw_pr_6_`p'_`r' tw_pr_7_`p'_`r')
+    }
+}
+
+/* ---------------------------------------------------------
+   7. THREE-WAY: lag × inc_q × reform_types
+   --------------------------------------------------------- */
+forvalues r = 2/6 {
+    forvalues t = 2/7 {
+        forvalues i = 2/4 {
+            capture gen tw_ir_`t'_`i'_`r' = _b[1.lag_`t'#`i'.inc_q#`r'.reform_types]
+            if _rc gen tw_ir_`t'_`i'_`r' = 0
+        }
+    }
+    forvalues i = 2/4 {
+        egen avg_tw_ir_`i'_`r' = rowmean(tw_ir_2_`i'_`r' tw_ir_3_`i'_`r' tw_ir_4_`i'_`r' ///
+                                          tw_ir_5_`i'_`r' tw_ir_6_`i'_`r' tw_ir_7_`i'_`r')
+    }
+}
+
+/* ---------------------------------------------------------
+   8. FOUR-WAY: lag × pre_q × inc_q × reform_types
+   --------------------------------------------------------- */
+forvalues r = 2/6 {
+    forvalues t = 2/7 {
+        forvalues p = 2/4 {
+            forvalues i = 2/4 {
+                capture gen quad_`t'_`p'_`i'_`r' = _b[1.lag_`t'#`p'.pre_q#`i'.inc_q#`r'.reform_types]
+                if _rc gen quad_`t'_`p'_`i'_`r' = 0
+            }
+        }
+    }
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            egen avg_quad_`p'_`i'_`r' = rowmean(quad_2_`p'_`i'_`r' quad_3_`p'_`i'_`r' ///
+                quad_4_`p'_`i'_`r' quad_5_`p'_`i'_`r' quad_6_`p'_`i'_`r' quad_7_`p'_`i'_`r')
+        }
+    }
+}
+
+/* ---------------------------------------------------------
+   9. BUILD TOTAL PREDICTED EFFECT
+   --------------------------------------------------------- */
+gen pred_spend = avg_main
+
+* Two-way: pre_q
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+}
+
+* Two-way: inc_q
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+}
+
+* Two-way: reform_types (only applies to reform_types 2-6)
+forvalues r = 2/6 {
+    replace pred_spend = pred_spend + avg_ref_`r' if reform_types == `r'
+}
+
+* Three-way: pre_q × inc_q
+forvalues p = 2/4 {
+    forvalues i = 2/4 {
+        replace pred_spend = pred_spend + avg_tw_pi_`p'_`i' if pre_q == `p' & inc_q == `i'
+    }
+}
+
+* Three-way: pre_q × reform_types
+forvalues r = 2/6 {
+    forvalues p = 2/4 {
+        replace pred_spend = pred_spend + avg_tw_pr_`p'_`r' if pre_q == `p' & reform_types == `r'
+    }
+}
+
+* Three-way: inc_q × reform_types
+forvalues r = 2/6 {
+    forvalues i = 2/4 {
+        replace pred_spend = pred_spend + avg_tw_ir_`i'_`r' if inc_q == `i' & reform_types == `r'
+    }
+}
+
+* Four-way: pre_q × inc_q × reform_types
+forvalues r = 2/6 {
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            replace pred_spend = pred_spend + avg_quad_`p'_`i'_`r' ///
+                if pre_q == `p' & inc_q == `i' & reform_types == `r'
+        }
+    }
+}
+
+save baseline_predictions_spec_C, replace
+
+
+/* ---------------------------------------------------------
+   5. Calculate Total Predicted Spending
+   --------------------------------------------------------- */
+
+/* A. Start with Global Time Trend */
+gen pred_spend = avg_main if !missing(pre_q)
+
+/* B. Add Pre-Reform Spending Quartile Trends (Applies to all) */
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+}
+
+/* C. Add Base Income Quartile Trends (Applies to all) - FIXES BUG 2 */
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+}
+
+/* D. Add Reform Effects (Applies only to Reform States) */
+foreach r of local reforms {
+    
+    /* 1. Add Main Reform Effect (Base for everyone in reform state, including Q1) */
+    /* FIXES BUG 1 */
+    replace pred_spend = pred_spend + avg_ref_main_`r' if reform_`r' == 1
+    
+    /* 2. Add Triple Interaction (Adjustment for Q2, Q3, Q4 in reform state) */
+    forvalues q = 2/4 {
+        replace pred_spend = pred_spend + avg_triple_`r'_`q' ///
+            if reform_`r' == 1 & inc_q == `q'
+    }
+}
+
+save baseline_predictions_spec_C, replace
+*--- 1.C Predictions: Spending + Income Quartiles + Reforms ---
+/*
+use jjp_jackknife_prep, clear
+
 estimates use model_baseline_C
 
 * Define reforms local
@@ -663,7 +875,7 @@ foreach r of local reforms {
 }
 
 save baseline_predictions_spec_C, replace
-
+*/
 *** ---------------------------------------------------------------------------
 *** PHASE 2: JACKKNIFE PROCEDURE (Leave-One-State-Out)
 *** Following JJP (2016) Approach II methodology
@@ -1016,6 +1228,14 @@ save jackknife_predictions_spec_B, replace
 *** ---------------------------------------------------------------------------
 *** 2.C. Jackknife: Full Heterogeneity (Spending + Income + Reform Types)
 *** ---------------------------------------------------------------------------
+*--- Get list of all states
+use jjp_jackknife_prep, clear
+levelsof state_fips, local(states)
+
+
+*--- Save master file for repeated loading
+tempfile master_data
+save `master_data'
 
 /*
 foreach s of local states {
@@ -1049,10 +1269,231 @@ areg lexp_ma_strict                                                     ///
 
 }
 
+areg lexp_ma_strict ///
+i.lag_*##i.pre_q##i.inc_q##i.reform_types i.lead_*##i.pre_q##i.inc_q##i.reform_types ///
+                i.year_unified  ///
+                [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
+                absorb(county_id) vce(cluster county_id)
 
 */
 
+foreach s of local states {
+        use `master_data', clear
+        drop if state_fips == "`s'"
 
+        * Run Spec C regression excluding state `s'
+areg lexp_ma_strict ///
+i.lag_*##i.pre_q##i.inc_q##i.reform_types i.lead_*##i.pre_q##i.inc_q##i.reform_types ///
+                i.year_unified  ///
+                [w = school_age_pop] if (never_treated == 1 | reform_year < 2000), ///
+                absorb(county_id) vce(cluster county_id)
+
+        * Save estimates
+        estimates save jackknife_C_state_`s', replace
+
+}
+
+foreach s of local states {
+        * Load master data and estimates for this state
+        use `master_data', clear
+        estimates use jackknife_C_state_`s'
+
+
+
+        * Keep only the excluded state's predictions
+        keep if state_fips == "`s'"
+		
+/* ---------------------------------------------------------
+   1. MAIN TIME EFFECT (Base: pre_q=1, inc_q=1, reform_types=1)
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    capture gen main_`t' = _b[1.lag_`t']
+    if _rc gen main_`t' = 0
+}
+egen avg_main = rowmean(main_2 main_3 main_4 main_5 main_6 main_7)
+
+/* ---------------------------------------------------------
+   2. TWO-WAY: lag × pre_q
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        capture gen ppe_`t'_`q' = _b[1.lag_`t'#`q'.pre_q]
+        if _rc gen ppe_`t'_`q' = 0
+    }
+}
+forvalues q = 2/4 {
+    egen avg_ppe_`q' = rowmean(ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
+}
+
+/* ---------------------------------------------------------
+   3. TWO-WAY: lag × inc_q
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    forvalues q = 2/4 {
+        capture gen inc_`t'_`q' = _b[1.lag_`t'#`q'.inc_q]
+        if _rc gen inc_`t'_`q' = 0
+    }
+}
+forvalues q = 2/4 {
+    egen avg_inc_`q' = rowmean(inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
+}
+
+/* ---------------------------------------------------------
+   4. TWO-WAY: lag × reform_types (levels 2-6, since 1 is base)
+   --------------------------------------------------------- */
+forvalues r = 2/6 {
+    forvalues t = 2/7 {
+        capture gen ref_`t'_`r' = _b[1.lag_`t'#`r'.reform_types]
+        if _rc gen ref_`t'_`r' = 0
+    }
+    egen avg_ref_`r' = rowmean(ref_2_`r' ref_3_`r' ref_4_`r' ref_5_`r' ref_6_`r' ref_7_`r')
+}
+
+/* ---------------------------------------------------------
+   5. THREE-WAY: lag × pre_q × inc_q
+   --------------------------------------------------------- */
+forvalues t = 2/7 {
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            capture gen tw_pi_`t'_`p'_`i' = _b[1.lag_`t'#`p'.pre_q#`i'.inc_q]
+            if _rc gen tw_pi_`t'_`p'_`i' = 0
+        }
+    }
+}
+forvalues p = 2/4 {
+    forvalues i = 2/4 {
+        egen avg_tw_pi_`p'_`i' = rowmean(tw_pi_2_`p'_`i' tw_pi_3_`p'_`i' tw_pi_4_`p'_`i' ///
+                                          tw_pi_5_`p'_`i' tw_pi_6_`p'_`i' tw_pi_7_`p'_`i')
+    }
+}
+
+/* ---------------------------------------------------------
+   6. THREE-WAY: lag × pre_q × reform_types
+   --------------------------------------------------------- */
+forvalues r = 2/6 {
+    forvalues t = 2/7 {
+        forvalues p = 2/4 {
+            capture gen tw_pr_`t'_`p'_`r' = _b[1.lag_`t'#`p'.pre_q#`r'.reform_types]
+            if _rc gen tw_pr_`t'_`p'_`r' = 0
+        }
+    }
+    forvalues p = 2/4 {
+        egen avg_tw_pr_`p'_`r' = rowmean(tw_pr_2_`p'_`r' tw_pr_3_`p'_`r' tw_pr_4_`p'_`r' ///
+                                          tw_pr_5_`p'_`r' tw_pr_6_`p'_`r' tw_pr_7_`p'_`r')
+    }
+}
+
+/* ---------------------------------------------------------
+   7. THREE-WAY: lag × inc_q × reform_types
+   --------------------------------------------------------- */
+forvalues r = 2/6 {
+    forvalues t = 2/7 {
+        forvalues i = 2/4 {
+            capture gen tw_ir_`t'_`i'_`r' = _b[1.lag_`t'#`i'.inc_q#`r'.reform_types]
+            if _rc gen tw_ir_`t'_`i'_`r' = 0
+        }
+    }
+    forvalues i = 2/4 {
+        egen avg_tw_ir_`i'_`r' = rowmean(tw_ir_2_`i'_`r' tw_ir_3_`i'_`r' tw_ir_4_`i'_`r' ///
+                                          tw_ir_5_`i'_`r' tw_ir_6_`i'_`r' tw_ir_7_`i'_`r')
+    }
+}
+
+/* ---------------------------------------------------------
+   8. FOUR-WAY: lag × pre_q × inc_q × reform_types
+   --------------------------------------------------------- */
+forvalues r = 2/6 {
+    forvalues t = 2/7 {
+        forvalues p = 2/4 {
+            forvalues i = 2/4 {
+                capture gen quad_`t'_`p'_`i'_`r' = _b[1.lag_`t'#`p'.pre_q#`i'.inc_q#`r'.reform_types]
+                if _rc gen quad_`t'_`p'_`i'_`r' = 0
+            }
+        }
+    }
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            egen avg_quad_`p'_`i'_`r' = rowmean(quad_2_`p'_`i'_`r' quad_3_`p'_`i'_`r' ///
+                quad_4_`p'_`i'_`r' quad_5_`p'_`i'_`r' quad_6_`p'_`i'_`r' quad_7_`p'_`i'_`r')
+        }
+    }
+}
+
+/* ---------------------------------------------------------
+   9. BUILD TOTAL PREDICTED EFFECT
+   --------------------------------------------------------- */
+gen pred_spend = avg_main
+
+* Two-way: pre_q
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
+}
+
+* Two-way: inc_q
+forvalues q = 2/4 {
+    replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
+}
+
+* Two-way: reform_types (only applies to reform_types 2-6)
+forvalues r = 2/6 {
+    replace pred_spend = pred_spend + avg_ref_`r' if reform_types == `r'
+}
+
+* Three-way: pre_q × inc_q
+forvalues p = 2/4 {
+    forvalues i = 2/4 {
+        replace pred_spend = pred_spend + avg_tw_pi_`p'_`i' if pre_q == `p' & inc_q == `i'
+    }
+}
+
+* Three-way: pre_q × reform_types
+forvalues r = 2/6 {
+    forvalues p = 2/4 {
+        replace pred_spend = pred_spend + avg_tw_pr_`p'_`r' if pre_q == `p' & reform_types == `r'
+    }
+}
+
+* Three-way: inc_q × reform_types
+forvalues r = 2/6 {
+    forvalues i = 2/4 {
+        replace pred_spend = pred_spend + avg_tw_ir_`i'_`r' if inc_q == `i' & reform_types == `r'
+    }
+}
+
+* Four-way: pre_q × inc_q × reform_types
+forvalues r = 2/6 {
+    forvalues p = 2/4 {
+        forvalues i = 2/4 {
+            replace pred_spend = pred_spend + avg_quad_`p'_`i'_`r' ///
+                if pre_q == `p' & inc_q == `i' & reform_types == `r'
+        }
+    }
+}
+
+
+
+
+
+        save pred_temp_C_`s', replace
+    
+}
+
+
+
+use `master_data', clear
+levelsof state_fips, local(states)
+
+clear
+tempfile jk_empty_C
+save `jk_empty_C', emptyok
+
+*--- Append predicted spending from all states
+foreach s of local states {
+    append using pred_temp_C_`s'.dta
+}
+
+save jackknife_predictions_spec_C, replace
+/* Old Pre-Edit
 foreach s of local states {
         * Load master data and estimates for this state
         use `master_data', clear
@@ -1191,7 +1632,7 @@ foreach s of local states {
 }
 
 save jackknife_predictions_spec_C, replace
-
+*/
 
 
 
@@ -1204,7 +1645,7 @@ save jackknife_predictions_spec_C, replace
 * PREP Quartiles
 *==============================================================================
 * QUARTILES BASELINE
-foreach spec in A B {
+foreach spec in A B C{
 	use baseline_predictions_spec_`spec',clear
 
 
@@ -1235,7 +1676,7 @@ replace pred_q = 4 if pre_q == 1 & ever_treated
 }
 
 * QUARTILES JACKKNIFE
-foreach spec in A B {
+foreach spec in A B C{
 	use jackknife_predictions_spec_`spec',clear
 	xtile pred_q = pred_spend if ever_treated == 1, nq(4)
 
@@ -1255,7 +1696,7 @@ foreach spec in A B {
 
 
 * Process Phase 1 baseline predictions
-foreach spec in   A B { 
+foreach spec in   A B C{ 
 
     use baseline_predictions_spec_`spec', clear
 
@@ -1278,7 +1719,7 @@ foreach def in A {
         * Run event study
         areg lexp_ma_strict ///
             i.lag_*##i.high_def_`def' i.lead_*##i.high_def_`def' ///
-            i.year_unified [aw = school_age_pop] ///
+            i.year_unified [w = school_age_pop] ///
             if (reform_year < 2000 | never_treated == 1), ///
             absorb(county_id) vce(cluster county_id)
 
@@ -1377,7 +1818,7 @@ foreach spec in  A B { // C
         * Run event study
         areg lexp_ma_strict ///
             i.lag_*##i.high_def_`def' i.lead_*##i.high_def_`def' ///
-            i.year_unified [aw = school_age_pop] ///
+            i.year_unified [w = school_age_pop] ///
             if (reform_year < 2000 | never_treated == 1), ///
             absorb(county_id) vce(cluster county_id)
 
@@ -1449,7 +1890,7 @@ foreach spec in  A B { // C
 * PART 3C: JACKKNIFE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in A  B  {
+foreach spec in A  B  C{
 
     * 1. Initialize results file
     tempfile combined_results
@@ -1464,14 +1905,12 @@ foreach spec in A  B  {
         
         * --- FIX: The closing bracket '}' was here. I removed it. ---
 
-        * Setup Groups: Keep only specific Quartile (q) AND Control Group (0)
-        keep if pred_q == `q' | pred_q == 0
 
         *--- Weighted Event-Study Regression ---
         areg lexp_ma_strict ///
             i.lag_* i.lead_* ///
-            i.year_unified [aw=school_age_pop] ///
-            if (reform_year < 2000 | never_treated == 1), ///
+            i.year_unified [w=school_age_pop] ///
+            if ( (pred_q == `q' & reform_year < 2000) | never_treated == 1), ///
             absorb(county_id) vce(cluster county_id)
 
         *--- Extract coefficients (Direct Lincoms) ---
@@ -1539,7 +1978,7 @@ foreach spec in A  B  {
 * PART 3C: BASELINE PREDICTION QUARTILES (SEPARATE REGRESSIONS LOOP)
 *==============================================================================
 
-foreach spec in  A B  {
+foreach spec in  A B  C{
 
     * 1. Initialize results file
     tempfile combined_results
