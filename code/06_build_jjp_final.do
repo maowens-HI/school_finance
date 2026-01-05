@@ -1,6 +1,6 @@
 /*==============================================================================
 Project    : School Spending - Build jjp_final Dataset
-File       : 08_build_jjp_final.do
+File       : 06_build_jjp_final.do
 Purpose    : Construct final analysis dataset (jjp_final) from county panel by
              applying balanced panel restrictions and state-level quality filters.
 Author     : Myles Owens
@@ -34,6 +34,15 @@ clear all
 set more off
 cd "$SchoolSpending/data"
 
+*** ===========================================================================
+*** TOGGLE SWITCHES - Set to 1 to apply filter, 0 to skip
+*** ===========================================================================
+
+local REQUIRE_GOOD_BASELINE = 1    // Require good_county_1972 == 1
+local REQUIRE_BALANCE       = 1    // Require complete event window (-5 to +17)
+local REQUIRE_STATE_MIN     = 1    // Require states have >= N counties
+local STATE_MIN_COUNTIES    = 10   // Minimum counties per state
+
 *** ---------------------------------------------------------------------------
 *** Section 1: Load County Panel and Merge Quality Flags
 *** ---------------------------------------------------------------------------
@@ -46,10 +55,10 @@ replace good_county_1972 = 0 if missing(good_county_1972)
 drop _merge
 
 *** ---------------------------------------------------------------------------
-*** Section 2: Apply Baseline Quality Filter
+*** Section 2: Flag Baseline Quality
 *** ---------------------------------------------------------------------------
 
-drop if good_county_1972 != 1
+gen good_baseline = (good_county_1972 == 1)
 
 *** ---------------------------------------------------------------------------
 *** Section 3: Create Key Analysis Variables
@@ -144,13 +153,7 @@ restore
 merge m:1 state_fips county_id using `inc_q', nogen
 
 *** ---------------------------------------------------------------------------
-*** Section 7: Save Full Interpolated Panel (Pre-Balance)
-*** ---------------------------------------------------------------------------
-
-save jjp_interp_final, replace
-
-*** ---------------------------------------------------------------------------
-*** Section 8: Apply Balanced Panel Restriction
+*** Section 7: Flag Balanced Counties
 *** ---------------------------------------------------------------------------
 
 preserve
@@ -176,32 +179,100 @@ restore
 merge m:1 county_id using `balanced_counties', nogen
 replace balanced = 0 if missing(balanced)
 
-keep if balanced == 1 | never_treated2 == 1
-
 *** ---------------------------------------------------------------------------
-*** Section 9: Apply State-Level Filter (>= 10 Counties)
+*** Section 8: Flag Valid States (>= N Counties)
 *** ---------------------------------------------------------------------------
 
 preserve
-keep if year_unified == 1971 | (never_treated2 == 1 & year_unified == 1980)
-keep state_fips county_id balanced never_treated2
+keep state_fips county_id
 duplicates drop
 
 bysort state_fips: gen n_counties_in_state = _N
-keep if n_counties_in_state >= 10
-keep state_fips
+keep state_fips n_counties_in_state
 duplicates drop
 
-tempfile valid_states
-save `valid_states', replace
+tempfile state_counts
+save `state_counts', replace
 restore
 
-merge m:1 state_fips using `valid_states'
-keep if _merge == 3
-drop _merge
+merge m:1 state_fips using `state_counts', nogen
+gen valid_state = (n_counties_in_state >= `STATE_MIN_COUNTIES')
 
 *** ---------------------------------------------------------------------------
-*** Section 10: Save Final Dataset
+*** Section 9: Save Full Dataset with All Flags
+*** ---------------------------------------------------------------------------
+
+save jjp_interp_final, replace
+
+*** ---------------------------------------------------------------------------
+*** Section 10: Apply Filters Based on Toggle Switches
+*** ---------------------------------------------------------------------------
+
+gen keep_obs = 1
+
+* Apply baseline quality filter
+if `REQUIRE_GOOD_BASELINE' {
+    replace keep_obs = 0 if good_baseline != 1
+}
+
+* Apply balance filter (treated must be balanced, never-treated always kept)
+if `REQUIRE_BALANCE' {
+    replace keep_obs = 0 if balanced != 1 & never_treated2 != 1
+}
+
+* Apply state minimum filter
+if `REQUIRE_STATE_MIN' {
+    replace keep_obs = 0 if valid_state != 1
+}
+
+keep if keep_obs == 1
+drop keep_obs
+
+*** ---------------------------------------------------------------------------
+*** Section 11: Quality of Life Cleanup
+*** ---------------------------------------------------------------------------
+
+*--- Create combined reform type indicator
+cap egen reform_types = group(reform_eq reform_mfp reform_ep reform_le reform_sl)
+
+*--- Rename for convenience
+rename pre_q1971 pre_q
+
+*--- Clean median family income (numeric version)
+cap drop med_fam_inc
+gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
+destring med_fam_inc, replace
+
+*--- Drop unnecessary variables
+cap drop year4 good_county_* never_treated n_obs balanced median_family_income ///
+         county_name dup_tag keep_obs good_baseline valid_state n_counties_in_state
+
+*--- Rename for clarity
+rename never_treated2 never_treated
+
+*--- Order variables logically
+order county_id state_fips year_unified relative_year ///
+      exp lexp lexp_ma lexp_ma_strict ///
+      pre_q inc_q med_fam_inc ///
+      school_age_pop ///
+      treatment never_treated reform_year reform_types ///
+      reform_eq reform_mfp reform_ep reform_le reform_sl ///
+      lead_* lag_*
+
+*--- Label key variables
+label var county_id "5-digit FIPS (state + county)"
+label var year_unified "School year (year4 - 1)"
+label var relative_year "Years since reform"
+label var lexp_ma_strict "Log PPE, 13-yr strict rolling mean"
+label var pre_q "Baseline spending quartile (1971, within-state)"
+label var inc_q "Income quartile (1970 Census, within-state)"
+label var med_fam_inc "Median family income (1970 Census)"
+label var school_age_pop "School-age population (weight)"
+label var never_treated "Never-treated state (control group)"
+cap label var reform_types "Reform type grouping"
+
+*** ---------------------------------------------------------------------------
+*** Section 12: Save Final Dataset
 *** ---------------------------------------------------------------------------
 
 save jjp_final, replace
