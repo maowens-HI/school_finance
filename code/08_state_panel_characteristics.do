@@ -59,19 +59,20 @@ keep fips state_name state_abbr
 
 * Rename for consistency
 rename fips state_fips_num
-gen str2 state_fips = string(state_fips_num, "%02.0f")
-drop state_fips_num
 
 * Standardize state names
 replace state_name = proper(strtrim(state_name))
 replace state_abbr = upper(strtrim(state_abbr))
 
 * Keep only 50 states + DC (drop territories)
-keep if inlist(state_abbr, "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL") | ///
-        inlist(state_abbr, "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME") | ///
-        inlist(state_abbr, "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH") | ///
-        inlist(state_abbr, "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI") | ///
-        inlist(state_abbr, "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY")
+* FIPS codes: 01-56 are states/DC, but exclude 03 (unused), 07 (unused), 14 (unused), 43 (unused), 52 (unused)
+* Territories to exclude: 60 (AS), 66 (GU), 69 (MP), 72 (PR), 78 (VI)
+keep if state_fips_num <= 56
+drop if inlist(state_fips_num, 0, 3, 7, 14, 43, 52)
+
+* Create string FIPS after filtering (more efficient)
+gen str2 state_fips = string(state_fips_num, "%02.0f")
+drop state_fips_num
 
 * Sort and verify count
 sort state_fips
