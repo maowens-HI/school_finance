@@ -42,9 +42,8 @@ school_finance/
     ├── 03_adjust_inflation.do         # Adjust tract spending for inflation
     ├── 04_tag_county_quality.do       # Tag counties as good/bad (baseline data)
     ├── 05_create_county_panel.do      # Interpolate districts & create county panel
-    ├── 06_A_county_balanced_figure1.do    # County-level balanced panel Figure 1
-    ├── 06_B_district_balanced_figure1.do  # District-level balanced panel Figure 1
-    ├── 07_jackknife.do      # Full jackknife analysis
+    ├── 06_build_jjp_final.do          # Build jjp_final balanced panel dataset
+    ├── 07_figure1_event_study.do      # Event-study regressions & Figure 1 plots
     └── experimental_archive/          # Archived experimental analysis files
 ```
 
@@ -55,10 +54,9 @@ school_finance/
   - 03: Adjust tract spending for inflation
   - 04: Tag county quality (baseline data completeness)
   - 05: Interpolate districts & create county panel
-- **Analysis Scripts (06-07):** Main event-study specifications and robustness checks
-  - 06_A: County-level balanced panel analysis (Figure 1 replication)
-  - 06_B: District-level balanced panel analysis (Figure 1 replication)
-  - 07: Full jackknife analysis 
+- **Analysis Scripts (06-07):** Main event-study specifications
+  - 06: Build final analysis dataset with balanced panel restrictions and state filters
+  - 07: Run event-study regressions by baseline spending quartile and generate Figure 1 plots
 - **Experimental Archive:** Historical analysis files, robustness checks, and alternative specifications
 
 ---
@@ -89,9 +87,8 @@ do code/05_create_county_panel.do
 #### **Step 3: Run Analysis**
 Execute main analysis scripts:
 ```stata
-do code/06_A_county_balanced_figure1.do
-do code/06_B_district_balanced_figure1.do
-do code/07_jackknife.do
+do code/06_build_jjp_final.do
+do code/07_figure1_event_study.do
 ```
 
 ---
@@ -149,27 +146,26 @@ The pipeline follows a sequential process:
 4. **04_tag_county_quality.do** - Tags counties as "good" or "bad" based on baseline year data completeness (1967, 1970-1972)
 5. **05_create_county_panel.do** - Interpolates district panel, re-assigns to tracts, imports enrollment data, collapses to county-year panel
 
-**Phase II: Main Analysis**
-6. **06_A_county_balanced_figure1.do** - County-level event-study analysis (Figure 1 replication)
-   - Creates balanced panel with complete event windows (-5 to +17 years)
-   - Runs weighted event-study regressions by baseline spending quartile
-   - Produces Figure 1 style plots showing dynamic treatment effects
+**Phase II: Analysis Dataset Construction**
+6. **06_build_jjp_final.do** - Constructs the final analysis dataset (jjp_final.dta)
+   - Loads county panel and merges quality flags
+   - Applies baseline data quality filter (good_county_1972)
+   - Creates rolling mean spending variables
+   - Applies balanced panel restriction (event window -5 to +17)
+   - Applies state-level filter (drops states with <10 balanced counties)
+   - **Outputs:** `jjp_interp_final.dta`, `jjp_final.dta`
 
-7. **06_B_district_balanced_figure1.do** - District-level event-study analysis (Figure 1 replication)
-   - District-level counterpart to county analysis
-   - Uses district panel instead of county aggregation
+**Phase III: Event-Study Analysis**
+7. **07_figure1_event_study.do** - Runs event-study regressions and generates Figure 1 plots
+   - **Part A:** Event-study regressions by individual quartile (Q1, Q2, Q3, Q4)
+   - **Part B:** Event-study regression for bottom 3 quartiles pooled (Q1-Q3)
+   - **Specification:** Log 13-year strict rolling mean PPE with county and year FE
+   - **Weights:** School-age population
+   - **Sample:** Reform year < 2000 (excludes late reforms)
+   - **Outputs:** Coefficient plots with 90% confidence intervals
 
-**Phase III: Jacknife**
-8. **07_jackknife_heterogeneity.do** - Leave-one-state-out jackknife to identify treatment effect heterogeneity
-   - **Purpose:** Identifies which counties experienced larger spending increases from reforms
-   - **Method:** For each state, estimates treatment effects excluding that state's data, then predicts spending increases for excluded state
-   - **Panel:** Uses balanced panel (complete -5 to +17 event windows)
-   - **Outputs:**
-     - High vs low predicted spending group comparisons
-     - Quartile analysis showing differential treatment effects
-
-**Phase IV: Archived Experiments**
-- `experimental_archive/` contains historical robustness checks, alternative specifications, and exploratory analyses
+**Archived Experiments**
+- `experimental_archive/` contains historical robustness checks, alternative specifications, jackknife analyses, and exploratory work
 
 ---
 
@@ -182,30 +178,22 @@ The pipeline follows a sequential process:
 - `county_clean.dta` - County quality flags (from 04)
 
 **Final Analysis Datasets:**
-- `interp_d.dta` - County-year panel (1967, 1969-2019) with:
+- `county_exp_final.dta` - County-year panel (1967, 1969-2019) with:
   - Per-pupil spending (nominal and real 2000 dollars)
   - School-age population weights
   - Reform exposure variables
   - Baseline spending quartiles
-  - Quality flags for balanced event-study samples
 
-- `jjp_interp.dta` / `jjp_balance.dta` - Processed panels for Figure 1 analysis (from 06_A/06_B)
+- `jjp_interp_final.dta` - Full county panel before balance restriction (from 06)
 
-- `jjp_interp_jk.dta` / `jjp_balance_jk.dta` - Processed panels for jackknife analysis (from 07)
-
-- `pred_spend_ppe_all_jk.dta` - Jackknife predicted spending classifications with:
-  - Predicted spending increase for each county (leave-one-state-out)
-  - High/low treatment group indicators
-  - Quartile classifications
-  - Baseline spending and income quartiles
+- `jjp_final.dta` - Balanced panel with state filter applied (from 06):
+  - Counties with complete event windows (-5 to +17)
+  - States with ≥10 balanced counties
+  - Ready for event-study analysis
 
 **Analysis Outputs:**
-- Event-study regression estimates
-- Event-study plots showing dynamic treatment effects
-- Heterogeneity analysis plots:
-  - High vs low predicted spending group comparisons
-  - Four-quartile differential treatment effects
-  - Combined plots showing treatment effect variation
+- Event-study regression estimates (from 07)
+- Event-study plots by baseline spending quartile showing dynamic treatment effects
 
 ---
 
