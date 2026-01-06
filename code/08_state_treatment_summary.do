@@ -105,7 +105,8 @@ restore
 preserve
 keep state_fips county_id balanced
 duplicates drop
-collapse (sum) n_balanced = balanced (count) n_counties = balanced, by(state_fips)
+gen one = 1  // numeric variable for counting
+collapse (sum) n_balanced = balanced (sum) n_counties = one, by(state_fips)
 tempfile state_counts
 save `state_counts', replace
 restore
