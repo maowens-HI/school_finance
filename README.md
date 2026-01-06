@@ -63,6 +63,36 @@ school_finance/
 
 ### **How to Reproduce**
 
+#### **Step 0: Set Up Directory Structure**
+
+Before running the pipeline, ensure your project folder matches this structure:
+
+```
+your_project_folder/           ← Set $SchoolSpending to this path
+├── run.do                     ← Master pipeline runner (place at root)
+├── code/                      ← All Stata scripts
+│   ├── 01_build_district_panel.do
+│   ├── 02_build_tract_panel.do
+│   ├── 03_adjust_inflation.do
+│   ├── 04_tag_county_quality.do
+│   ├── 05_create_county_panel.do
+│   ├── 06_build_jjp_final.do
+│   ├── 07_figure1_event_study.do
+│   └── experimental_archive/
+├── data/                      ← All data files (create if missing)
+│   ├── raw/                   ← Raw input data
+│   │   ├── F33/               ← NCES F-33 SAS files (.sas7bdat)
+│   │   ├── INDFIN/            ← Historical finance files
+│   │   └── GRF/               ← 1969 Geographic Reference File
+│   ├── crosswalks/            ← ID crosswalk files
+│   ├── reform/                ← Reform timing data (tabula-tabled2.xlsx)
+│   └── [intermediate .dta files created by pipeline]
+├── logs/                      ← Log files (created automatically)
+└── output/                    ← Figures and tables (optional)
+```
+
+**Important:** The `run.do` file must be at the project root, not inside the `code/` folder. All scripts reference paths relative to `$SchoolSpending`.
+
 #### **Step 1: Set Up Global Path**
 In Stata run.do , define the project path:
 ```stata
