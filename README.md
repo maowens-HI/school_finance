@@ -115,12 +115,67 @@ Where: SS = State FIPS, CCC = County FIPS, DDDDD = District code, BTCTSC = Basic
 - **Geographic Units:** 1970 Census tract definitions
 - **Sample Restrictions:** Counties without missing spending data for baseline year 1971.
 
-**Key Variables:**
-- **Spending:** `pp_exp` (nominal), `pp_exp_real` (2000 dollars), `lexp_ma_strict` (log spending with 13-year rolling mean)
-- **School Age Population:** `school_age_pop` (used for weighting in aggregation)
-- **Treatment:** `reform_year` (year of court-ordered SFR), `relative_year` (years since reform)
-- **Quality Flags:** `good_govid`, `good_tract`, `good_county` (baseline data completeness)
-- **Baseline Quartiles:** `pre_q (pre-reform spending quartiles), inc_q (pre-reform income quartiles)
+**Variable Dictionary (jjp_final.dta):**
+
+*Identifiers:*
+| Variable | Description |
+|----------|-------------|
+| `county_id` | 5-digit FIPS code (state + county) |
+| `state_fips` | 2-digit state FIPS code |
+| `year` | School year (fiscal year end - 1) |
+| `relative_year` | Years since reform (missing for never-treated) |
+
+*Outcome Variables:*
+| Variable | Description |
+|----------|-------------|
+| `exp` | Per-pupil expenditure (2000 dollars, winsorized) |
+| `lexp_ma_strict` | Log PPE, 13-year strict rolling mean (primary outcome) |
+| `lexp_ma` | Log PPE, 13-year rolling mean |
+
+*Baseline Characteristics:*
+| Variable | Description |
+|----------|-------------|
+| `pre_q` | Baseline spending quartile (1971, within-state) - good counties only |
+| `pre_q_all` | Baseline spending quartile (1971, within-state) - all counties |
+| `inc_q` | Income quartile (1970 Census, within-state) - good counties only |
+| `inc_q_all` | Income quartile (1970 Census, within-state) - all counties |
+| `med_fam_inc` | Median family income (1970 Census) |
+| `school_age_pop` | School-age population (weight variable) |
+
+*Treatment Variables:*
+| Variable | Description |
+|----------|-------------|
+| `never_treated` | 1 = control state (no reform) |
+| `reform_year` | Year court-ordered reform took effect |
+| `reform_types` | Group indicator for reform type combination |
+
+*Binary Reform Type Indicators (from JJP 2013 Table D2):*
+| Variable | Description |
+|----------|-------------|
+| `reform_eq` | 0 = Adequacy, 1 = Equity |
+| `reform_mfp` | Minimum Foundation Plan |
+| `reform_ep` | Equalization Plan |
+| `reform_le` | Local Effort Equalization |
+| `reform_sl` | Spending Limits |
+
+*Indicator Flags (for filtering):*
+| Variable | Description |
+|----------|-------------|
+| `good` | 1 = non-missing 1972 baseline spending, 0 = missing |
+| `valid_st` | 1 = state has ≥10 total counties |
+| `valid_st_gd` | 1 = state has ≥10 good counties (primary filter) |
+
+*Event-Study Indicators:*
+| Variable | Description |
+|----------|-------------|
+| `lead_1` to `lead_5` | Pre-reform year dummies (`lead_5` binned at -5 and earlier) |
+| `lag_1` to `lag_17` | Post-reform year dummies (`lag_17` binned at +17 and later) |
+
+**Sample Statistics:**
+| Filter | Observations | Counties | States |
+|--------|--------------|----------|--------|
+| No filter | 83,160 | 1,485 | 26 |
+| `valid_st_gd` filter | 81,032 | 1,447 | 25 |
 
 **Spatial Matching:**
 - Uses 1970 tract definitions from 1969-70 GRF
