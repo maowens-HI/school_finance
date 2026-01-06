@@ -111,16 +111,16 @@ Where: SS = State FIPS, CCC = County FIPS, DDDDD = District code, BTCTSC = Basic
 ### **Data Notes**
 
 **Coverage:**
-- **Time Period:** 1967, 1969-2019 (F-33 and INDFIN harmonization)
+- **Time Period:** 1966, 1968-2021 (F-33 and INDFIN harmonization)
 - **Geographic Units:** 1970 Census tract definitions
-- **Sample Restrictions:** Counties with complete baseline data (1967, 1970-1972) for quality analysis
+- **Sample Restrictions:** Counties without missing spending data for baseline year 1971.
 
 **Key Variables:**
 - **Spending:** `pp_exp` (nominal), `pp_exp_real` (2000 dollars), `lexp_ma_strict` (log spending with 13-year rolling mean)
 - **School Age Population:** `school_age_pop` (used for weighting in aggregation)
 - **Treatment:** `reform_year` (year of court-ordered SFR), `relative_year` (years since reform)
 - **Quality Flags:** `good_govid`, `good_tract`, `good_county` (baseline data completeness)
-- **Baseline Quartiles:** `pre_q1969`, `pre_q1970`, `pre_q1971` (pre-reform spending quartiles)
+- **Baseline Quartiles:** `pre_q (pre-reform spending quartiles), inc_q (pre-reform income quartiles)
 
 **Spatial Matching:**
 - Uses 1970 tract definitions from 1969-70 GRF
