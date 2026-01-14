@@ -435,11 +435,11 @@ tab reform_eq if year == 1971 & never_treated == 0
 tab relative_year if inrange(relative_year, -5, 17)
 tabstat lexp_ma_strict if inrange(relative_year, -5, 17), by(relative_year) stat(mean n)
 
-*** 8. California Check (state_fips == 6)
+*** 8. California Check (state_fips == "06")
 di "=== CALIFORNIA CHECK ==="
-count if state_fips == 6
-tab state_fips if state_fips == 6 & year == 1971
+count if state_fips == "06"
+tab state_fips if state_fips == "06" & year == 1971
 di "California counties in sample:"
-list county_id if state_fips == 6 & year == 1971
+list county_id if state_fips == "06" & year == 1971
 
 

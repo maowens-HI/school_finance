@@ -78,13 +78,13 @@ else {
 
 di "Using dataset: `datafile'.dta"
 
-*--- California Check (state_fips == 6)
+*--- California Check (state_fips == "06")
 use `datafile', clear
-di "=== CALIFORNIA CHECK (state_fips = 6) ==="
-count if state_fips == 6
+di "=== CALIFORNIA CHECK (state_fips = '06') ==="
+count if state_fips == "06"
 if r(N) > 0 {
     di "California IS included in the sample"
-    tab state_fips if state_fips == 6 & year == 1971
+    tab state_fips if state_fips == "06" & year == 1971
 }
 else {
     di "WARNING: California is NOT in the sample"
