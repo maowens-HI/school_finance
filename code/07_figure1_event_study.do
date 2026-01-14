@@ -157,7 +157,7 @@ foreach v of local outcomes {
             scheme(s2mono)
 
         *Uncomment to export
-        *graph export "$SchoolSpending/output/fig1_`v'_q`q'_`balance_label'.png", replace
+        graph export "$SchoolSpending/output/alt_test/fig1_`v'_q`q'_`balance_label'.png", replace
     }
 }
 

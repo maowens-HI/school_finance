@@ -342,7 +342,7 @@ destring med_fam_inc, replace
 *--- Drop unnecessary variables
 rename good_county_1972 good
 drop year4 good_county good_county_* never_treated n_obs balanced median_family_income ///
-     county_name dup_tag ever_treated lexp exp_ma  exp_ma_strict
+     county_name dup_tag ever_treated exp_ma  exp_ma_strict
 
 *--- Rename for clarity
 rename never_treated2 never_treated

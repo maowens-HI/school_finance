@@ -5,7 +5,7 @@ Figure 1 Event-Study Regressions
 File: 07_figure1_event_study.do
 Author: Myles Owens
 Institution: Hoover Institution, Stanford University
-Date: 2026-01-05
+Date: 2026-01-14
 
 --------------------------------------------------------------------------------
 OVERVIEW
@@ -20,23 +20,33 @@ Part B: Event-study regression for bottom 3 quartiles pooled (Q1-Q3)
 Produces coefficient plots with 90% confidence intervals.
 
 --------------------------------------------------------------------------------
+OPTIONS (set below in Section 0)
+--------------------------------------------------------------------------------
+
+use_alt:  0 = use jjp_final.dta (balanced on lexp_ma_strict)
+          1 = use jjp_final_alt.dta (balanced on lexp)
+
+outcomes: lexp, lexp_ma, lexp_ma_strict (loops over all three)
+
+--------------------------------------------------------------------------------
 INPUTS
 --------------------------------------------------------------------------------
 
-- jjp_final.dta (from 06_build_jjp_final.do)
+- jjp_final.dta (from 06_build_jjp_final.do) if use_alt == 0
+- jjp_final_alt.dta (from 06_jjp_alt.do) if use_alt == 1
 
 --------------------------------------------------------------------------------
 OUTPUTS
 --------------------------------------------------------------------------------
 
-- Event-study graphs by quartile
+- Event-study graphs by quartile (for each outcome)
 - Optional: Export to PNG files
 
 --------------------------------------------------------------------------------
 SPECIFICATIONS
 --------------------------------------------------------------------------------
 
-Outcome:       lexp_ma_strict (log 13-year strict rolling mean PPE)
+Outcomes:      lexp, lexp_ma, lexp_ma_strict
 Fixed effects: county_id year
 Clustering:    county_id
 Weights:       school_age_pop
@@ -52,20 +62,48 @@ clear all
 set more off
 cd "$SchoolSpending/data"
 
+*--- OPTIONS: Set these before running ---
+global use_alt 1        // 0 = jjp_final (balance on lexp_ma_strict)
+                        // 1 = jjp_final_alt (balance on lexp)
+
+*--- Determine which dataset to use
+if $use_alt == 1 {
+    local datafile "jjp_final_alt"
+    local balance_label "alt"
+}
+else {
+    local datafile "jjp_final"
+    local balance_label "orig"
+}
+
+di "Using dataset: `datafile'.dta"
+
+*--- California Check (state_fips == "06")
+use `datafile', clear
+di "=== CALIFORNIA CHECK (state_fips = '06') ==="
+count if state_fips == "06"
+if r(N) > 0 {
+    di "California IS included in the sample"
+    tab state_fips if state_fips == "06" & year == 1971
+}
+else {
+    di "WARNING: California is NOT in the sample"
+}
+
 *** ---------------------------------------------------------------------------
 *** Section 1: Event-Study Regressions by Quartile (Q1, Q2, Q3, Q4)
 *** ---------------------------------------------------------------------------
-local var lexp_ma_strict
+local outcomes lexp lexp_ma lexp_ma_strict
 
-foreach v of local var {
+foreach v of local outcomes {
     forvalues q = 1/4 {
-        use jjp_final, clear
+        use `datafile', clear
 
         *--- Weighted event-study regression
         areg  `v' ///
             i.lag_* i.lead_* ///
             i.year [w=school_age_pop] ///
-            if good == 1 & valid_state_good == 1 & (pre_q == `q' | never_treated==1) & (reform_year < 2000 | never_treated == 1), ///
+            if good == 1 & valid_st_gd == 1 & (pre_q == `q' | never_treated==1) & (reform_year < 2000 | never_treated == 1), ///
             absorb(county_id) vce(cluster county_id)
 
         *--- Extract coefficients
@@ -99,21 +137,27 @@ foreach v of local var {
         if `q' == 3 local qtitle "Q3 of 1971 Per Pupil Spending"
         if `q' == 4 local qtitle "Q4 of 1971 Per Pupil Spending (Richest)"
 
+        *--- Set y-axis title based on outcome
+        if "`v'" == "lexp" local ytitle "Δ ln(PPE)"
+        if "`v'" == "lexp_ma" local ytitle "Δ ln(13-yr rolling avg PPE)"
+        if "`v'" == "lexp_ma_strict" local ytitle "Δ ln(13-yr strict rolling avg PPE)"
+
         twoway ///
             (rarea ci_lo ci_hi rel_year, color("59 91 132%20") lw(none)) ///
             (line b rel_year, lcolor("42 66 94") lwidth(medthick)), ///
             yline(0, lpattern(dash) lcolor(gs10)) ///
             xline(0, lpattern(dash) lcolor(gs10)) ///
-            ytitle("Δ ln(13-yr rolling avg PPE)") ///
+            ytitle("`ytitle'") ///
             xtitle("Years since reform") ///
             title("`qtitle'", size(medlarge) color("35 45 60")) ///
+            subtitle("Outcome: `v' | Balance: `balance_label'", size(small) color(gs6)) ///
             note("90% CI", size(small) color(gs6)) ///
             graphregion(color(white)) ///
             legend(off) ///
             scheme(s2mono)
 
         *Uncomment to export
-        *graph export "$SchoolSpending/FILEPATH.png", replace
+        graph export "$SchoolSpending/output/alt_test/fig1_`v'_q`q'_`balance_label'.png", replace
     }
 }
 
@@ -123,16 +167,16 @@ foreach v of local var {
 *** Section 2: Event-Study Regression - Bottom 3 Quartiles Pooled (Q1-Q3)
 *** ---------------------------------------------------------------------------
 
-local var lexp_ma_strict
+local outcomes lexp lexp_ma lexp_ma_strict
 
-foreach v of local var {
-    use jjp_final, clear
+foreach v of local outcomes {
+    use `datafile', clear
 
     *--- Weighted regression excluding top quartile
     areg `v' ///
         i.lag_* i.lead_* ///
         i.year [w=school_age_pop] ///
-        if good == 1 & valid_state_good == 1 & (pre_q < 4 | never_treated==1) & (reform_year < 2000 | never_treated == 1), ///
+        if good == 1 & valid_st_gd == 1 & (pre_q < 4 | never_treated==1) & (reform_year < 2000 | never_treated == 1), ///
         absorb(county_id) vce(cluster county_id)
 
     *--- Extract coefficients
@@ -160,19 +204,25 @@ foreach v of local var {
     gen ci_lo = b - 1.645*se
     gen ci_hi = b + 1.645*se
 
+    *--- Set y-axis title based on outcome
+    if "`v'" == "lexp" local ytitle "Δ ln(PPE)"
+    if "`v'" == "lexp_ma" local ytitle "Δ ln(13-yr rolling avg PPE)"
+    if "`v'" == "lexp_ma_strict" local ytitle "Δ ln(13-yr strict rolling avg PPE)"
+
     twoway ///
         (rarea ci_lo ci_hi rel_year, color("59 91 132%20") cmissing(n)) ///
         (line b rel_year, lcolor("42 66 94") lwidth(medium)), ///
         yline(0, lpattern(dash) lcolor(gs10)) ///
         xline(0, lpattern(dash) lcolor(gs10)) ///
-        ytitle("Δ ln(per-pupil spending)", size(medsmall) margin(medium)) ///
+        ytitle("`ytitle'", size(medsmall) margin(medium)) ///
         xtitle("Years since reform") ///
         title("Q1-Q3 of 1971 Per Pupil Spending", size(medlarge) color("35 45 60")) ///
+        subtitle("Outcome: `v' | Balance: `balance_label'", size(small) color(gs6)) ///
         note("90% CI", size(small) color(gs6)) ///
         graphregion(color(white)) ///
         legend(off) ///
         scheme(s2mono)
 
     *Uncomment to export
-    *graph export "$SchoolSpending/FILEPATH.png", replace
+    *graph export "$SchoolSpending/output/fig1_`v'_q123_`balance_label'.png", replace
 }

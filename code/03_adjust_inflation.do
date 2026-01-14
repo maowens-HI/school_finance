@@ -96,7 +96,7 @@ set fredkey 87d3478358d0f3e781d2657d1aefd1ff, permanently
 
 * 2)--------------------------------- Import monthly CPI-U (NSA), 1964-2019
 tempfile cpi_monthly fy_tbl cpi_fy deflators
-import fred CPIAUCNS, daterange(1964-01-01 2019-12-31) clear
+import fred CPIAUCNS, daterange(1964-01-01 2022-12-31) clear
 gen m = mofd(daten)
 format m %tm
 rename CPIAUCNS cpi_u_all_nsa
@@ -129,7 +129,7 @@ gen cal_y = year(dofm(m))
 gen cal_m = month(dofm(m))
 gen fy_end_year = cal_y + (cal_m >= fy_start_month)
 
-keep if inrange(fy_end_year, 1967,2019)
+keep if inrange(fy_end_year, 1967,2022)
 
 *--------------------------------------------------------------*
 * B) Collapse to fiscal-year averages and build deflators

@@ -83,7 +83,7 @@ use f33_indfin_grf_canon,clear
 encode LEAID, gen(LEAID_num) // LEAID is a string and needs to be changed for interpolation
 
 * 3)--------------------------------- Detect gaps in time series
-bysort LEAID (year): gen gap_next = year[_n+1] - year // gap = next year - current year
+bysort LEAID (year4): gen gap_next = year4[_n+1] - year4 // gap = next year - current year
 gen too_far = gap_next > 3 // We don't want to impute gaps that are too big
 
 * 4)--------------------------------- Create full panel structure
@@ -107,6 +107,30 @@ forvalues i = 1/3 {
     bys LEAID_num (year4): replace too_far = too_far[_n-1] if missing(too_far)
 }
 
+/*
+*SPREADSHEET - Years where ALL pp_exp is missing by state
+gen state_fips = substr(LEAID, 1, 2)
+gen year_temp = year4 - 1
+
+* Create indicator for non-missing pp_exp
+gen has_pp_exp = !missing(pp_exp)
+
+preserve
+    * Collapse to state-year: count how many districts have data
+    collapse (sum) n_with_data = has_pp_exp, by(state_fips year_temp)
+    
+    * Keep only state-years where NO district has pp_exp
+    keep if n_with_data == 0
+    
+    * Display results
+    sort state_fips year_temp
+    list state_fips year_temp, sepby(state_fips) noobs
+restore
+
+* Clean up
+drop has_pp_exp
+*/
+
 * 2)--------------------------------- Interpolate spending (linear, gaps ≤ 3 years)
 bys LEAID_num: ipolate pp_exp year4 if too_far == 0, gen(exp2)
 // We create exp2 the imputed spending
@@ -127,8 +151,30 @@ rename enroll2 enrollment
 keep LEAID GOVID  year4 pp_exp LEAID_num enrollment
 save interp_d, replace // This is a district level panel of interpolated spending
 
+/*
+*SPREADSHEET - Years where ALL pp_exp is missing by state
+gen state_fips = substr(LEAID, 1, 2)
+gen year_temp = year4 - 1
 
+* Create indicator for non-missing pp_exp
+gen has_pp_exp = !missing(pp_exp)
 
+preserve
+    * Collapse to state-year: count how many districts have data
+    collapse (sum) n_with_data = has_pp_exp, by(state_fips year_temp)
+    
+    * Keep only state-years where NO district has pp_exp
+    keep if n_with_data == 0
+    
+    * Display results
+    sort state_fips year_temp
+    list state_fips year_temp, sepby(state_fips) noobs
+restore
+
+* Clean up
+drop has_pp_exp
+*/
+*/
 *==============================================================*
 * II) Build tract panel from interpolated districts
 *==============================================================*
@@ -251,7 +297,7 @@ set fredkey 87d3478358d0f3e781d2657d1aefd1ff, permanently
 
 *** Import MONTHLY CPI-U, grab 1966 so FY1967 is complete
 tempfile cpi_monthly fy_tbl cpi_fy deflators
-import fred CPIAUCNS, daterange(1964-01-01 2019-12-31) clear
+import fred CPIAUCNS, daterange(1964-01-01 2022-12-31) clear
 gen m = mofd(daten)
 format m %tm
 rename CPIAUCNS cpi_u_all_nsa
@@ -276,7 +322,7 @@ gen cal_y = year(dofm(m))
 gen cal_m = month(dofm(m))
 gen fy_end_year = cal_y + (cal_m >= fy_start_month)
 
-keep if inrange(fy_end_year, 1967,2019)
+keep if inrange(fy_end_year, 1967,2022)
 
 
 *** Collapse to fiscal-year averages

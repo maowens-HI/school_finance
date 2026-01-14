@@ -240,6 +240,25 @@ merge m:1 state_fips county_id using `inc_vals', nogen
 
 save jjp_interp_final, replace
 
+*SPREADSHEET - Count of counties by state
+use jjp_interp_final, clear
+
+preserve
+    * Keep one row per county
+    keep state_fips county_id
+    duplicates drop
+    
+    * Count counties per state
+    bysort state_fips: gen n_counties = _N
+    
+    * Keep one row per state for clean display
+    bysort state_fips: keep if _n == 1
+    keep state_fips n_counties
+    
+    * Display results
+    sort state_fips
+    list state_fips n_counties, noobs
+restore
  
 
 *** ---------------------------------------------------------------------------
@@ -281,10 +300,79 @@ restore
 merge m:1 county_id using `balanced_counties', nogen
 replace balanced = 0 if missing(balanced)
 
+/*
+levelsof state_fips, local(states)
+foreach s of local states {
+    preserve
+    keep if state_fips == "`s'"
+    
+    gen byte miss_exp = missing(exp)
+    collapse (count) n_counties=miss_exp (sum) n_missing=miss_exp, by(year_unified)
+    gen pct_missing = 100 * n_missing / n_counties
+    
+        display _n "============================================="
+    display "STATE `s'"
+    display "============================================="
+    list year_unified n_counties n_missing pct_missing if n_missing > 0, noobs clean
+    
+    restore
+}
+
+
+
+levelsof state_fips, local(states)
+foreach s of local states {
+  preserve
+  keep if year_unified == 1971
+  keep if state_fips == "`s'"
+  display "STATE `s'"
+  tab balanced
+  restore
+
+
+}
+
+levelsof state_fips, local(states)
+foreach s of local states {
+  preserve
+  keep if year_unified == 1971
+  keep if state_fips == "`s'"
+  display "STATE `s'"
+  tab reform_year,m
+  restore
+
+
+}
+*/
+
+
   tab balanced if year_unified == 1971
+  
 
 
 keep if balanced == 1 | never_treated2 == 1
+
+save jjp_sheet_bal,replace
+*SPREADSHEET - Count of counties by state
+use jjp_sheet_bal, clear
+
+preserve
+    * Keep one row per county
+    keep state_fips county_id
+    duplicates drop
+    
+    * Count counties per state
+    bysort state_fips: gen n_counties = _N
+    
+    * Keep one row per state for clean display
+    bysort state_fips: keep if _n == 1
+    keep state_fips n_counties
+    
+    * Display results
+    sort state_fips
+    list state_fips n_counties, noobs
+restore
+ 
 
 
 *** ---------------------------------------------------------------------------
@@ -326,7 +414,7 @@ gen valid_st_gd = (n_counties_good >= 10)
 replace valid_st_gd = 0 if missing(valid_st_gd)
 
 *** ---------------------------------------------------------------------------
-*** Section 10: Quality of Life and Save Final Dataset
+*** Section 10: Quality of Life 
 *** ---------------------------------------------------------------------------
 
 *--- Create combined reform type indicator
@@ -338,8 +426,7 @@ destring med_fam_inc, replace
 *--- Drop unnecessary variables
 rename good_county_1972 good
 drop year4 good_county good_county_* never_treated n_obs balanced median_family_income ///
-     county_name dup_tag ever_treated lexp exp_ma  exp_ma_strict
-
+     county_name dup_tag ever_treated exp_ma  exp_ma_strict treatment
 *--- Rename for clarity
 rename never_treated2 never_treated
 rename year_unified year
@@ -350,7 +437,7 @@ order county_id state_fips year relative_year good ///
       exp lexp_ma_strict lexp_ma ///
       pre_q inc_q med_fam_inc ///
       school_age_pop ///
-      treatment never_treated reform_year reform_types ///
+      never_treated reform_year reform_types ///
       reform_eq reform_mfp reform_ep reform_le reform_sl ///
       lead_* lag_*
 
@@ -365,6 +452,9 @@ label var med_fam_inc "Median family income (1970 Census)"
 label var school_age_pop "School-age population (weight)"
 label var never_treated "Never-treated state (control group)"
 label var reform_types "Reform type grouping"
+label values reform_eq .
+label var reform_eq "Reform type (0=Adequacy, 1=Equity)"
+
 
 *** ---------------------------------------------------------------------------
 *** Section 11: Save Final Dataset
@@ -373,62 +463,37 @@ label var reform_types "Reform type grouping"
 save jjp_final, replace
 
 
-use jjp_final, clear
+* States in valid_st_gd
+tab state_fips if valid_st_gd == 1
 
-*** 1. Sample Composition
-count
+* States in valid_st_gd AND good
+tab state_fips if valid_st_gd == 1 & good == 1
 
-* Unique counties
-preserve
-keep county_id
-duplicates drop
-count
-restore
 
-* Unique states
-preserve
+use jjp_final_alt,clear
+keep if good == 1 & valid_st_gd == 1
 keep state_fips
 duplicates drop
-count
-restore
+tab state_fips
 
-* Year range
-sum year
 
-*** 2. Treatment vs Control
-tab never_treated if year == 1971
-sum reform_year if never_treated == 0 & year == 1971
-
-*** 3. Spending Variables
-sum lexp_ma_strict, detail
-
-*** 4. Baseline Characteristics (1971)
-preserve
-keep if year == 1971
-tab pre_q
-tab inc_q
-tabstat exp med_fam_inc school_age_pop, by(pre_q) stat(mean sd n)
-restore
-
-*** 5. Weights
-sum school_age_pop, detail
+use jjp_final_alt, clear
 
 preserve
-keep if year == 1971
-gen neg_pop = -school_age_pop
-sort neg_pop
-drop neg_pop
-gen cum_weight = sum(school_age_pop)
-egen total_weight = total(school_age_pop)
-gen cum_pct = cum_weight / total_weight * 100
-list county_id state_fips school_age_pop cum_pct in 1/10
+    * Keep one row per county
+	keep if good == 1 & valid_st_gd == 1
+    keep state_fips county_id
+    duplicates drop
+    
+    * Count counties per state
+    bysort state_fips: gen n_counties = _N
+    
+    * Keep one row per state for clean display
+    bysort state_fips: keep if _n == 1
+    keep state_fips n_counties
+    
+    * Display results
+    sort state_fips
+    list state_fips n_counties, noobs
 restore
-
-*** 6. Reform Types
-tab reform_eq if year == 1971 & never_treated == 0
-
-*** 7. Balance Check
-tab relative_year if inrange(relative_year, -5, 17)
-tabstat lexp_ma_strict if inrange(relative_year, -5, 17), by(relative_year) stat(mean n)
-
-
+ 

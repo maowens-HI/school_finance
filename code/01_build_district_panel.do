@@ -800,5 +800,54 @@ drop _merge
 * 3)--------------------------------- Save final canonical panel
 save f33_indfin_grf_canon, replace
 
+
+
+
+
 summarize
 
+use "$SchoolSpending/data/f33_id.dta", clear
+gen state_f33 = substr(LEAID, 1, 2)
+keep if state_f33 == "15"
+
+
+use f33_indfin_grf_canon, clear
+gen state_fips = substr(LEAID, 1, 2)
+preserve
+    * Keep one row per county
+    keep state_fips county_id
+    duplicates drop
+    
+    * Count counties per state
+    bysort state_fips: gen n_counties = _N
+    
+    * Keep one row per state for clean display
+    bysort state_fips: keep if _n == 1
+    keep state_fips n_counties
+    
+    * Display results
+    sort state_fips
+    list state_fips n_counties, noobs
+restore
+*list LEAID GOVID NAME year if GOVID == "020000000"
+
+
+/*
+use "indfin_panel.dta", clear
+gen state_indfin = substr(GOVID, 1, 2)
+tab state_indfin
+
+
+
+*Nort Carolina Fix
+* I thought we could add NC in but it has no baseline spending only post 91/2 data
+use grf_id,clear
+isid LEAID
+merge 1:m LEAID using "f33_panel.dta"
+
+use f33_panel,clear
+gen state_f33 = substr(LEAID, 1, 2)
+keep if state_f33 == "24"
+
+
+use f33_indfin_grf_canon, clear
