@@ -1,0 +1,445 @@
+**# Bookmark #1
+/*==============================================================================
+Project    : School Spending - Build jjp_final_alt Dataset (ALTERNATIVE BALANCE)
+File       : 06_jjp_alt.do
+Purpose    : Construct alternative analysis dataset balanced on lexp (not lexp_ma_strict)
+             This allows testing whether California and other counties excluded by
+             strict rolling mean requirement can be included in the analysis.
+Author     : Myles Owens
+Institution: Hoover Institution, Stanford University
+Date       : 2026-01-14
+-------------------------------------------------------------------------------
+
+
+WHAT THIS FILE DOES:
+  - Step 1: Load county panel and merge quality flags
+  - Step 2: Apply baseline data quality filter (good_county_1972)
+  - Step 3: Create rolling mean spending variables
+  - Step 4: Apply balanced panel restriction on LEXP (event window -5 to +17)
+  - Step 5: Apply state-level filter (drop states with <10 balanced counties)
+  - Step 6: Save jjp_final_alt.dta
+
+KEY DIFFERENCE FROM 06_build_jjp_final.do:
+  - Balances on lexp being non-missing (instead of lexp_ma_strict)
+
+INPUTS:
+  - county_exp_final.dta    (from 05_create_county_panel.do)
+  - county_clean.dta        (from 04_tag_county_quality.do)
+
+
+OUTPUTS:
+  - jjp_interp_alt.dta      (Full county panel before balance restriction)
+  - jjp_final_alt.dta       (Balanced panel with state filter applied)
+
+ 
+==============================================================================*/
+
+ 
+
+*** ---------------------------------------------------------------------------
+*** Section 0: Setup
+*** ---------------------------------------------------------------------------
+
+ 
+clear all
+set more off
+cd "$SchoolSpending/data"
+
+ 
+
+*** ---------------------------------------------------------------------------
+*** Section 1: Load County Panel and Merge Quality Flags
+*** ---------------------------------------------------------------------------
+
+ 
+use county_exp_final, clear
+
+ 
+merge m:1 county using county_clean
+keep if _merge == 3 | _merge == 1
+replace good_county_1972 = 0 if missing(good_county_1972)
+drop _merge
+ 
+count
+*** ---------------------------------------------------------------------------
+*** Section 3: Create Key Analysis Variables
+*** ---------------------------------------------------------------------------
+
+ 
+
+rename county county_id
+gen never_treated = treatment == 0
+bysort county_id: egen ever_treated = max(treatment)
+gen never_treated2 = ever_treated == 0
+gen year_unified = year4 - 1
+
+ 
+
+* Winsorize spending at 1st and 99th percentiles
+rename county_exp exp
+winsor2 exp, replace c(1 99) by(year_unified)
+
+ 
+
+* Create log spending
+gen lexp = log(exp)
+
+ 
+
+* Create 13-year rolling mean
+rangestat (mean) exp, interval(year_unified -12 0) by(county_id)
+rename exp_mean exp_ma
+gen lexp_ma = log(exp_ma)
+
+ 
+
+* Create STRICT 13-year rolling mean (only if full 13-year window available)
+rangestat (mean) exp_ma_strict = exp (count) n_obs = exp, ///
+interval(year_unified -12 0) by(county_id)
+replace exp_ma_strict = . if n_obs < 13
+gen lexp_ma_strict = log(exp_ma_strict)
+
+ 
+
+* Create relative year
+
+gen relative_year = year_unified - reform_year
+replace relative_year = . if missing(reform_year)
+
+ 
+
+*** ---------------------------------------------------------------------------
+
+*** Section 4: Create Lead and Lag Indicators
+
+*** ---------------------------------------------------------------------------
+
+ 
+
+forvalues k = 1/17 {
+    gen lag_`k' = (relative_year == `k')
+    replace lag_`k' = 0 if missing(relative_year)
+
+}
+
+ 
+
+forvalues k = 1/5 {
+    gen lead_`k' = (relative_year == -`k')
+    replace lead_`k' = 0 if missing(relative_year)
+
+}
+
+ 
+
+* Bin endpoints
+
+replace lag_17 = 1 if relative_year >= 17 & !missing(relative_year)
+replace lead_5 = 1 if relative_year <= -5 & !missing(relative_year)
+
+ 
+
+*** ---------------------------------------------------------------------------
+*** Section 4: Create Baseline Spending Quartiles (1971)
+*** ---------------------------------------------------------------------------
+
+tempfile main_data
+save `main_data', replace
+
+* pre_q: Good counties only
+preserve
+keep if year_unified == 1971 & good_county_1972 == 1
+keep if !missing(exp, state_fips, county_id)
+
+bysort state_fips: egen pre_q = xtile(exp), n(4)
+keep state_fips county_id pre_q
+
+tempfile q_good
+save `q_good', replace
+restore
+
+* pre_q_all: All counties
+preserve
+keep if year_unified == 1971
+keep if !missing(exp, state_fips, county_id)
+
+bysort state_fips: egen pre_q_all = xtile(exp), n(4)
+keep state_fips county_id pre_q_all
+
+tempfile q_all
+save `q_all', replace
+restore
+
+* Merge both back
+use `main_data', clear
+merge m:1 state_fips county_id using `q_good', nogen
+merge m:1 state_fips county_id using `q_all', nogen
+
+
+ 
+
+*** ---------------------------------------------------------------------------
+*** Section 5: Create Income Quartiles
+*** ---------------------------------------------------------------------------
+
+* inc_q: Good counties only
+preserve
+keep if good_county_1972 == 1
+keep state_fips county_id median_family_income
+gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
+destring med_fam_inc, replace
+drop median_family_income
+duplicates drop
+keep if !missing(med_fam_inc, state_fips, county_id)
+
+bysort state_fips: egen inc_q = xtile(med_fam_inc), n(4)
+keep state_fips county_id inc_q
+
+tempfile inc_good
+save `inc_good', replace
+restore
+
+* inc_q_all: All counties
+preserve
+keep state_fips county_id median_family_income
+gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
+destring med_fam_inc, replace
+drop median_family_income
+duplicates drop
+keep if !missing(med_fam_inc, state_fips, county_id)
+
+bysort state_fips: egen inc_q_all = xtile(med_fam_inc), n(4)
+keep state_fips county_id inc_q_all
+
+tempfile inc_all
+save `inc_all', replace
+restore
+
+* Merge both back
+merge m:1 state_fips county_id using `inc_good', nogen
+merge m:1 state_fips county_id using `inc_all', nogen
+
+* Get med_fam_inc values for final dataset
+preserve
+keep state_fips county_id median_family_income
+gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
+destring med_fam_inc, replace
+drop median_family_income
+duplicates drop
+
+tempfile inc_vals
+save `inc_vals', replace
+restore
+
+merge m:1 state_fips county_id using `inc_vals', nogen
+
+
+*** ---------------------------------------------------------------------------
+*** Section 7: Save Full Interpolated Panel (Pre-Balance)
+*** ---------------------------------------------------------------------------
+
+ 
+
+save jjp_interp_alt, replace
+
+ 
+
+*** ---------------------------------------------------------------------------
+*** Section 8: Apply Balanced Panel Restriction
+*** KEY DIFFERENCE: Balance on lexp (not lexp_ma_strict)
+*** ---------------------------------------------------------------------------
+
+
+
+preserve
+keep if inrange(relative_year, -5, 17)
+
+
+bys county_id: egen min_rel = min(relative_year)
+bys county_id: egen max_rel = max(relative_year)
+bys county_id: gen n_rel = _N
+
+
+
+* ALTERNATIVE BALANCE: Check lexp non-missing (instead of lexp_ma_strict)
+bys county_id: gen n_nonmiss = sum(!missing(lexp))
+bys county_id: replace n_nonmiss = n_nonmiss[_N]
+
+ 
+
+keep if min_rel == -5 & max_rel == 17 & n_rel == 23 & n_nonmiss == 23
+
+ 
+keep county_id
+duplicates drop
+gen balanced = 1
+
+ 
+
+tempfile balanced_counties
+save `balanced_counties', replace
+restore
+
+ 
+
+merge m:1 county_id using `balanced_counties', nogen
+replace balanced = 0 if missing(balanced)
+
+  tab balanced if year_unified == 1971
+
+
+keep if balanced == 1 | never_treated2 == 1
+
+
+*** ---------------------------------------------------------------------------
+*** Section 9: Flag Valid States
+*** ---------------------------------------------------------------------------
+
+* valid_state: >= 10 total counties (good + bad)
+preserve
+keep state_fips county_id
+duplicates drop
+
+bysort state_fips: gen n_counties_all = _N
+keep state_fips n_counties_all
+duplicates drop
+
+tempfile state_counts_all
+save `state_counts_all', replace
+restore
+
+merge m:1 state_fips using `state_counts_all', nogen
+gen valid_st = (n_counties_all >= 10)
+
+* valid_state_good: >= 10 good counties only
+preserve
+keep if good_county_1972 == 1
+keep state_fips county_id
+duplicates drop
+
+bysort state_fips: gen n_counties_good = _N
+keep state_fips n_counties_good
+duplicates drop
+
+tempfile state_counts_good
+save `state_counts_good', replace
+restore
+
+merge m:1 state_fips using `state_counts_good', nogen
+gen valid_st_gd = (n_counties_good >= 10)
+replace valid_st_gd = 0 if missing(valid_st_gd)
+
+*** ---------------------------------------------------------------------------
+*** Section 10: Quality of Life and Save Final Dataset
+*** ---------------------------------------------------------------------------
+
+*--- Create combined reform type indicator
+egen reform_types = group(reform_eq reform_mfp reform_ep reform_le reform_sl)
+
+*--- Clean median family income (numeric version)
+destring med_fam_inc, replace
+
+*--- Drop unnecessary variables
+rename good_county_1972 good
+drop year4 good_county good_county_* never_treated n_obs balanced median_family_income ///
+     county_name dup_tag ever_treated lexp exp_ma  exp_ma_strict
+
+*--- Rename for clarity
+rename never_treated2 never_treated
+rename year_unified year
+
+
+*--- Order variables logically
+order county_id state_fips year relative_year good ///
+      exp lexp_ma_strict lexp_ma ///
+      pre_q inc_q med_fam_inc ///
+      school_age_pop ///
+      treatment never_treated reform_year reform_types ///
+      reform_eq reform_mfp reform_ep reform_le reform_sl ///
+      lead_* lag_*
+
+*--- Label key variables
+label var county_id "5-digit FIPS (state + county)"
+label var year "School year (year4 - 1)"
+label var relative_year "Years since reform"
+label var lexp_ma_strict "Log PPE, 13-yr strict rolling mean"
+label var pre_q "Baseline spending quartile (1971, within-state)"
+label var inc_q "Income quartile (1970 Census, within-state)"
+label var med_fam_inc "Median family income (1970 Census)"
+label var school_age_pop "School-age population (weight)"
+label var never_treated "Never-treated state (control group)"
+label var reform_types "Reform type grouping"
+
+*** ---------------------------------------------------------------------------
+*** Section 11: Save Final Dataset
+*** ---------------------------------------------------------------------------
+
+save jjp_final_alt, replace
+
+
+use jjp_final_alt, clear
+
+*** 1. Sample Composition
+count
+
+* Unique counties
+preserve
+keep county_id
+duplicates drop
+count
+restore
+
+* Unique states
+preserve
+keep state_fips
+duplicates drop
+count
+restore
+
+* Year range
+sum year
+
+*** 2. Treatment vs Control
+tab never_treated if year == 1971
+sum reform_year if never_treated == 0 & year == 1971
+
+*** 3. Spending Variables
+sum lexp_ma_strict, detail
+
+*** 4. Baseline Characteristics (1971)
+preserve
+keep if year == 1971
+tab pre_q
+tab inc_q
+tabstat exp med_fam_inc school_age_pop, by(pre_q) stat(mean sd n)
+restore
+
+*** 5. Weights
+sum school_age_pop, detail
+
+preserve
+keep if year == 1971
+gen neg_pop = -school_age_pop
+sort neg_pop
+drop neg_pop
+gen cum_weight = sum(school_age_pop)
+egen total_weight = total(school_age_pop)
+gen cum_pct = cum_weight / total_weight * 100
+list county_id state_fips school_age_pop cum_pct in 1/10
+restore
+
+*** 6. Reform Types
+tab reform_eq if year == 1971 & never_treated == 0
+
+*** 7. Balance Check
+tab relative_year if inrange(relative_year, -5, 17)
+tabstat lexp_ma_strict if inrange(relative_year, -5, 17), by(relative_year) stat(mean n)
+
+*** 8. California Check (state_fips == 6)
+di "=== CALIFORNIA CHECK ==="
+count if state_fips == 6
+tab state_fips if state_fips == 6 & year == 1971
+di "California counties in sample:"
+list county_id if state_fips == 6 & year == 1971
+
+
