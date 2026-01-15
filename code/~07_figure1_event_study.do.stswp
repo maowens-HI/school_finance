@@ -63,7 +63,7 @@ set more off
 cd "$SchoolSpending/data"
 
 *--- OPTIONS: Set these before running ---
-global use_alt 1        // 0 = jjp_final (balance on lexp_ma_strict)
+global use_alt 0        // 0 = jjp_final (balance on lexp_ma_strict)
                         // 1 = jjp_final_alt (balance on lexp)
 
 *--- Determine which dataset to use

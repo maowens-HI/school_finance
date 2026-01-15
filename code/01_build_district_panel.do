@@ -802,6 +802,110 @@ save f33_indfin_grf_canon, replace
 
 
 
+*--------------------------------------------------------------*
+* H) Audit district/state drop-offs (for documentation)
+*--------------------------------------------------------------*
+di as txt "== District + State Drop-off Audit (Step 01) =="
+
+tempfile st_indfin st_baseline st_mapped st_grf
+
+* 1) INDFIN raw: all GOVIDs
+use "indfin_panel.dta", clear
+gen state_govid = substr(GOVID, 1, 2)
+bysort GOVID: keep if _n == 1
+count
+local n_indfin = r(N)
+keep state_govid
+duplicates drop
+rename state_govid state
+count
+local s_indfin = r(N)
+save `st_indfin', replace
+
+* 2) Baseline-complete GOVIDs (pre-map)
+use "indfin_panel.dta", clear
+gen byte _in_baseline = inlist(year4, 1967, 1970, 1971, 1972)
+gen byte _present_baseline = (_in_baseline == 1 & !missing(pp_exp))
+bysort GOVID: egen n_baseline_years_present = total(_present_baseline)
+bysort GOVID: keep if _n == 1
+keep if n_baseline_years_present == 4
+count
+local n_baseline = r(N)
+gen state_govid = substr(GOVID, 1, 2)
+keep state_govid
+duplicates drop
+rename state_govid state
+count
+local s_baseline = r(N)
+save `st_baseline', replace
+
+* 3) Mapped GOVIDs (1:1 LEAID crosswalk)
+use "indfin_panel_tagged.dta", clear
+bysort GOVID: keep if _n == 1
+count
+local n_mapped = r(N)
+gen state_leaid = substr(LEAID, 1, 2)
+keep state_leaid
+duplicates drop
+rename state_leaid state
+count
+local s_mapped = r(N)
+save `st_mapped', replace
+
+* 4) Mapped + baseline-complete
+use "indfin_panel_tagged.dta", clear
+keep if good_govid_baseline == 1
+bysort GOVID: keep if _n == 1
+count
+local n_mapped_good = r(N)
+
+* 5) Final canonical panel (GRF-matched LEAIDs)
+use "f33_indfin_grf_canon.dta", clear
+bysort LEAID: keep if _n == 1
+count
+local n_grf = r(N)
+gen state_leaid = substr(LEAID, 1, 2)
+keep state_leaid
+duplicates drop
+rename state_leaid state
+count
+local s_grf = r(N)
+save `st_grf', replace
+
+di as txt "== District counts by step =="
+di as result "INDFIN raw GOVIDs: `n_indfin'"
+di as result "Baseline-complete (pre-map) GOVIDs: `n_baseline'"
+di as result "Mapped to LEAID (1:1) GOVIDs: `n_mapped'"
+di as result "Mapped + baseline-complete GOVIDs: `n_mapped_good'"
+di as result "Final GRF-matched LEAIDs: `n_grf'"
+
+di as txt "== State counts by step =="
+di as result "INDFIN raw states: `s_indfin'"
+di as result "Baseline-complete states: `s_baseline'"
+di as result "Mapped states (1:1): `s_mapped'"
+di as result "Final GRF-matched states: `s_grf'"
+
+di as txt "== States dropped: INDFIN raw -> baseline-complete =="
+use `st_indfin', clear
+merge 1:1 state using `st_baseline'
+keep if _merge == 1
+drop _merge
+list state, noobs
+
+di as txt "== States dropped: baseline-complete -> mapped (1:1) =="
+use `st_baseline', clear
+merge 1:1 state using `st_mapped'
+keep if _merge == 1
+drop _merge
+list state, noobs
+
+di as txt "== States dropped: mapped (1:1) -> GRF-matched =="
+use `st_mapped', clear
+merge 1:1 state using `st_grf'
+keep if _merge == 1
+drop _merge
+list state, noobs
+
 
 
 summarize
