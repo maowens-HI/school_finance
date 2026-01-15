@@ -5,7 +5,7 @@ Figure 2 Event-Study Regressions (Heterogeneity Analysis)
 File: 08_figure2_event_study.do
 Author: Myles Owens
 Institution: Hoover Institution, Stanford University
-Date: 2026-01-15 (Fixed High/Low classification bug)
+Date: 2026-01-15 (Updated: reform_types now uses egen group())
 
 --------------------------------------------------------------------------------
 OVERVIEW
@@ -70,7 +70,12 @@ Spec B regression:
 
 Predicted spending (averaging over lags 2-7):
   Spec A: pred_spend = avg_main + avg_ppe(pre_q)
-  Spec B: pred_spend = avg_main + avg_ppe(pre_q) + avg_inc(inc_q) + avg_ref(reform) + avg_triple(inc_q x reform)
+  Spec B: pred_spend = avg_main + avg_ppe(pre_q) + avg_inc(inc_q) + avg_ref(reform_types) + avg_triple(inc_q x reform_types)
+
+NOTE: reform_types is created via:
+  egen reform_types = group(reform_eq reform_mfp reform_ep reform_le reform_sl)
+  replace reform_types = 0 if never_treated == 1
+  Each unique combination of reform indicators becomes a discrete category.
 
 Classification (FIXED 2026-01-15):
   - JJP (2016) approach: High = pred_spend > 0, Low = pred_spend <= 0
@@ -688,15 +693,25 @@ foreach v of local outcomes {
 
     use `datafile', clear
 
-    *--- Define reform types local
-    local reforms "eq mfp ep le sl"
+    *--- Create grouped reform types variable
+    *    Each unique combination of reform dummies becomes a discrete category
+    egen reform_types = group(reform_eq reform_mfp reform_ep reform_le reform_sl)
+
+    *--- Set reform_types = 0 for never-treated (control) counties
+    replace reform_types = 0 if never_treated == 1
+
+    *--- Get list of reform_types levels (excluding controls)
+    levelsof reform_types if never_treated == 0, local(reform_levels)
+
+    di "=== DIAGNOSTIC: Reform Types Distribution ==="
+    tab reform_types if year == 1971, m
 
     *--- Run fully interacted regression
     *    Spec B: i.lag_*##i.pre_q + i.lag_*##i.inc_q##i.reform_types
     areg `v' ///
         i.lag_*##i.pre_q i.lead_*##i.pre_q ///
-        i.lag_*##i.inc_q##(i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
-        i.lead_*##i.inc_q##(i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
+        i.lag_*##i.inc_q##i.reform_types ///
+        i.lead_*##i.inc_q##i.reform_types ///
         i.year [w=school_age_pop] ///
         if good == 1 & valid_st_gd == 1 & (never_treated == 1 | reform_year < 2000), ///
         absorb(county_id) vce(cluster county_id)
@@ -728,22 +743,23 @@ foreach v of local outcomes {
         egen avg_inc_`q' = rowmean(inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
     }
 
-    *--- 4. Extract reform main effects and income x reform interactions
-    foreach r of local reforms {
+    *--- 4. Extract reform type main effects and income x reform_types interactions
+    *    Loop over reform_types levels (grouped combinations)
+    foreach r of local reform_levels {
 
-        * Main reform effect (base for inc_q == 1)
+        * Main reform_types effect (base for inc_q == 1)
         forvalues t = 2/7 {
-            capture scalar c_ref = _b[1.lag_`t'#1.reform_`r']
+            capture scalar c_ref = _b[1.lag_`t'#`r'.reform_types]
             if _rc scalar c_ref = 0
             gen ref_main_`r'_`t' = c_ref
         }
         egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 ref_main_`r'_3 ref_main_`r'_4 ///
                                          ref_main_`r'_5 ref_main_`r'_6 ref_main_`r'_7)
 
-        * Income x reform triple interaction
+        * Income x reform_types triple interaction
         forvalues t = 2/7 {
             forvalues q = 2/4 {
-                capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+                capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#`r'.reform_types]
                 if _rc scalar c_trip = 0
                 gen triple_`r'_`t'_`q' = c_trip
             }
@@ -767,12 +783,12 @@ foreach v of local outcomes {
         replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
     }
 
-    * Add reform effects (main + income x reform)
-    foreach r of local reforms {
-        replace pred_spend = pred_spend + avg_ref_main_`r' if reform_`r' == 1
+    * Add reform_types effects (main + income x reform_types)
+    foreach r of local reform_levels {
+        replace pred_spend = pred_spend + avg_ref_main_`r' if reform_types == `r'
 
         forvalues q = 2/4 {
-            replace pred_spend = pred_spend + avg_triple_`r'_`q' if reform_`r' == 1 & inc_q == `q'
+            replace pred_spend = pred_spend + avg_triple_`r'_`q' if reform_types == `r' & inc_q == `q'
         }
     }
 
@@ -975,15 +991,22 @@ foreach v of local outcomes {
 
     use `datafile', clear
 
+    *--- Create grouped reform types variable
+    egen reform_types = group(reform_eq reform_mfp reform_ep reform_le reform_sl)
+    replace reform_types = 0 if never_treated == 1
+
+    *--- Get list of reform_types levels (excluding controls)
+    levelsof reform_types if never_treated == 0, local(reform_levels)
+
+    di "=== DIAGNOSTIC: Reform Types Distribution ==="
+    tab reform_types if year == 1971, m
+
     *--- Get list of all states
     levelsof state_fips, local(states)
 
     *--- Save master file for repeated loading
     tempfile master_data
     save `master_data'
-
-    *--- Define reform types local
-    local reforms "eq mfp ep le sl"
 
     *--- Jackknife loop: for each state, exclude it and estimate
     foreach s of local states {
@@ -994,8 +1017,8 @@ foreach v of local outcomes {
         *--- Run Spec B regression excluding state s
         capture areg `v' ///
             i.lag_*##i.pre_q i.lead_*##i.pre_q ///
-            i.lag_*##i.inc_q##(i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
-            i.lead_*##i.inc_q##(i.reform_eq i.reform_mfp i.reform_ep i.reform_le i.reform_sl) ///
+            i.lag_*##i.inc_q##i.reform_types ///
+            i.lead_*##i.inc_q##i.reform_types ///
             i.year [w=school_age_pop] ///
             if good == 1 & valid_st_gd == 1 & (never_treated == 1 | reform_year < 2000), ///
             absorb(county_id) vce(cluster county_id)
@@ -1036,22 +1059,22 @@ foreach v of local outcomes {
             egen avg_inc_`q' = rowmean(inc_2_`q' inc_3_`q' inc_4_`q' inc_5_`q' inc_6_`q' inc_7_`q')
         }
 
-        *--- 4. Extract reform effects
-        foreach r of local reforms {
+        *--- 4. Extract reform_types effects
+        foreach r of local reform_levels {
 
-            * Main reform effect
+            * Main reform_types effect
             forvalues t = 2/7 {
-                capture scalar c_ref = _b[1.lag_`t'#1.reform_`r']
+                capture scalar c_ref = _b[1.lag_`t'#`r'.reform_types]
                 if _rc scalar c_ref = 0
                 gen ref_main_`r'_`t' = c_ref
             }
             egen avg_ref_main_`r' = rowmean(ref_main_`r'_2 ref_main_`r'_3 ref_main_`r'_4 ///
                                              ref_main_`r'_5 ref_main_`r'_6 ref_main_`r'_7)
 
-            * Income x reform interaction
+            * Income x reform_types interaction
             forvalues t = 2/7 {
                 forvalues q = 2/4 {
-                    capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#1.reform_`r']
+                    capture scalar c_trip = _b[1.lag_`t'#`q'.inc_q#`r'.reform_types]
                     if _rc scalar c_trip = 0
                     gen triple_`r'_`t'_`q' = c_trip
                 }
@@ -1073,11 +1096,11 @@ foreach v of local outcomes {
             replace pred_spend = pred_spend + avg_inc_`q' if inc_q == `q'
         }
 
-        foreach r of local reforms {
-            replace pred_spend = pred_spend + avg_ref_main_`r' if reform_`r' == 1
+        foreach r of local reform_levels {
+            replace pred_spend = pred_spend + avg_ref_main_`r' if reform_types == `r'
 
             forvalues q = 2/4 {
-                replace pred_spend = pred_spend + avg_triple_`r'_`q' if reform_`r' == 1 & inc_q == `q'
+                replace pred_spend = pred_spend + avg_triple_`r'_`q' if reform_types == `r' & inc_q == `q'
             }
         }
 
