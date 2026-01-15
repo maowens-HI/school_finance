@@ -44,10 +44,17 @@ INPUTS
 OUTPUTS (saved to output/alt_test/)
 --------------------------------------------------------------------------------
 
+High/Low graphs (JJP Figure 2 style):
 - fig2_{outcome}_specA_nojk_{balance}.png  (Spec A, no jackknife)
 - fig2_{outcome}_specA_jk_{balance}.png    (Spec A, jackknife)
 - fig2_{outcome}_specB_nojk_{balance}.png  (Spec B, no jackknife)
 - fig2_{outcome}_specB_jk_{balance}.png    (Spec B, jackknife)
+
+Quartile graphs (4 lines by pred_spend quartile):
+- fig2_{outcome}_specA_nojk_{balance}_quartiles.png
+- fig2_{outcome}_specA_jk_{balance}_quartiles.png
+- fig2_{outcome}_specB_nojk_{balance}_quartiles.png
+- fig2_{outcome}_specB_jk_{balance}_quartiles.png
 
 --------------------------------------------------------------------------------
 SPECIFICATIONS
@@ -68,16 +75,21 @@ Predicted spending (averaging over lags 2-7):
 Classification (FIXED 2026-01-15):
   - JJP (2016) approach: High = pred_spend > 0, Low = pred_spend <= 0
     "Roughly two thirds of districts in reform states had Spendd > 0"
-  - If threshold of 0 produces meaningful split (both High and Low have counties),
-    use the JJP approach
-  - If all treated counties have same sign (no variation around 0), fall back to
-    median threshold to ensure meaningful heterogeneity split
   - Never-treated counties: assigned to Low group for regression (they serve as
     controls since their lag_*/lead_* are always 0)
 
-  NOTE: Original code always used threshold of 0, but if all pred_spend > 0 (due to
-  large positive avg_main), this classifies ALL treated as High, making High vs Low
-  essentially Treated vs Control with overlapping lines.
+  NOTE ON OVERLAPPING LINES: If all treated counties have pred_spend > 0 (due to
+  large positive avg_main and small interaction terms), then:
+    - High group = ALL treated counties
+    - Low group = ALL never-treated (control) counties
+  In this case, High vs Low is essentially Treated vs Control, and the lines will
+  overlap because never-treated have no event-time variation (lag_k = 0 always).
+  The Low line coefficients are poorly identified since controls don't contribute
+  to lag_k estimation. This is a DATA characteristic, not a bug.
+
+  ADDITIONAL OUTPUT: A quartile-based graph splits treated counties into 4 groups
+  by pred_spend quartile (Q1-Q4), providing finer heterogeneity even when all
+  pred_spend values have the same sign.
 
 Final event-study:
   areg outcome i.lag_*##i.high i.lead_*##i.high i.year [w=school_age_pop], absorb(county_id)
@@ -204,70 +216,46 @@ foreach v of local outcomes {
     tabstat pred_spend if year == 1971, by(never_treated) stat(mean sd min max n)
     di ""
 
-    *--- Classify High vs Low
-    *    JJP (2016) uses threshold of 0: High = pred_spend > 0, Low = pred_spend <= 0
-    *    They found roughly 2/3 of treated districts had pred_spend > 0
-    *
-    *    If all treated have same sign (no variation), fall back to median threshold
-
-    * Step 1: Check if there's variation around 0 among treated
-    tempvar county_pred
-    bysort county_id: egen `county_pred' = mean(pred_spend)  // county-level pred_spend
-
-    count if `county_pred' > 0 & year == 1971 & never_treated == 0
-    local n_high_0 = r(N)
-    count if `county_pred' <= 0 & year == 1971 & never_treated == 0
-    local n_low_0 = r(N)
-    count if year == 1971 & never_treated == 0
-    local n_total = r(N)
-
-    di "=== CLASSIFICATION CHECK ==="
-    di "Using threshold of 0: `n_high_0' High vs `n_low_0' Low among `n_total' treated counties"
-    di "High pct: " %5.1f 100*`n_high_0'/`n_total' "%"
-
-    * Step 2: Decide on threshold
-    *    Use 0 if it produces meaningful split (JJP approach)
-    *    Fall back to median if all treated have same sign
-    local use_median = 0
-    if `n_low_0' == 0 | `n_high_0' == 0 {
-        di "WARNING: Threshold of 0 produces no variation. All treated have same sign."
-        di "         Falling back to MEDIAN threshold for meaningful split."
-        local use_median = 1
-    }
-
-    * Step 3: Apply chosen threshold
-    gen byte high = .
-
-    if `use_median' == 1 {
-        sum `county_pred' if year == 1971 & never_treated == 0, detail
-        local threshold = r(p50)
-        di "=== Using MEDIAN threshold = `threshold' ==="
-        replace high = 1 if pred_spend >= `threshold' & never_treated == 0 & !missing(pred_spend)
-        replace high = 0 if pred_spend < `threshold' & never_treated == 0 & !missing(pred_spend)
-    }
-    else {
-        local threshold = 0
-        di "=== Using JJP threshold = 0 ==="
-        replace high = 1 if pred_spend > 0 & never_treated == 0 & !missing(pred_spend)
-        replace high = 0 if pred_spend <= 0 & never_treated == 0 & !missing(pred_spend)
-    }
-    di ""
-
-    *--- DIAGNOSTIC: Verify High/Low classification
-    di "=== DIAGNOSTIC: High/Low Classification (Treated Only) ==="
-    tab high if year == 1971, m
-    di ""
-    di "=== DIAGNOSTIC: Mean pred_spend by High/Low Group ==="
-    tabstat pred_spend if year == 1971 & never_treated == 0, by(high) stat(mean sd min max n)
-    di ""
-
-    *--- Set high=0 for never_treated so they're included in regression
-    *    They serve as controls for both groups (their lag_*/lead_* are always 0)
+    *--- Classify High vs Low (JJP approach: threshold = 0)
+    *    High = pred_spend > 0, Low = pred_spend <= 0
+    *    JJP found roughly 2/3 of treated had pred_spend > 0
+    *    NOTE: If all treated have pred_spend > 0, High = all treated, Low = all controls
+    *          and lines will overlap (see header documentation)
+    gen byte high = (pred_spend > 0) if !missing(pred_spend) & never_treated == 0
     replace high = 0 if never_treated == 1
 
-    di "=== DIAGNOSTIC: Final High/Low Distribution (including never_treated as high=0) ==="
+    *--- Create quartiles of pred_spend among TREATED counties
+    *    This provides finer heterogeneity even when all pred_spend have same sign
+    tempvar county_pred
+    bysort county_id: egen `county_pred' = mean(pred_spend)
+
+    * Calculate quartile cutoffs among treated only
+    _pctile `county_pred' if year == 1971 & never_treated == 0, p(25 50 75)
+    local p25 = r(r1)
+    local p50 = r(r2)
+    local p75 = r(r3)
+
+    gen byte pred_q = .
+    replace pred_q = 1 if pred_spend <= `p25' & never_treated == 0
+    replace pred_q = 2 if pred_spend > `p25' & pred_spend <= `p50' & never_treated == 0
+    replace pred_q = 3 if pred_spend > `p50' & pred_spend <= `p75' & never_treated == 0
+    replace pred_q = 4 if pred_spend > `p75' & never_treated == 0
+
+    *--- DIAGNOSTIC: Show High/Low and Quartile classification
+    di "=== DIAGNOSTIC: High/Low Classification ==="
     tab high never_treated if year == 1971, m
     di ""
+    di "=== DIAGNOSTIC: Mean pred_spend by High/Low (Treated Only) ==="
+    tabstat pred_spend if year == 1971, by(high) stat(mean sd n)
+    di ""
+    di "=== DIAGNOSTIC: pred_spend Quartiles (Treated Only) ==="
+    di "Quartile cutoffs: p25=`p25' p50=`p50' p75=`p75'"
+    tabstat pred_spend if year == 1971 & never_treated == 0, by(pred_q) stat(mean sd n)
+    di ""
+
+    *--- Save data with classifications for quartile graph later
+    tempfile data_with_pred
+    save `data_with_pred'
 
     *--- Run final event-study with High/Low interaction
     areg `v' ///
@@ -334,6 +322,91 @@ foreach v of local outcomes {
         graphregion(color(white))
 
     graph export "$SchoolSpending/output/alt_test/fig2_`v'_specA_nojk_`balance_label'.png", replace
+
+    *==========================================================================
+    * QUARTILE GRAPH: 4 lines by pred_spend quartile
+    *==========================================================================
+
+    * Reload data with pred_q classification (saved earlier)
+    use `data_with_pred', clear
+
+    * Set pred_q = 0 for never_treated (controls)
+    replace pred_q = 0 if never_treated == 1
+
+    * Run regression with quartile interactions
+    areg `v' ///
+        i.lag_*##i.pred_q i.lead_*##i.pred_q ///
+        i.year [w=school_age_pop] ///
+        if good == 1 & valid_st_gd == 1 & (never_treated == 1 | reform_year < 2000), ///
+        absorb(county_id) vce(cluster county_id)
+
+    * Extract coefficients for each quartile
+    tempfile results_q1 results_q2 results_q3 results_q4
+    postfile hq1 str15 term float t b se str10 grp using `results_q1'
+    postfile hq2 str15 term float t b se str10 grp using `results_q2'
+    postfile hq3 str15 term float t b se str10 grp using `results_q3'
+    postfile hq4 str15 term float t b se str10 grp using `results_q4'
+
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k' + 1.lead_`k'#1.pred_q
+        post hq1 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q1")
+        lincom 1.lead_`k' + 1.lead_`k'#2.pred_q
+        post hq2 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q2")
+        lincom 1.lead_`k' + 1.lead_`k'#3.pred_q
+        post hq3 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q3")
+        lincom 1.lead_`k' + 1.lead_`k'#4.pred_q
+        post hq4 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q4")
+    }
+    post hq1 ("base") (0) (0) (0) ("Q1")
+    post hq2 ("base") (0) (0) (0) ("Q2")
+    post hq3 ("base") (0) (0) (0) ("Q3")
+    post hq4 ("base") (0) (0) (0) ("Q4")
+    forvalues k = 1/17 {
+        lincom 1.lag_`k' + 1.lag_`k'#1.pred_q
+        post hq1 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q1")
+        lincom 1.lag_`k' + 1.lag_`k'#2.pred_q
+        post hq2 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q2")
+        lincom 1.lag_`k' + 1.lag_`k'#3.pred_q
+        post hq3 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q3")
+        lincom 1.lag_`k' + 1.lag_`k'#4.pred_q
+        post hq4 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q4")
+    }
+    postclose hq1
+    postclose hq2
+    postclose hq3
+    postclose hq4
+
+    * Combine all quartiles
+    use `results_q1', clear
+    append using `results_q2'
+    append using `results_q3'
+    append using `results_q4'
+
+    gen ci_lo = b - 1.645*se
+    gen ci_hi = b + 1.645*se
+
+    * Plot 4 lines
+    if "`v'" == "lexp" local ytitle "Δ ln(PPE)"
+    if "`v'" == "lexp_ma" local ytitle "Δ ln(13-yr rolling avg PPE)"
+    if "`v'" == "lexp_ma_strict" local ytitle "Δ ln(13-yr strict rolling avg PPE)"
+
+    twoway ///
+        (line b t if grp == "Q1", lcolor(navy) lwidth(medthick)) ///
+        (line b t if grp == "Q2", lcolor(blue) lwidth(medthick) lpattern(dash)) ///
+        (line b t if grp == "Q3", lcolor(cranberry) lwidth(medthick) lpattern(shortdash)) ///
+        (line b t if grp == "Q4", lcolor(red) lwidth(medthick) lpattern(longdash)), ///
+        yline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+        legend(order(1 "Q1 (lowest pred)" 2 "Q2" 3 "Q3" 4 "Q4 (highest pred)") pos(6) col(4)) ///
+        title("Spec A: By Quartile of Predicted Spending", size(medium)) ///
+        subtitle("Outcome: `v' | Balance: `balance_label' | No Jackknife", size(small) color(gs6)) ///
+        ytitle("`ytitle'") ///
+        xtitle("Years since reform") ///
+        note("Quartiles of pred_spend among treated counties. Averaging window: lags 2-7", size(vsmall) color(gs6)) ///
+        graphregion(color(white))
+
+    graph export "$SchoolSpending/output/alt_test/fig2_`v'_specA_nojk_`balance_label'_quartiles.png", replace
 }
 
 
@@ -415,48 +488,36 @@ foreach v of local outcomes {
         capture erase pred_temp_A_`v'_`s'.dta
     }
 
-    *--- Classify High vs Low (JJP approach with median fallback)
+    *--- Classify High vs Low (JJP approach: threshold = 0)
+    gen byte high = (pred_spend > 0) if !missing(pred_spend) & never_treated == 0
+    replace high = 0 if never_treated == 1
+
+    *--- Create quartiles of pred_spend among TREATED counties
     tempvar county_pred
     bysort county_id: egen `county_pred' = mean(pred_spend)
 
-    count if `county_pred' > 0 & year == 1971 & never_treated == 0
-    local n_high_0 = r(N)
-    count if `county_pred' <= 0 & year == 1971 & never_treated == 0
-    local n_low_0 = r(N)
+    _pctile `county_pred' if year == 1971 & never_treated == 0, p(25 50 75)
+    local p25 = r(r1)
+    local p50 = r(r2)
+    local p75 = r(r3)
 
-    di "=== CLASSIFICATION CHECK (Jackknife) ==="
-    di "Using threshold of 0: `n_high_0' High vs `n_low_0' Low"
-
-    local use_median = 0
-    if `n_low_0' == 0 | `n_high_0' == 0 {
-        di "WARNING: Falling back to MEDIAN threshold"
-        local use_median = 1
-    }
-
-    gen byte high = .
-
-    if `use_median' == 1 {
-        sum `county_pred' if year == 1971 & never_treated == 0, detail
-        local threshold = r(p50)
-        di "=== Using MEDIAN threshold = `threshold' ==="
-        replace high = 1 if pred_spend >= `threshold' & never_treated == 0 & !missing(pred_spend)
-        replace high = 0 if pred_spend < `threshold' & never_treated == 0 & !missing(pred_spend)
-    }
-    else {
-        di "=== Using JJP threshold = 0 ==="
-        replace high = 1 if pred_spend > 0 & never_treated == 0 & !missing(pred_spend)
-        replace high = 0 if pred_spend <= 0 & never_treated == 0 & !missing(pred_spend)
-    }
-
-    * Set high=0 for never_treated
-    replace high = 0 if never_treated == 1
+    gen byte pred_q = .
+    replace pred_q = 1 if pred_spend <= `p25' & never_treated == 0
+    replace pred_q = 2 if pred_spend > `p25' & pred_spend <= `p50' & never_treated == 0
+    replace pred_q = 3 if pred_spend > `p50' & pred_spend <= `p75' & never_treated == 0
+    replace pred_q = 4 if pred_spend > `p75' & never_treated == 0
 
     di "=== DIAGNOSTIC: High/Low Classification (Jackknife) ==="
-    tab high if year == 1971, m
+    tab high never_treated if year == 1971, m
     di ""
-    di "=== DIAGNOSTIC: Mean pred_spend by High/Low Group ==="
-    tabstat pred_spend if year == 1971 & never_treated == 0, by(high) stat(mean sd min max n)
+    di "=== DIAGNOSTIC: pred_spend Quartiles (Treated Only) ==="
+    di "Quartile cutoffs: p25=`p25' p50=`p50' p75=`p75'"
+    tabstat pred_spend if year == 1971 & never_treated == 0, by(pred_q) stat(mean sd n)
     di ""
+
+    *--- Save data with classifications for quartile graph
+    tempfile data_with_pred_jk
+    save `data_with_pred_jk'
 
     save jk_pred_specA_`v'_`balance_label', replace
 
@@ -525,6 +586,89 @@ foreach v of local outcomes {
         graphregion(color(white))
 
     graph export "$SchoolSpending/output/alt_test/fig2_`v'_specA_jk_`balance_label'.png", replace
+
+    *==========================================================================
+    * QUARTILE GRAPH: 4 lines by pred_spend quartile (Jackknife)
+    *==========================================================================
+
+    * Reload data with pred_q classification
+    use `data_with_pred_jk', clear
+    replace pred_q = 0 if never_treated == 1
+
+    * Run regression with quartile interactions
+    areg `v' ///
+        i.lag_*##i.pred_q i.lead_*##i.pred_q ///
+        i.year [w=school_age_pop] ///
+        if good == 1 & valid_st_gd == 1 & (never_treated == 1 | reform_year < 2000), ///
+        absorb(county_id) vce(cluster county_id)
+
+    * Extract coefficients for each quartile
+    tempfile results_q1 results_q2 results_q3 results_q4
+    postfile hq1 str15 term float t b se str10 grp using `results_q1'
+    postfile hq2 str15 term float t b se str10 grp using `results_q2'
+    postfile hq3 str15 term float t b se str10 grp using `results_q3'
+    postfile hq4 str15 term float t b se str10 grp using `results_q4'
+
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k' + 1.lead_`k'#1.pred_q
+        post hq1 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q1")
+        lincom 1.lead_`k' + 1.lead_`k'#2.pred_q
+        post hq2 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q2")
+        lincom 1.lead_`k' + 1.lead_`k'#3.pred_q
+        post hq3 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q3")
+        lincom 1.lead_`k' + 1.lead_`k'#4.pred_q
+        post hq4 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q4")
+    }
+    post hq1 ("base") (0) (0) (0) ("Q1")
+    post hq2 ("base") (0) (0) (0) ("Q2")
+    post hq3 ("base") (0) (0) (0) ("Q3")
+    post hq4 ("base") (0) (0) (0) ("Q4")
+    forvalues k = 1/17 {
+        lincom 1.lag_`k' + 1.lag_`k'#1.pred_q
+        post hq1 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q1")
+        lincom 1.lag_`k' + 1.lag_`k'#2.pred_q
+        post hq2 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q2")
+        lincom 1.lag_`k' + 1.lag_`k'#3.pred_q
+        post hq3 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q3")
+        lincom 1.lag_`k' + 1.lag_`k'#4.pred_q
+        post hq4 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q4")
+    }
+    postclose hq1
+    postclose hq2
+    postclose hq3
+    postclose hq4
+
+    * Combine all quartiles
+    use `results_q1', clear
+    append using `results_q2'
+    append using `results_q3'
+    append using `results_q4'
+
+    gen ci_lo = b - 1.645*se
+    gen ci_hi = b + 1.645*se
+
+    * Plot 4 lines
+    if "`v'" == "lexp" local ytitle "Δ ln(PPE)"
+    if "`v'" == "lexp_ma" local ytitle "Δ ln(13-yr rolling avg PPE)"
+    if "`v'" == "lexp_ma_strict" local ytitle "Δ ln(13-yr strict rolling avg PPE)"
+
+    twoway ///
+        (line b t if grp == "Q1", lcolor(navy) lwidth(medthick)) ///
+        (line b t if grp == "Q2", lcolor(blue) lwidth(medthick) lpattern(dash)) ///
+        (line b t if grp == "Q3", lcolor(cranberry) lwidth(medthick) lpattern(shortdash)) ///
+        (line b t if grp == "Q4", lcolor(red) lwidth(medthick) lpattern(longdash)), ///
+        yline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+        legend(order(1 "Q1 (lowest pred)" 2 "Q2" 3 "Q3" 4 "Q4 (highest pred)") pos(6) col(4)) ///
+        title("Spec A: By Quartile of Predicted Spending (Jackknife)", size(medium)) ///
+        subtitle("Outcome: `v' | Balance: `balance_label' | Leave-One-State-Out", size(small) color(gs6)) ///
+        ytitle("`ytitle'") ///
+        xtitle("Years since reform") ///
+        note("Quartiles of pred_spend among treated counties. Averaging window: lags 2-7", size(vsmall) color(gs6)) ///
+        graphregion(color(white))
+
+    graph export "$SchoolSpending/output/alt_test/fig2_`v'_specA_jk_`balance_label'_quartiles.png", replace
 }
 
 
@@ -637,48 +781,36 @@ foreach v of local outcomes {
     tabstat pred_spend if year == 1971 & never_treated == 0, by(pre_q) stat(mean sd min max n)
     di ""
 
-    *--- Classify High vs Low (JJP approach with median fallback)
+    *--- Classify High vs Low (JJP approach: threshold = 0)
+    gen byte high = (pred_spend > 0) if !missing(pred_spend) & never_treated == 0
+    replace high = 0 if never_treated == 1
+
+    *--- Create quartiles of pred_spend among TREATED counties
     tempvar county_pred
     bysort county_id: egen `county_pred' = mean(pred_spend)
 
-    count if `county_pred' > 0 & year == 1971 & never_treated == 0
-    local n_high_0 = r(N)
-    count if `county_pred' <= 0 & year == 1971 & never_treated == 0
-    local n_low_0 = r(N)
+    _pctile `county_pred' if year == 1971 & never_treated == 0, p(25 50 75)
+    local p25 = r(r1)
+    local p50 = r(r2)
+    local p75 = r(r3)
 
-    di "=== CLASSIFICATION CHECK (Spec B) ==="
-    di "Using threshold of 0: `n_high_0' High vs `n_low_0' Low"
-
-    local use_median = 0
-    if `n_low_0' == 0 | `n_high_0' == 0 {
-        di "WARNING: Falling back to MEDIAN threshold"
-        local use_median = 1
-    }
-
-    gen byte high = .
-
-    if `use_median' == 1 {
-        sum `county_pred' if year == 1971 & never_treated == 0, detail
-        local threshold = r(p50)
-        di "=== Using MEDIAN threshold = `threshold' ==="
-        replace high = 1 if pred_spend >= `threshold' & never_treated == 0 & !missing(pred_spend)
-        replace high = 0 if pred_spend < `threshold' & never_treated == 0 & !missing(pred_spend)
-    }
-    else {
-        di "=== Using JJP threshold = 0 ==="
-        replace high = 1 if pred_spend > 0 & never_treated == 0 & !missing(pred_spend)
-        replace high = 0 if pred_spend <= 0 & never_treated == 0 & !missing(pred_spend)
-    }
-
-    * Set high=0 for never_treated
-    replace high = 0 if never_treated == 1
+    gen byte pred_q = .
+    replace pred_q = 1 if pred_spend <= `p25' & never_treated == 0
+    replace pred_q = 2 if pred_spend > `p25' & pred_spend <= `p50' & never_treated == 0
+    replace pred_q = 3 if pred_spend > `p50' & pred_spend <= `p75' & never_treated == 0
+    replace pred_q = 4 if pred_spend > `p75' & never_treated == 0
 
     di "=== DIAGNOSTIC: High/Low Classification (Spec B) ==="
-    tab high if year == 1971, m
+    tab high never_treated if year == 1971, m
     di ""
-    di "=== DIAGNOSTIC: Mean pred_spend by High/Low Group ==="
-    tabstat pred_spend if year == 1971 & never_treated == 0, by(high) stat(mean sd min max n)
+    di "=== DIAGNOSTIC: pred_spend Quartiles (Treated Only) ==="
+    di "Quartile cutoffs: p25=`p25' p50=`p50' p75=`p75'"
+    tabstat pred_spend if year == 1971 & never_treated == 0, by(pred_q) stat(mean sd n)
     di ""
+
+    *--- Save data with classifications for quartile graph
+    tempfile data_with_pred_B
+    save `data_with_pred_B'
 
     *--- Run final event-study with High/Low interaction
     areg `v' ///
@@ -745,6 +877,89 @@ foreach v of local outcomes {
         graphregion(color(white))
 
     graph export "$SchoolSpending/output/alt_test/fig2_`v'_specB_nojk_`balance_label'.png", replace
+
+    *==========================================================================
+    * QUARTILE GRAPH: 4 lines by pred_spend quartile (Spec B)
+    *==========================================================================
+
+    * Reload data with pred_q classification
+    use `data_with_pred_B', clear
+    replace pred_q = 0 if never_treated == 1
+
+    * Run regression with quartile interactions
+    areg `v' ///
+        i.lag_*##i.pred_q i.lead_*##i.pred_q ///
+        i.year [w=school_age_pop] ///
+        if good == 1 & valid_st_gd == 1 & (never_treated == 1 | reform_year < 2000), ///
+        absorb(county_id) vce(cluster county_id)
+
+    * Extract coefficients for each quartile
+    tempfile results_q1 results_q2 results_q3 results_q4
+    postfile hq1 str15 term float t b se str10 grp using `results_q1'
+    postfile hq2 str15 term float t b se str10 grp using `results_q2'
+    postfile hq3 str15 term float t b se str10 grp using `results_q3'
+    postfile hq4 str15 term float t b se str10 grp using `results_q4'
+
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k' + 1.lead_`k'#1.pred_q
+        post hq1 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q1")
+        lincom 1.lead_`k' + 1.lead_`k'#2.pred_q
+        post hq2 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q2")
+        lincom 1.lead_`k' + 1.lead_`k'#3.pred_q
+        post hq3 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q3")
+        lincom 1.lead_`k' + 1.lead_`k'#4.pred_q
+        post hq4 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q4")
+    }
+    post hq1 ("base") (0) (0) (0) ("Q1")
+    post hq2 ("base") (0) (0) (0) ("Q2")
+    post hq3 ("base") (0) (0) (0) ("Q3")
+    post hq4 ("base") (0) (0) (0) ("Q4")
+    forvalues k = 1/17 {
+        lincom 1.lag_`k' + 1.lag_`k'#1.pred_q
+        post hq1 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q1")
+        lincom 1.lag_`k' + 1.lag_`k'#2.pred_q
+        post hq2 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q2")
+        lincom 1.lag_`k' + 1.lag_`k'#3.pred_q
+        post hq3 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q3")
+        lincom 1.lag_`k' + 1.lag_`k'#4.pred_q
+        post hq4 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q4")
+    }
+    postclose hq1
+    postclose hq2
+    postclose hq3
+    postclose hq4
+
+    * Combine all quartiles
+    use `results_q1', clear
+    append using `results_q2'
+    append using `results_q3'
+    append using `results_q4'
+
+    gen ci_lo = b - 1.645*se
+    gen ci_hi = b + 1.645*se
+
+    * Plot 4 lines
+    if "`v'" == "lexp" local ytitle "Δ ln(PPE)"
+    if "`v'" == "lexp_ma" local ytitle "Δ ln(13-yr rolling avg PPE)"
+    if "`v'" == "lexp_ma_strict" local ytitle "Δ ln(13-yr strict rolling avg PPE)"
+
+    twoway ///
+        (line b t if grp == "Q1", lcolor(navy) lwidth(medthick)) ///
+        (line b t if grp == "Q2", lcolor(blue) lwidth(medthick) lpattern(dash)) ///
+        (line b t if grp == "Q3", lcolor(cranberry) lwidth(medthick) lpattern(shortdash)) ///
+        (line b t if grp == "Q4", lcolor(red) lwidth(medthick) lpattern(longdash)), ///
+        yline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+        legend(order(1 "Q1 (lowest pred)" 2 "Q2" 3 "Q3" 4 "Q4 (highest pred)") pos(6) col(4)) ///
+        title("Spec B: By Quartile of Predicted Spending", size(medium)) ///
+        subtitle("Outcome: `v' | Balance: `balance_label' | No Jackknife", size(small) color(gs6)) ///
+        ytitle("`ytitle'") ///
+        xtitle("Years since reform") ///
+        note("Quartiles of pred_spend among treated counties. Averaging window: lags 2-7", size(vsmall) color(gs6)) ///
+        graphregion(color(white))
+
+    graph export "$SchoolSpending/output/alt_test/fig2_`v'_specB_nojk_`balance_label'_quartiles.png", replace
 }
 
 
@@ -878,48 +1093,36 @@ foreach v of local outcomes {
         capture erase pred_temp_B_`v'_`s'.dta
     }
 
-    *--- Classify High vs Low (JJP approach with median fallback)
+    *--- Classify High vs Low (JJP approach: threshold = 0)
+    gen byte high = (pred_spend > 0) if !missing(pred_spend) & never_treated == 0
+    replace high = 0 if never_treated == 1
+
+    *--- Create quartiles of pred_spend among TREATED counties
     tempvar county_pred
     bysort county_id: egen `county_pred' = mean(pred_spend)
 
-    count if `county_pred' > 0 & year == 1971 & never_treated == 0
-    local n_high_0 = r(N)
-    count if `county_pred' <= 0 & year == 1971 & never_treated == 0
-    local n_low_0 = r(N)
+    _pctile `county_pred' if year == 1971 & never_treated == 0, p(25 50 75)
+    local p25 = r(r1)
+    local p50 = r(r2)
+    local p75 = r(r3)
 
-    di "=== CLASSIFICATION CHECK (Spec B Jackknife) ==="
-    di "Using threshold of 0: `n_high_0' High vs `n_low_0' Low"
-
-    local use_median = 0
-    if `n_low_0' == 0 | `n_high_0' == 0 {
-        di "WARNING: Falling back to MEDIAN threshold"
-        local use_median = 1
-    }
-
-    gen byte high = .
-
-    if `use_median' == 1 {
-        sum `county_pred' if year == 1971 & never_treated == 0, detail
-        local threshold = r(p50)
-        di "=== Using MEDIAN threshold = `threshold' ==="
-        replace high = 1 if pred_spend >= `threshold' & never_treated == 0 & !missing(pred_spend)
-        replace high = 0 if pred_spend < `threshold' & never_treated == 0 & !missing(pred_spend)
-    }
-    else {
-        di "=== Using JJP threshold = 0 ==="
-        replace high = 1 if pred_spend > 0 & never_treated == 0 & !missing(pred_spend)
-        replace high = 0 if pred_spend <= 0 & never_treated == 0 & !missing(pred_spend)
-    }
-
-    * Set high=0 for never_treated
-    replace high = 0 if never_treated == 1
+    gen byte pred_q = .
+    replace pred_q = 1 if pred_spend <= `p25' & never_treated == 0
+    replace pred_q = 2 if pred_spend > `p25' & pred_spend <= `p50' & never_treated == 0
+    replace pred_q = 3 if pred_spend > `p50' & pred_spend <= `p75' & never_treated == 0
+    replace pred_q = 4 if pred_spend > `p75' & never_treated == 0
 
     di "=== DIAGNOSTIC: High/Low Classification (Spec B Jackknife) ==="
-    tab high if year == 1971, m
+    tab high never_treated if year == 1971, m
     di ""
-    di "=== DIAGNOSTIC: Mean pred_spend by High/Low Group ==="
-    tabstat pred_spend if year == 1971 & never_treated == 0, by(high) stat(mean sd min max n)
+    di "=== DIAGNOSTIC: pred_spend Quartiles (Treated Only) ==="
+    di "Quartile cutoffs: p25=`p25' p50=`p50' p75=`p75'"
+    tabstat pred_spend if year == 1971 & never_treated == 0, by(pred_q) stat(mean sd n)
     di ""
+
+    *--- Save data with classifications for quartile graph
+    tempfile data_with_pred_B_jk
+    save `data_with_pred_B_jk'
 
     save jk_pred_specB_`v'_`balance_label', replace
 
@@ -988,6 +1191,89 @@ foreach v of local outcomes {
         graphregion(color(white))
 
     graph export "$SchoolSpending/output/alt_test/fig2_`v'_specB_jk_`balance_label'.png", replace
+
+    *==========================================================================
+    * QUARTILE GRAPH: 4 lines by pred_spend quartile (Spec B Jackknife)
+    *==========================================================================
+
+    * Reload data with pred_q classification
+    use `data_with_pred_B_jk', clear
+    replace pred_q = 0 if never_treated == 1
+
+    * Run regression with quartile interactions
+    areg `v' ///
+        i.lag_*##i.pred_q i.lead_*##i.pred_q ///
+        i.year [w=school_age_pop] ///
+        if good == 1 & valid_st_gd == 1 & (never_treated == 1 | reform_year < 2000), ///
+        absorb(county_id) vce(cluster county_id)
+
+    * Extract coefficients for each quartile
+    tempfile results_q1 results_q2 results_q3 results_q4
+    postfile hq1 str15 term float t b se str10 grp using `results_q1'
+    postfile hq2 str15 term float t b se str10 grp using `results_q2'
+    postfile hq3 str15 term float t b se str10 grp using `results_q3'
+    postfile hq4 str15 term float t b se str10 grp using `results_q4'
+
+    forvalues k = 5(-1)1 {
+        lincom 1.lead_`k' + 1.lead_`k'#1.pred_q
+        post hq1 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q1")
+        lincom 1.lead_`k' + 1.lead_`k'#2.pred_q
+        post hq2 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q2")
+        lincom 1.lead_`k' + 1.lead_`k'#3.pred_q
+        post hq3 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q3")
+        lincom 1.lead_`k' + 1.lead_`k'#4.pred_q
+        post hq4 ("lead`k'") (-`k') (r(estimate)) (r(se)) ("Q4")
+    }
+    post hq1 ("base") (0) (0) (0) ("Q1")
+    post hq2 ("base") (0) (0) (0) ("Q2")
+    post hq3 ("base") (0) (0) (0) ("Q3")
+    post hq4 ("base") (0) (0) (0) ("Q4")
+    forvalues k = 1/17 {
+        lincom 1.lag_`k' + 1.lag_`k'#1.pred_q
+        post hq1 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q1")
+        lincom 1.lag_`k' + 1.lag_`k'#2.pred_q
+        post hq2 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q2")
+        lincom 1.lag_`k' + 1.lag_`k'#3.pred_q
+        post hq3 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q3")
+        lincom 1.lag_`k' + 1.lag_`k'#4.pred_q
+        post hq4 ("lag`k'") (`k') (r(estimate)) (r(se)) ("Q4")
+    }
+    postclose hq1
+    postclose hq2
+    postclose hq3
+    postclose hq4
+
+    * Combine all quartiles
+    use `results_q1', clear
+    append using `results_q2'
+    append using `results_q3'
+    append using `results_q4'
+
+    gen ci_lo = b - 1.645*se
+    gen ci_hi = b + 1.645*se
+
+    * Plot 4 lines
+    if "`v'" == "lexp" local ytitle "Δ ln(PPE)"
+    if "`v'" == "lexp_ma" local ytitle "Δ ln(13-yr rolling avg PPE)"
+    if "`v'" == "lexp_ma_strict" local ytitle "Δ ln(13-yr strict rolling avg PPE)"
+
+    twoway ///
+        (line b t if grp == "Q1", lcolor(navy) lwidth(medthick)) ///
+        (line b t if grp == "Q2", lcolor(blue) lwidth(medthick) lpattern(dash)) ///
+        (line b t if grp == "Q3", lcolor(cranberry) lwidth(medthick) lpattern(shortdash)) ///
+        (line b t if grp == "Q4", lcolor(red) lwidth(medthick) lpattern(longdash)), ///
+        yline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(0, lcolor(gs10) lpattern(dash)) ///
+        xline(2 7, lcolor(gs12) lwidth(vthin)) ///
+        legend(order(1 "Q1 (lowest pred)" 2 "Q2" 3 "Q3" 4 "Q4 (highest pred)") pos(6) col(4)) ///
+        title("Spec B: By Quartile of Predicted Spending (Jackknife)", size(medium)) ///
+        subtitle("Outcome: `v' | Balance: `balance_label' | Leave-One-State-Out", size(small) color(gs6)) ///
+        ytitle("`ytitle'") ///
+        xtitle("Years since reform") ///
+        note("Quartiles of pred_spend among treated counties. Averaging window: lags 2-7", size(vsmall) color(gs6)) ///
+        graphregion(color(white))
+
+    graph export "$SchoolSpending/output/alt_test/fig2_`v'_specB_jk_`balance_label'_quartiles.png", replace
 }
 
 
@@ -1003,11 +1289,17 @@ di "Balance method: `balance_label'"
 di ""
 di "Outputs saved to: $SchoolSpending/output/alt_test/"
 di ""
-di "Files generated:"
+di "High/Low graphs (JJP Figure 2 style):"
 di "  - fig2_{outcome}_specA_nojk_`balance_label'.png"
 di "  - fig2_{outcome}_specA_jk_`balance_label'.png"
 di "  - fig2_{outcome}_specB_nojk_`balance_label'.png"
 di "  - fig2_{outcome}_specB_jk_`balance_label'.png"
+di ""
+di "Quartile graphs (4 lines by pred_spend quartile):"
+di "  - fig2_{outcome}_specA_nojk_`balance_label'_quartiles.png"
+di "  - fig2_{outcome}_specA_jk_`balance_label'_quartiles.png"
+di "  - fig2_{outcome}_specB_nojk_`balance_label'_quartiles.png"
+di "  - fig2_{outcome}_specB_jk_`balance_label'_quartiles.png"
 di ""
 di "Outcomes: lexp, lexp_ma, lexp_ma_strict"
 di "=============================================="
