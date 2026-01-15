@@ -226,17 +226,9 @@ foreach v of local outcomes {
 
     *--- Create quartiles of pred_spend among TREATED counties
     *    This provides finer heterogeneity even when all pred_spend have same sign
-    *    NOTE: Using xtile instead of _pctile because pred_spend may have few discrete
-    *    values (one per pre_q quartile), which causes _pctile boundary issues
-    preserve
-    keep if year == 1971 & never_treated == 0
-    keep county_id pred_spend
-    xtile pred_q = pred_spend, nq(4)
-    tempfile qcuts
-    save `qcuts'
-    restore
-
-    merge m:1 county_id using `qcuts', keepusing(pred_q) nogen
+    *    NOTE: Using egen group() because pred_spend has exactly 4 discrete values
+    *    (one per pre_q quartile), so we rank them 1-4 by value
+    egen pred_q = group(pred_spend) if never_treated == 0
 
     *--- DIAGNOSTIC: Show High/Low and Quartile classification
     di "=== DIAGNOSTIC: High/Low Classification ==="
@@ -489,16 +481,8 @@ foreach v of local outcomes {
     replace high = 0 if never_treated == 1
 
     *--- Create quartiles of pred_spend among TREATED counties
-    *    Using xtile to properly handle ties in discrete pred_spend values
-    preserve
-    keep if year == 1971 & never_treated == 0
-    keep county_id pred_spend
-    xtile pred_q = pred_spend, nq(4)
-    tempfile qcuts
-    save `qcuts'
-    restore
-
-    merge m:1 county_id using `qcuts', keepusing(pred_q) nogen
+    *    Using egen group() because pred_spend has exactly 4 discrete values
+    egen pred_q = group(pred_spend) if never_treated == 0
 
     di "=== DIAGNOSTIC: High/Low Classification (Jackknife) ==="
     tab high never_treated if year == 1971, m
@@ -778,16 +762,8 @@ foreach v of local outcomes {
     replace high = 0 if never_treated == 1
 
     *--- Create quartiles of pred_spend among TREATED counties
-    *    Using xtile to properly handle ties in discrete pred_spend values
-    preserve
-    keep if year == 1971 & never_treated == 0
-    keep county_id pred_spend
-    xtile pred_q = pred_spend, nq(4)
-    tempfile qcuts
-    save `qcuts'
-    restore
-
-    merge m:1 county_id using `qcuts', keepusing(pred_q) nogen
+    *    Using egen group() because pred_spend has exactly 4 discrete values
+    egen pred_q = group(pred_spend) if never_treated == 0
 
     di "=== DIAGNOSTIC: High/Low Classification (Spec B) ==="
     tab high never_treated if year == 1971, m
@@ -1086,16 +1062,8 @@ foreach v of local outcomes {
     replace high = 0 if never_treated == 1
 
     *--- Create quartiles of pred_spend among TREATED counties
-    *    Using xtile to properly handle ties in discrete pred_spend values
-    preserve
-    keep if year == 1971 & never_treated == 0
-    keep county_id pred_spend
-    xtile pred_q = pred_spend, nq(4)
-    tempfile qcuts
-    save `qcuts'
-    restore
-
-    merge m:1 county_id using `qcuts', keepusing(pred_q) nogen
+    *    Using egen group() because pred_spend has exactly 4 discrete values
+    egen pred_q = group(pred_spend) if never_treated == 0
 
     di "=== DIAGNOSTIC: High/Low Classification (Spec B Jackknife) ==="
     tab high never_treated if year == 1971, m
