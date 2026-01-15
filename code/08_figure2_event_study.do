@@ -226,20 +226,17 @@ foreach v of local outcomes {
 
     *--- Create quartiles of pred_spend among TREATED counties
     *    This provides finer heterogeneity even when all pred_spend have same sign
-    tempvar county_pred
-    bysort county_id: egen `county_pred' = mean(pred_spend)
+    *    NOTE: Using xtile instead of _pctile because pred_spend may have few discrete
+    *    values (one per pre_q quartile), which causes _pctile boundary issues
+    preserve
+    keep if year == 1971 & never_treated == 0
+    keep county_id pred_spend
+    xtile pred_q = pred_spend, nq(4)
+    tempfile qcuts
+    save `qcuts'
+    restore
 
-    * Calculate quartile cutoffs among treated only
-    _pctile `county_pred' if year == 1971 & never_treated == 0, p(25 50 75)
-    local p25 = r(r1)
-    local p50 = r(r2)
-    local p75 = r(r3)
-
-    gen byte pred_q = .
-    replace pred_q = 1 if pred_spend <= `p25' & never_treated == 0
-    replace pred_q = 2 if pred_spend > `p25' & pred_spend <= `p50' & never_treated == 0
-    replace pred_q = 3 if pred_spend > `p50' & pred_spend <= `p75' & never_treated == 0
-    replace pred_q = 4 if pred_spend > `p75' & never_treated == 0
+    merge m:1 county_id using `qcuts', keepusing(pred_q) nogen
 
     *--- DIAGNOSTIC: Show High/Low and Quartile classification
     di "=== DIAGNOSTIC: High/Low Classification ==="
@@ -249,7 +246,6 @@ foreach v of local outcomes {
     tabstat pred_spend if year == 1971, by(high) stat(mean sd n)
     di ""
     di "=== DIAGNOSTIC: pred_spend Quartiles (Treated Only) ==="
-    di "Quartile cutoffs: p25=`p25' p50=`p50' p75=`p75'"
     tabstat pred_spend if year == 1971 & never_treated == 0, by(pred_q) stat(mean sd n)
     di ""
 
@@ -493,25 +489,21 @@ foreach v of local outcomes {
     replace high = 0 if never_treated == 1
 
     *--- Create quartiles of pred_spend among TREATED counties
-    tempvar county_pred
-    bysort county_id: egen `county_pred' = mean(pred_spend)
+    *    Using xtile to properly handle ties in discrete pred_spend values
+    preserve
+    keep if year == 1971 & never_treated == 0
+    keep county_id pred_spend
+    xtile pred_q = pred_spend, nq(4)
+    tempfile qcuts
+    save `qcuts'
+    restore
 
-    _pctile `county_pred' if year == 1971 & never_treated == 0, p(25 50 75)
-    local p25 = r(r1)
-    local p50 = r(r2)
-    local p75 = r(r3)
-
-    gen byte pred_q = .
-    replace pred_q = 1 if pred_spend <= `p25' & never_treated == 0
-    replace pred_q = 2 if pred_spend > `p25' & pred_spend <= `p50' & never_treated == 0
-    replace pred_q = 3 if pred_spend > `p50' & pred_spend <= `p75' & never_treated == 0
-    replace pred_q = 4 if pred_spend > `p75' & never_treated == 0
+    merge m:1 county_id using `qcuts', keepusing(pred_q) nogen
 
     di "=== DIAGNOSTIC: High/Low Classification (Jackknife) ==="
     tab high never_treated if year == 1971, m
     di ""
     di "=== DIAGNOSTIC: pred_spend Quartiles (Treated Only) ==="
-    di "Quartile cutoffs: p25=`p25' p50=`p50' p75=`p75'"
     tabstat pred_spend if year == 1971 & never_treated == 0, by(pred_q) stat(mean sd n)
     di ""
 
@@ -786,25 +778,21 @@ foreach v of local outcomes {
     replace high = 0 if never_treated == 1
 
     *--- Create quartiles of pred_spend among TREATED counties
-    tempvar county_pred
-    bysort county_id: egen `county_pred' = mean(pred_spend)
+    *    Using xtile to properly handle ties in discrete pred_spend values
+    preserve
+    keep if year == 1971 & never_treated == 0
+    keep county_id pred_spend
+    xtile pred_q = pred_spend, nq(4)
+    tempfile qcuts
+    save `qcuts'
+    restore
 
-    _pctile `county_pred' if year == 1971 & never_treated == 0, p(25 50 75)
-    local p25 = r(r1)
-    local p50 = r(r2)
-    local p75 = r(r3)
-
-    gen byte pred_q = .
-    replace pred_q = 1 if pred_spend <= `p25' & never_treated == 0
-    replace pred_q = 2 if pred_spend > `p25' & pred_spend <= `p50' & never_treated == 0
-    replace pred_q = 3 if pred_spend > `p50' & pred_spend <= `p75' & never_treated == 0
-    replace pred_q = 4 if pred_spend > `p75' & never_treated == 0
+    merge m:1 county_id using `qcuts', keepusing(pred_q) nogen
 
     di "=== DIAGNOSTIC: High/Low Classification (Spec B) ==="
     tab high never_treated if year == 1971, m
     di ""
     di "=== DIAGNOSTIC: pred_spend Quartiles (Treated Only) ==="
-    di "Quartile cutoffs: p25=`p25' p50=`p50' p75=`p75'"
     tabstat pred_spend if year == 1971 & never_treated == 0, by(pred_q) stat(mean sd n)
     di ""
 
@@ -1098,25 +1086,21 @@ foreach v of local outcomes {
     replace high = 0 if never_treated == 1
 
     *--- Create quartiles of pred_spend among TREATED counties
-    tempvar county_pred
-    bysort county_id: egen `county_pred' = mean(pred_spend)
+    *    Using xtile to properly handle ties in discrete pred_spend values
+    preserve
+    keep if year == 1971 & never_treated == 0
+    keep county_id pred_spend
+    xtile pred_q = pred_spend, nq(4)
+    tempfile qcuts
+    save `qcuts'
+    restore
 
-    _pctile `county_pred' if year == 1971 & never_treated == 0, p(25 50 75)
-    local p25 = r(r1)
-    local p50 = r(r2)
-    local p75 = r(r3)
-
-    gen byte pred_q = .
-    replace pred_q = 1 if pred_spend <= `p25' & never_treated == 0
-    replace pred_q = 2 if pred_spend > `p25' & pred_spend <= `p50' & never_treated == 0
-    replace pred_q = 3 if pred_spend > `p50' & pred_spend <= `p75' & never_treated == 0
-    replace pred_q = 4 if pred_spend > `p75' & never_treated == 0
+    merge m:1 county_id using `qcuts', keepusing(pred_q) nogen
 
     di "=== DIAGNOSTIC: High/Low Classification (Spec B Jackknife) ==="
     tab high never_treated if year == 1971, m
     di ""
     di "=== DIAGNOSTIC: pred_spend Quartiles (Treated Only) ==="
-    di "Quartile cutoffs: p25=`p25' p50=`p50' p75=`p75'"
     tabstat pred_spend if year == 1971 & never_treated == 0, by(pred_q) stat(mean sd n)
     di ""
 
