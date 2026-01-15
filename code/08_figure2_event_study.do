@@ -5,7 +5,7 @@ Figure 2 Event-Study Regressions (Heterogeneity Analysis)
 File: 08_figure2_event_study.do
 Author: Myles Owens
 Institution: Hoover Institution, Stanford University
-Date: 2026-01-15
+Date: 2026-01-15 (Fixed High/Low classification bug)
 
 --------------------------------------------------------------------------------
 OVERVIEW
@@ -65,7 +65,19 @@ Predicted spending (averaging over lags 2-7):
   Spec A: pred_spend = avg_main + avg_ppe(pre_q)
   Spec B: pred_spend = avg_main + avg_ppe(pre_q) + avg_inc(inc_q) + avg_ref(reform) + avg_triple(inc_q x reform)
 
-Classification: High = (pred_spend > 0), Low = (pred_spend <= 0)
+Classification (FIXED 2026-01-15):
+  - JJP (2016) approach: High = pred_spend > 0, Low = pred_spend <= 0
+    "Roughly two thirds of districts in reform states had Spendd > 0"
+  - If threshold of 0 produces meaningful split (both High and Low have counties),
+    use the JJP approach
+  - If all treated counties have same sign (no variation around 0), fall back to
+    median threshold to ensure meaningful heterogeneity split
+  - Never-treated counties: assigned to Low group for regression (they serve as
+    controls since their lag_*/lead_* are always 0)
+
+  NOTE: Original code always used threshold of 0, but if all pred_spend > 0 (due to
+  large positive avg_main), this classifies ALL treated as High, making High vs Low
+  essentially Treated vs Control with overlapping lines.
 
 Final event-study:
   areg outcome i.lag_*##i.high i.lead_*##i.high i.year [w=school_age_pop], absorb(county_id)
@@ -161,18 +173,101 @@ foreach v of local outcomes {
         egen avg_ppe_`q' = rowmean(ppe_2_`q' ppe_3_`q' ppe_4_`q' ppe_5_`q' ppe_6_`q' ppe_7_`q')
     }
 
+    *--- DIAGNOSTIC: Show extracted coefficient values
+    di ""
+    di "=== DIAGNOSTIC: Extracted Coefficients ==="
+    sum avg_main if _n == 1
+    local avg_main_val = avg_main[1]
+    di "avg_main (base lag effect for Q1) = `avg_main_val'"
+    forvalues q = 2/4 {
+        local avg_ppe_val = avg_ppe_`q'[1]
+        di "avg_ppe_`q' (additional effect for Q`q') = `avg_ppe_val'"
+    }
+    di ""
+
     *--- Calculate predicted spending increase
+    *    For Q1: pred_spend = avg_main (base effect)
+    *    For Q2: pred_spend = avg_main + avg_ppe_2
+    *    For Q3: pred_spend = avg_main + avg_ppe_3
+    *    For Q4: pred_spend = avg_main + avg_ppe_4
     gen pred_spend = avg_main if !missing(pre_q)
 
     forvalues q = 2/4 {
         replace pred_spend = pred_spend + avg_ppe_`q' if pre_q == `q'
     }
 
+    *--- DIAGNOSTIC: Show pred_spend distribution by pre_q and treatment status
+    di "=== DIAGNOSTIC: Predicted Spending by Quartile ==="
+    tabstat pred_spend if year == 1971 & never_treated == 0, by(pre_q) stat(mean sd min max n)
+    di ""
+    di "=== DIAGNOSTIC: Predicted Spending - Treated vs Control ==="
+    tabstat pred_spend if year == 1971, by(never_treated) stat(mean sd min max n)
+    di ""
+
     *--- Classify High vs Low
-    gen byte high = (pred_spend > 0) if !missing(pred_spend) & never_treated == 0
+    *    JJP (2016) uses threshold of 0: High = pred_spend > 0, Low = pred_spend <= 0
+    *    They found roughly 2/3 of treated districts had pred_spend > 0
+    *
+    *    If all treated have same sign (no variation), fall back to median threshold
+
+    * Step 1: Check if there's variation around 0 among treated
+    tempvar county_pred
+    bysort county_id: egen `county_pred' = mean(pred_spend)  // county-level pred_spend
+
+    count if `county_pred' > 0 & year == 1971 & never_treated == 0
+    local n_high_0 = r(N)
+    count if `county_pred' <= 0 & year == 1971 & never_treated == 0
+    local n_low_0 = r(N)
+    count if year == 1971 & never_treated == 0
+    local n_total = r(N)
+
+    di "=== CLASSIFICATION CHECK ==="
+    di "Using threshold of 0: `n_high_0' High vs `n_low_0' Low among `n_total' treated counties"
+    di "High pct: " %5.1f 100*`n_high_0'/`n_total' "%"
+
+    * Step 2: Decide on threshold
+    *    Use 0 if it produces meaningful split (JJP approach)
+    *    Fall back to median if all treated have same sign
+    local use_median = 0
+    if `n_low_0' == 0 | `n_high_0' == 0 {
+        di "WARNING: Threshold of 0 produces no variation. All treated have same sign."
+        di "         Falling back to MEDIAN threshold for meaningful split."
+        local use_median = 1
+    }
+
+    * Step 3: Apply chosen threshold
+    gen byte high = .
+
+    if `use_median' == 1 {
+        sum `county_pred' if year == 1971 & never_treated == 0, detail
+        local threshold = r(p50)
+        di "=== Using MEDIAN threshold = `threshold' ==="
+        replace high = 1 if pred_spend >= `threshold' & never_treated == 0 & !missing(pred_spend)
+        replace high = 0 if pred_spend < `threshold' & never_treated == 0 & !missing(pred_spend)
+    }
+    else {
+        local threshold = 0
+        di "=== Using JJP threshold = 0 ==="
+        replace high = 1 if pred_spend > 0 & never_treated == 0 & !missing(pred_spend)
+        replace high = 0 if pred_spend <= 0 & never_treated == 0 & !missing(pred_spend)
+    }
+    di ""
+
+    *--- DIAGNOSTIC: Verify High/Low classification
+    di "=== DIAGNOSTIC: High/Low Classification (Treated Only) ==="
+    tab high if year == 1971, m
+    di ""
+    di "=== DIAGNOSTIC: Mean pred_spend by High/Low Group ==="
+    tabstat pred_spend if year == 1971 & never_treated == 0, by(high) stat(mean sd min max n)
+    di ""
+
+    *--- Set high=0 for never_treated so they're included in regression
+    *    They serve as controls for both groups (their lag_*/lead_* are always 0)
     replace high = 0 if never_treated == 1
 
-    tab high if year == 1971, m
+    di "=== DIAGNOSTIC: Final High/Low Distribution (including never_treated as high=0) ==="
+    tab high never_treated if year == 1971, m
+    di ""
 
     *--- Run final event-study with High/Low interaction
     areg `v' ///
@@ -320,11 +415,48 @@ foreach v of local outcomes {
         capture erase pred_temp_A_`v'_`s'.dta
     }
 
-    *--- Classify High vs Low
-    gen byte high = (pred_spend > 0) if !missing(pred_spend) & never_treated == 0
+    *--- Classify High vs Low (JJP approach with median fallback)
+    tempvar county_pred
+    bysort county_id: egen `county_pred' = mean(pred_spend)
+
+    count if `county_pred' > 0 & year == 1971 & never_treated == 0
+    local n_high_0 = r(N)
+    count if `county_pred' <= 0 & year == 1971 & never_treated == 0
+    local n_low_0 = r(N)
+
+    di "=== CLASSIFICATION CHECK (Jackknife) ==="
+    di "Using threshold of 0: `n_high_0' High vs `n_low_0' Low"
+
+    local use_median = 0
+    if `n_low_0' == 0 | `n_high_0' == 0 {
+        di "WARNING: Falling back to MEDIAN threshold"
+        local use_median = 1
+    }
+
+    gen byte high = .
+
+    if `use_median' == 1 {
+        sum `county_pred' if year == 1971 & never_treated == 0, detail
+        local threshold = r(p50)
+        di "=== Using MEDIAN threshold = `threshold' ==="
+        replace high = 1 if pred_spend >= `threshold' & never_treated == 0 & !missing(pred_spend)
+        replace high = 0 if pred_spend < `threshold' & never_treated == 0 & !missing(pred_spend)
+    }
+    else {
+        di "=== Using JJP threshold = 0 ==="
+        replace high = 1 if pred_spend > 0 & never_treated == 0 & !missing(pred_spend)
+        replace high = 0 if pred_spend <= 0 & never_treated == 0 & !missing(pred_spend)
+    }
+
+    * Set high=0 for never_treated
     replace high = 0 if never_treated == 1
 
+    di "=== DIAGNOSTIC: High/Low Classification (Jackknife) ==="
     tab high if year == 1971, m
+    di ""
+    di "=== DIAGNOSTIC: Mean pred_spend by High/Low Group ==="
+    tabstat pred_spend if year == 1971 & never_treated == 0, by(high) stat(mean sd min max n)
+    di ""
 
     save jk_pred_specA_`v'_`balance_label', replace
 
@@ -500,11 +632,53 @@ foreach v of local outcomes {
         }
     }
 
-    *--- Classify High vs Low
-    gen byte high = (pred_spend > 0) if !missing(pred_spend) & never_treated == 0
+    *--- DIAGNOSTIC: Show pred_spend distribution
+    di "=== DIAGNOSTIC: Predicted Spending Distribution (Spec B) ==="
+    tabstat pred_spend if year == 1971 & never_treated == 0, by(pre_q) stat(mean sd min max n)
+    di ""
+
+    *--- Classify High vs Low (JJP approach with median fallback)
+    tempvar county_pred
+    bysort county_id: egen `county_pred' = mean(pred_spend)
+
+    count if `county_pred' > 0 & year == 1971 & never_treated == 0
+    local n_high_0 = r(N)
+    count if `county_pred' <= 0 & year == 1971 & never_treated == 0
+    local n_low_0 = r(N)
+
+    di "=== CLASSIFICATION CHECK (Spec B) ==="
+    di "Using threshold of 0: `n_high_0' High vs `n_low_0' Low"
+
+    local use_median = 0
+    if `n_low_0' == 0 | `n_high_0' == 0 {
+        di "WARNING: Falling back to MEDIAN threshold"
+        local use_median = 1
+    }
+
+    gen byte high = .
+
+    if `use_median' == 1 {
+        sum `county_pred' if year == 1971 & never_treated == 0, detail
+        local threshold = r(p50)
+        di "=== Using MEDIAN threshold = `threshold' ==="
+        replace high = 1 if pred_spend >= `threshold' & never_treated == 0 & !missing(pred_spend)
+        replace high = 0 if pred_spend < `threshold' & never_treated == 0 & !missing(pred_spend)
+    }
+    else {
+        di "=== Using JJP threshold = 0 ==="
+        replace high = 1 if pred_spend > 0 & never_treated == 0 & !missing(pred_spend)
+        replace high = 0 if pred_spend <= 0 & never_treated == 0 & !missing(pred_spend)
+    }
+
+    * Set high=0 for never_treated
     replace high = 0 if never_treated == 1
 
+    di "=== DIAGNOSTIC: High/Low Classification (Spec B) ==="
     tab high if year == 1971, m
+    di ""
+    di "=== DIAGNOSTIC: Mean pred_spend by High/Low Group ==="
+    tabstat pred_spend if year == 1971 & never_treated == 0, by(high) stat(mean sd min max n)
+    di ""
 
     *--- Run final event-study with High/Low interaction
     areg `v' ///
@@ -704,11 +878,48 @@ foreach v of local outcomes {
         capture erase pred_temp_B_`v'_`s'.dta
     }
 
-    *--- Classify High vs Low
-    gen byte high = (pred_spend > 0) if !missing(pred_spend) & never_treated == 0
+    *--- Classify High vs Low (JJP approach with median fallback)
+    tempvar county_pred
+    bysort county_id: egen `county_pred' = mean(pred_spend)
+
+    count if `county_pred' > 0 & year == 1971 & never_treated == 0
+    local n_high_0 = r(N)
+    count if `county_pred' <= 0 & year == 1971 & never_treated == 0
+    local n_low_0 = r(N)
+
+    di "=== CLASSIFICATION CHECK (Spec B Jackknife) ==="
+    di "Using threshold of 0: `n_high_0' High vs `n_low_0' Low"
+
+    local use_median = 0
+    if `n_low_0' == 0 | `n_high_0' == 0 {
+        di "WARNING: Falling back to MEDIAN threshold"
+        local use_median = 1
+    }
+
+    gen byte high = .
+
+    if `use_median' == 1 {
+        sum `county_pred' if year == 1971 & never_treated == 0, detail
+        local threshold = r(p50)
+        di "=== Using MEDIAN threshold = `threshold' ==="
+        replace high = 1 if pred_spend >= `threshold' & never_treated == 0 & !missing(pred_spend)
+        replace high = 0 if pred_spend < `threshold' & never_treated == 0 & !missing(pred_spend)
+    }
+    else {
+        di "=== Using JJP threshold = 0 ==="
+        replace high = 1 if pred_spend > 0 & never_treated == 0 & !missing(pred_spend)
+        replace high = 0 if pred_spend <= 0 & never_treated == 0 & !missing(pred_spend)
+    }
+
+    * Set high=0 for never_treated
     replace high = 0 if never_treated == 1
 
+    di "=== DIAGNOSTIC: High/Low Classification (Spec B Jackknife) ==="
     tab high if year == 1971, m
+    di ""
+    di "=== DIAGNOSTIC: Mean pred_spend by High/Low Group ==="
+    tabstat pred_spend if year == 1971 & never_treated == 0, by(high) stat(mean sd min max n)
+    di ""
 
     save jk_pred_specB_`v'_`balance_label', replace
 
