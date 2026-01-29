@@ -12,14 +12,14 @@ The original JJP (2016) paper and its Online Appendix describe the following key
 
 - **Data Sources**:
   - *INDFIN Historical Database* (FY 1967,1969–1991) — standardized local government finances including school districts.
-  - *Common COre of Data (CCD) NCES F-33 Finance Survey* (post-1992 annual continuation).
+  - *NCES F-33 Finance Survey* (post-1992 annual continuation).
   - *1969–70 School District Geographic Reference File (GRF)* for linking Census tracts to pre-reform district geographies.
 
 - **Identification Strategy**:
   - Court-ordered **School Finance Reforms (SFRs)** serve as exogenous shocks.
   - The number of **years of exposure** to initial SFR is the treatment variable.
   - Event-study and 2SLS models estimate causal impacts on spending and individual outcomes.
-  - Data on court rulings comes from a preceding NBER working paper: https://www.nber.org/papers/w20118
+  - Data on court rulings comes from a preceding NBER working paper(Table D2): https://www.nber.org/papers/w20118
 
 
 Specifically, we aim to:
@@ -276,7 +276,7 @@ If referencing the original study:
 - Review individual .do file headers for specific implementation details
 
 **Original paper and data sources:**
-- JJP (2016) Online Appendix: Detailed data description and reform coding
+- JJP (2016): https://academic.oup.com/qje/article-abstract/131/1/157/2461148
 - NCES Common Core of Data: https://nces.ed.gov/ccd/
 - FRED CPI-U Data: https://fred.stlouisfed.org/
 - ICPSR GRF 1969: Study #03515 (Geographic Reference Files)
