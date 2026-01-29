@@ -34,13 +34,13 @@ INPUTS:
       └─> Fixed-width ASCII file with tract-district-population linkage
   - $SchoolSpending/data/grf_tracts.dta
       └─> Pre-built tract × LEAID with allocated population weights
-  - $SchoolSpending/data/f33_indfin_grf_canon.dta  (from 01_build_district_panel.do)
+  - $SchoolSpending/data/dist_panel.dta  (from 01_build_district_panel.do)
       └─> District-year panel with spending (pp_exp) and quality flags
 
 OUTPUTS:
   - grf_block.dta
       └─> Raw GRF-derived geographic IDs: tract70, gisjoin2, LEAID
-  - tracts_panel_canon.dta  ★ MAIN OUTPUT ★
+  - tract_panel.dta  ★ MAIN OUTPUT ★
       └─> Tract-year panel with: tract70, LEAID, year4, pp_exp, good_tract
           Coverage: 1967-2019 for all tracts in 1970 Census
 
@@ -68,9 +68,9 @@ KEY ASSUMPTIONS & SENSITIVE STEPS:
 
 DEPENDENCIES:
   • Requires: global SchoolSpending "C:\Users\...\path"
-  • Requires: 01_build_district_panel.do must run first (creates f33_indfin_grf_canon.dta)
+  • Requires: 01_build_district_panel.do must run first (creates dist_panel.dta)
   • Stata packages: None (base Stata only)
-  • Downstream: 03_adjust_inflation.do uses tracts_panel_canon.dta
+  • Downstream: 03_adjust_inflation.do uses tract_panel.dta
 
 VALIDATION CHECKS TO RUN:
   - Uniqueness: duplicates report tract70 year4 (should be 0)
@@ -261,7 +261,7 @@ collapse (sum) alloc_pop, by(tract70 sdtc LEAID)
 
 gen state_fips = substr(LEAID,1,2) // state fip code
 
-save grf_tract_canon,replace // set of all tract x district x district type combos
+save xwalk_tract_dist,replace // set of all tract x district x district type combos
 /*
 * Unique tract count per district (ignores duplicate tract–district rows)
 bysort LEAID: egen tracts_per_district = nvals(tract70)
@@ -295,13 +295,13 @@ display as text "Districts with exactly one tract: " as result `one' ///
 
 * 1)--------------------------------- Build tag BEFORE assigning LEAIDs to tract
 preserve
-    use grf_tract_canon, clear
+    use xwalk_tract_dist, clear
     keep LEAID tract70 sdtc alloc_pop
     tempfile xwalk_multi
     save `xwalk_multi'
 
 * 2)--------------------------------- Load district-year panel
-use "$SchoolSpending/data/f33_indfin_grf_canon.dta", clear
+use "$SchoolSpending/data/dist_panel.dta", clear
 
 rename good_govid_baseline        good_govid
 rename good_govid_baseline_6771   good_govid_6771
@@ -345,7 +345,7 @@ use `tract_flag',clear
 *--------------------------------------------------------------*
 
 * 1)--------------------------------- Filter and pick highest-population LEAID per tract-sdtc
-use grf_tract_canon, clear
+use xwalk_tract_dist, clear
 drop if sdtc == 4 // kick out vocational districts
 
 preserve
@@ -370,7 +370,7 @@ save `xwalk', replace // Crosswalk of LEAID to Districts
 *--------------------------------------------------------------*
 
 * 1)--------------------------------- Load district-year spending panel
-use "$SchoolSpending/data/f33_indfin_grf_canon.dta", clear
+use "$SchoolSpending/data/dist_panel.dta", clear
 
 * 2)--------------------------------- Explode to tract-year level
 joinby LEAID using `xwalk', unmatched(both)
@@ -400,7 +400,7 @@ keep LEAID GOVID year4 pp_exp good_tract sdtc state_fips gisjoin2 coc70 tract70 
     good_tract_1972 good_tract_6771 good_tract_7072
 
 gen str5 county_code = state_fips + coc70
-save tracts_panel_canon,replace
+save tract_panel,replace
 	
 
 
@@ -408,6 +408,16 @@ save tract_no_tract,replace
 summarize
 
 
+* Check tract counts
+use "$SchoolSpending/data/xwalk_tract_dist.dta", clear
+bysort tract70: keep if _n == 1
+count
+di "Unique tracts in xwalk_tract_dist"
+
+use "$SchoolSpending/data/tract_panel.dta", clear  
+bysort tract70: keep if _n == 1
+count
+di "Unique tracts in final panel"
 
 
 

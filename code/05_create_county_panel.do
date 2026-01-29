@@ -24,7 +24,7 @@ WHY THIS MATTERS (Workflow Context):
   Output is the MAIN ANALYSIS FILE used in all event-study regressions.
 
 INPUTS (5 Main Inputs):
-  1. f33_indfin_grf_canon.dta  (from 01_build_district_panel.do)
+  1. dist_panel.dta  (from 01_build_district_panel.do)
       └─> District-year panel with spending, quality flags, identifiers
   
   2. grf_tracts.dta  
@@ -40,7 +40,7 @@ INPUTS (5 Main Inputs):
       └─> State-level reform years and reform types (equity/adequacy/mixed)
 
 OUTPUTS:
-  - interp_d.dta  ★★ PRIMARY ANALYSIS FILE ★★
+  - dist_panel_interp.dta  ★★ PRIMARY ANALYSIS FILE ★★
       └─> County-year panel (1967-2019) with:
           • county (5-char identifier)
           • year4 (End year of fy)
@@ -61,7 +61,7 @@ DEPENDENCIES:
       - fred (for CPI download)
       - ipolate (built-in, for interpolation)
   • Excel file: tabula-tabled2.xlsx must be in data directory
-  • Downstream: ALL analysis files (11_*.do, balance.do, etc.) use interp_d.dta
+  • Downstream: ALL analysis files (11_*.do, balance.do, etc.) use dist_panel_interp.dta
 
 ==============================================================================*/
 *==============================================================*
@@ -77,7 +77,7 @@ clear
 set more off
 cd "$SchoolSpending/data"
 
-use f33_indfin_grf_canon,clear
+use dist_panel,clear
 
 * 2)--------------------------------- Convert LEAID to numeric for time-series operations
 encode LEAID, gen(LEAID_num) // LEAID is a string and needs to be changed for interpolation
@@ -149,7 +149,7 @@ rename enroll2 enrollment
 
 * 2)--------------------------------- Save district-level interpolated panel
 keep LEAID GOVID  year4 pp_exp LEAID_num enrollment
-save interp_d, replace // This is a district level panel of interpolated spending
+save dist_panel_interp, replace // This is a district level panel of interpolated spending
 
 /*
 *SPREADSHEET - Years where ALL pp_exp is missing by state
@@ -184,7 +184,7 @@ drop has_pp_exp
 *--------------------------------------------------------------*
 
 * 1)--------------------------------- Load tract-district crosswalk
-use "$SchoolSpending/data/grf_tract_canon", clear // list of all tracts
+use "$SchoolSpending/data/xwalk_tract_dist", clear // list of all tracts
 gen coc70 = substr(tract70,3,3)
 
 * Guard against . sorting to the top
@@ -214,7 +214,7 @@ save `xwalk', replace
 *--------------------------------------------------------------*
 
 * 1)--------------------------------- Load interpolated district-year spending
-use "$SchoolSpending/data/interp_d.dta", clear
+use "$SchoolSpending/data/dist_panel_interp.dta", clear
 
 * 2)--------------------------------- Explode to tract-year level
 joinby LEAID using `xwalk', unmatched(both) _merge(join_merge)
@@ -372,7 +372,7 @@ gen str13 gisjoin2 = substr(tract70, 1, 2) + "0" + substr(tract70, 3, 3) + "0" +
 gen tract_merge = substr(tract70,1,9)
 drop _merge
 *rename pp_exp pp_exp_real // remove later
-save "$SchoolSpending/data/interp_t_real.dta", replace
+save "$SchoolSpending/data/tract_panel_interp_real.dta", replace
 
 *==============================================================*
 * III) Turn tract panel into county panel
@@ -472,7 +472,7 @@ summ school_age_pop
 save school_age_pop,replace 
 
 *** Merge NHGIS data to tract panel
-merge 1:m tract70 using "interp_t_real.dta"
+merge 1:m tract70 using "tract_panel_interp_real.dta"
 
 rename _merge good_merge
 tempfile check_no_tract
@@ -569,8 +569,14 @@ save `grf_tract_school_age_pop_v2' , replace
 drop if missing(sdtc) | sdtc==4
 
 *** Generate school_age_pop measures
+* OLD VERSION: Assigns all 7-13 year olds to primary (overstates primary share)
 gen primary_age    = c04003 + c04004 + c04005 + c04006
 gen secondary_age  = c04007 + c04008 + c04009 + c04010
+
+* PRO-RATA VERSION: Split 7-13 band assuming ages 7-10 are primary (4 years),
+* ages 11-13 are secondary (3 years). This better reflects typical K-5/6-12 structure.
+*gen primary_age    = c04003 + c04004 + (4/7)*(c04005 + c04006)
+*gen secondary_age  = (3/7)*(c04005 + c04006) + c04007 + c04008 + c04009 + c04010
 gen age_total      = primary_age + secondary_age
 gen share_primary   = primary_age   / age_total if age_total > 0
 gen share_secondary = secondary_age / age_total if age_total > 0
@@ -1032,5 +1038,5 @@ drop _merge
 
 
 *** Save final cleaned dataset
-save county_exp_final, replace
+save county_panel, replace
 summarize

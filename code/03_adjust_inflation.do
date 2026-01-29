@@ -26,7 +26,7 @@ WHY THIS MATTERS (Workflow Context):
   "percentage change in year-2000 dollars per pupil."
 
 INPUTS:
-  - tracts_panel_canon.dta  (from 02_build_tract_panel.do)
+  - tract_panel.dta  (from 02_build_tract_panel.do)
       └─> Tract-year panel with nominal pp_exp
   - fiscal_year.csv
       └─> State FIPS × fiscal year start month (e.g., NY=4, CA=7)
@@ -34,7 +34,7 @@ INPUTS:
       └─> CPIAUCNS series (monthly CPI-U, not seasonally adjusted)
 
 OUTPUTS:
-  - tracts_panel_real.dta  ★ MAIN OUTPUT ★
+  - tract_panel_real.dta  ★ MAIN OUTPUT ★
       └─> Tract-year panel with:
           • pp_exp          (nominal dollars, original)
           • cpi_fy_avg      (state-FY-specific CPI index)
@@ -68,11 +68,11 @@ KEY ASSUMPTIONS & SENSITIVE STEPS:
 
 DEPENDENCIES:
   • Requires: global SchoolSpending "C:\Users\...\path"
-  • Requires: 02_build_tract_panel.do must run first (creates tracts_panel_canon.dta)
+  • Requires: 02_build_tract_panel.do must run first (creates tract_panel.dta)
   • Requires: FRED API key set in Stata (line 12: set fredkey ...)
   • Stata packages:
       - fred (install: ssc install fred)
-  • Downstream: 04_tag_county_quality.do uses tracts_panel_real.dta
+  • Downstream: 04_tag_county_quality.do uses tract_panel_real.dta
 
 VALIDATION CHECKS TO RUN:
   - CPI completeness: assert nmonths == 12 (every state-FY has 12 months)
@@ -162,7 +162,7 @@ save `deflators', replace
 *--------------------------------------------------------------*
 
 * 1)--------------------------------- Load tract panel
-use "$SchoolSpending/data/tracts_panel_canon", clear
+use "$SchoolSpending/data/tract_panel", clear
 
 * 2)--------------------------------- Standardize state_fips to str2
 
@@ -182,4 +182,4 @@ keep LEAID GOVID year4 pp_exp_real good_tract sdtc state_fips gisjoin2 coc70 tra
 	good_tract_1967 good_tract_1970 good_tract_1971 ///
     good_tract_1972 good_tract_6771 good_tract_7072 county_code
 gen tract_merge = substr(tract70,1,9)
-save "$SchoolSpending/data/tracts_panel_real.dta", replace
+save "$SchoolSpending/data/tract_panel_real.dta", replace

@@ -1,17 +1,24 @@
 /*==============================================================================
 Project    : School Spending – District Panel Construction and ID Crosswalks
-File       : 01_build_district_panel.do
-Purpose    : Build the foundation district-year panel by harmonizing NCES F-33
+File       : 01_build_district_panel_alt.do
+Purpose    : ALTERNATE VERSION with 1:m LEAID→GOVID recovery
+             Build the foundation district-year panel by harmonizing NCES F-33
              (1992-2019) and INDFIN (1967-1991) data sources and creating
              canonical crosswalks between incompatible district ID systems.
 Author     : Myles Owens
 Institution: Hoover Institution, Stanford University
-Date       : 2025-10-27
+Date       : 2025-01-20
 ───────────────────────────────────────────────────────────────────────────────
+
+WHAT'S DIFFERENT IN THIS VERSION:
+  • Recovers 1:m (LEAID→multiple GOVIDs) cases by keeping the most recent GOVID
+  • Original: 14,466 districts (1:1 only)
+  • This version: 14,466 + recovered 1:m cases
 
 WHAT THIS FILE DOES (Summary):
   • Imports and cleans F-33 (SAS) and INDFIN district finance data
   • Builds 1:1 crosswalk linking LEAID ↔ GOVID ↔ GRF identifiers
+  • RECOVERS 1:m cases by selecting most recent GOVID per LEAID
   • Creates quality flags for districts with complete baseline data (1967, 1970-1972)
   • Produces unified district-year panel spanning 1967-2019
   • Outputs canonical crosswalk file for all downstream geographic linking
@@ -22,7 +29,7 @@ WHY THIS MATTERS (Workflow Context):
   - F-33 uses LEAID (7-char NCES codes)
   - INDFIN uses GOVID (9-char government finance codes)
   - GRF uses LEAID for tract-district linkage
-  
+
   Without clean 1:1 mappings, we cannot link districts across time or connect
   them to Census geographies. The quality flags identify districts suitable for
   event-study analysis (must have spending data in all baseline years before
@@ -43,7 +50,32 @@ OUTPUTS:
   - dist_panel.dta                 # UNIFIED panel with quality flags
       └─> Key vars: LEAID, GOVID, year4, pp_exp, good_govid_*
 
+KEY ASSUMPTIONS & SENSITIVE STEPS:
+  1. Crosswalk Quality: Keeps 1:1 matches AND recovers 1:m by selecting
+     most recent GOVID per LEAID
 
+  2. Baseline Period: Tags districts as "good_govid" only if they have
+     NON-MISSING spending in ALL of: 1967, 1970, 1971, 1972
+     (This restriction is critical for constructing baseline spending quartiles)
+
+  3. ID Padding: LEAIDs padded to 7 chars, GOVIDs to 9 chars for consistency
+
+  4. Missing Data: Flags but RETAINS anomalous values (negative spending,
+     outliers) for traceability; cleaning happens downstream
+
+  5. GRF Integration: Reads fixed-width file to extract LEAIDs that exist in
+     1969 GRF (these are the only districts we can link to Census tracts)
+
+DEPENDENCIES:
+  • Requires: global SchoolSpending "C:\Users\...\path"
+  • Stata packages: None (uses base Stata only)
+  • Downstream files: 02_build_tract_panel.do requires f33_indfin_grf_canon.dta
+
+VALIDATION CHECKS TO RUN:
+  - Check crosswalk: count if _merge == 3 after LEAID-GOVID merge
+  - Check baseline flags: tab good_govid_baseline
+  - Check ID uniqueness: duplicates report LEAID year4
+  - Check spending coverage: count if missing(pp_exp) by year4
 ==============================================================================*/
 
 
@@ -108,7 +140,7 @@ foreach f of local files {
     * First, ensure it is a string
     tostring county_id, replace
     replace county_id = trim(county_id)
-    
+
     * LOGIC: Prepend zeros (to handle "95"), then take the LAST 3 characters.
     * If it was "01095" -> "00001095" -> takes last 3 -> "095"
     * If it was "95"    -> "00095"    -> takes last 3 -> "095"
@@ -147,49 +179,37 @@ save `base', replace
 use `base', clear
 
 *--------------------------------------------------------------*
-* C) Extract IDs and construct per-pupil expenditure (NO FILTERING)
+* C) Clean and construct per-pupil expenditure
 *--------------------------------------------------------------*
-* NOTE: All filtering moved to end of file to maximize crosswalk matches
 
 cd "$SchoolSpending/data"
-gen str9 GOVID = substr(CENSUSID,1,9)
 
-* 1)--------------------------------- Save ID file for crosswalk (all records)
-preserve
-keep LEAID CENSUSID NAME year
-gen str9 GOVID = substr(CENSUSID, 1, 9)
-save f33_id, replace
-restore
-
-* 2)--------------------------------- Rename variables
-rename V33 enrollment
-rename SCHLEV level
-
-* 3)--------------------------------- Flag anomalous values (keep flags, NO drops)
-gen bad_pop   = (enrollment <= 0 | missing(enrollment))
-label var bad_pop "Flag: zero, negative, or missing enrollment"
-gen bad_exp   = (TOTALEXP < 0)
+* 1)--------------------------------- Flag anomalous values (keep for inspection)
+gen bad_pop   = (V33 < 0)        // negative pop
+label var bad_pop "Zero or negative pop"
+label var bad_pop "Flag: zero or negative population"
+gen bad_exp   = (TOTALEXP < 0)    // negative expenditure
 label var bad_exp "Flag: negative expenditure"
-gen bad_level = inlist(level, "05", "06", "07", "N")
-label var bad_level "Flag: non-standard school level"
+drop if bad_exp ==1
+drop if bad_pop ==1
 
-* 4)--------------------------------- Calculate per-pupil expenditure (in $1000s)
+rename SCHLEV level
+/*
+drop if level == "06"
+drop if level == "07"
+drop if level == "05"
+drop if level == "N"
+*/
+* 2)--------------------------------- Calculate per-pupil expenditure (in #1000s)
 gen pp_exp = .
-replace pp_exp = (TOTALEXP/1000) / enrollment if enrollment > 0
-label var pp_exp "Per-pupil expenditure (thousands)"
+replace pp_exp = (TOTALEXP/1000) / V33
 
-* 5)--------------------------------- Report data quality (no drops yet)
-di as txt "=== F-33 Data Quality Report (pre-filter) ==="
-count if bad_pop == 1
-di as result "  Observations with bad enrollment: `r(N)'"
-count if bad_exp == 1
-di as result "  Observations with bad expenditure: `r(N)'"
-count if bad_level == 1
-di as result "  Observations with non-standard level: `r(N)'"
-count if year < 1992
-di as result "  Observations before 1992: `r(N)'"
+label var pp_exp "Per-pupil expenditure"
+drop if year < 1992
+* 3)--------------------------------- Extract 9-digit GOVID from 14-digit CENSUSID
+gen str9 GOVID = substr(CENSUSID,1,9)
+rename V33 enrollment
 
-* 6)--------------------------------- Save UNFILTERED panel (all records for crosswalk)
 save f33_panel, replace
 
 
@@ -214,7 +234,7 @@ local outDir "$SchoolSpending/data/raw/indfin/build_indfin_out_dir"
 * 2)--------------------------------- Define variables to retain
 local keepvars ///
     sortcode year4 id idchanged statecode typecode county name ///
-    population elemeductotalexp totalexpenditure totaleductotalexp 
+    population elemeductotalexp totalexpenditure totaleductotalexp
 
 * 3)--------------------------------- Filter to school districts and keep essential vars
 foreach y of local years {
@@ -245,28 +265,11 @@ di as result "✓ INDFIN panel (1967‑1991) complete."
 gen str9 GOVID = string(id, "%09.0f")
 cd "$SchoolSpending/data"
 
-* 3)--------------------------------- Rename variables
-rename population enrollment
-
-* 4)--------------------------------- Flag anomalous values (keep flags, NO drops)
-gen bad_pop = (enrollment <= 0 | missing(enrollment))
-label var bad_pop "Flag: zero, negative, or missing enrollment"
-gen bad_exp = (totalexpenditure < 0)
-label var bad_exp "Flag: negative expenditure"
-
-* 5)--------------------------------- Calculate per-pupil expenditure
+* 3)--------------------------------- Calculate per-pupil expenditure
 gen pp_exp = .
-replace pp_exp = totalexpenditure/enrollment if enrollment > 0
+replace pp_exp = totalexpenditure/population
 label var pp_exp "Per-pupil expenditure"
-
-* 6)--------------------------------- Report data quality (no drops yet)
-di as txt "=== INDFIN Data Quality Report (pre-filter) ==="
-count if bad_pop == 1
-di as result "  Observations with bad enrollment: `r(N)'"
-count if bad_exp == 1
-di as result "  Observations with bad expenditure: `r(N)'"
-
-* 7)--------------------------------- Save UNFILTERED panel
+rename population enrollment
 save indfin_panel, replace
 
 
@@ -275,6 +278,67 @@ save indfin_panel, replace
 *==============================================================*
 * III) Import Geographic Reference File (GRF) and Master IDs
 *==============================================================*
+
+*--------------------------------------------------------------*
+* A) Load F-33 ID crosswalk files
+*--------------------------------------------------------------*
+
+clear
+set more off
+cd "$SchoolSpending/data/raw/nces/build_f33_in_dir"
+
+* 1)--------------------------------- Convert SAS files to Stata
+local files : dir "." files "*.sas7bdat"
+
+foreach f of local files {
+    disp "Processing `f'"
+
+    import sas using "`f'", clear
+
+    local outname = subinstr("`f'", ".sas7bdat", ".dta", .)
+    save "`outname'", replace
+}
+
+*--------------------------------------------------------------*
+* B) Append all yearly ID files
+*--------------------------------------------------------------*
+
+* 1)--------------------------------- Prepare list of .dta files
+local files : dir "." files "*.dta"
+tempfile base
+
+local first = 1
+
+* 2)--------------------------------- Extract year and stack ID files
+foreach f of local files {
+    disp "Processing `f'"
+
+    * Try to pull year (example: "sdf92.dta" → 1992)
+    local shortyr = substr("`f'", 4, 2)
+    local year = cond(real("`shortyr'") < 50, 2000 + real("`shortyr'"), 1900 + real("`shortyr'"))
+
+    use LEAID CENSUSID NAME using "`f'", clear
+    gen year = `year'
+
+    if `first' {
+        save `base'
+        local first = 0
+    }
+    else {
+        append using `base'
+        save `base', replace
+    }
+}
+
+use `base', clear
+
+* 3)--------------------------------- Extract GOVID and save crosswalk
+cd "$SchoolSpending/data"
+gen str9 GOVID = substr(CENSUSID,1,9)
+save f33_id, replace
+
+
+
 
 *--------------------------------------------------------------*
 * C) Import fixed-width GRF ASCII file
@@ -291,44 +355,72 @@ infix ///
     byte  stc60  3-4      /* 1960 state code       */                           ///
     int   coc70  5-7      /* 1970 county code      */                           ///
     int   ctabu  8-10     /* county of population  */                           ///
+    byte  cencc  11       /* central-county flag   */                           ///
+    int   mcd    12-14    /* minor civil division  */                           ///
     int   placc  15-18    /* place code            */                           ///
     byte  platc  19       /* place-type code       */                           ///
     /* strings (SPSS marks with (A)) */                                         ///
+    str2  plasc  20-21    /* place-size code       */                           ///
+    str1  stcac  22-22    /* consolidated-area code*/                           ///
+    str4  smsa   23-26    /* SMSA code             */                           ///
     /* more numeric */                                                          ///
+    int   urbca  27-30    /* urbanized-area code   */                           ///
     int   trac   31-34    /* tracted-area code     */                           ///
+    byte  uniap  35       /* universal area prefix */                           ///
+    int   uniac  36-40    /* universal area code   */                           ///
     /* strings again */                                                         ///
+    str2  steac  41-42    /* state economic area   */                           ///
+    str3  ecosc  43-45    /* economic sub-region   */                           ///
+    str1  cebdc  46-46    /* CBD flag              */                           ///
     str30 arnam  47-76    /* area name             */                           ///
     /* back to numeric (ICPSR dropped Gov. ID; BTC starts here) */              ///
     long  btc    77-80    /* basic tract code      */                           ///
     int   tsc    81-82    /* tract suffix code     */                           ///
     byte  blgc   83       /* block-group code      */                           ///
     str5  endc   84-88    /* enum.-district code   */                           ///
+    str1  urrc   89-89    /* urban/rural flag      */                           ///
+    int   warc   90-91    /* ward code             */                           ///
+    int   codc   92-93    /* congressional district*/                           ///
     long  houc   94-100   /* housing count         */                           ///
     long  popc   101-108  /* population count      */                           ///
     long  sdc    109-113  /* school-district code  */                           ///
     byte  sdtc   114-114  /* school-district type  */                           ///
+    int   aduc   115-116  /* admin-unit code       */                           ///
     int   perc   117-119  /* percent equivalent    */                           ///
 using "`dfile'", clear
 
-* 2)--------------------------------- Apply variable labels (match infix)
-label variable stc70  "1970 state code"
-label variable stc60  "1960 state code"
-label variable coc70  "1970 county code"
-label variable ctabu  "County of population"
-label variable placc  "Place code"
-label variable platc  "Place-type code"
-label variable trac   "Tracted-area code"
-label variable arnam  "Area name"
-label variable btc    "Basic tract code"
-label variable tsc    "Tract suffix code"
-label variable blgc   "Block-group code"
-label variable endc   "Enumeration-district code"
-label variable houc   "Housing count"
-label variable popc   "Population count"
-label variable sdc    "School-district code"
-label variable sdtc   "School-district type"
-label variable perc   "Percent equivalent"
-
+* 2)--------------------------------- Apply variable labels
+label variable stc70  "1970 State Code"
+label variable stc60  "1960 State Code"
+label variable coc70  "1970 County Code"
+label variable ctabu  "County of Population"
+label variable cencc  "Central County Code"
+label variable mcd    "Minor Civil Division"
+label variable placc  "Place Code"
+label variable platc  "Place Type Code"
+label variable plasc  "Place Size Code"
+label variable stcac  "Std. Consolidated Area Code"
+label variable smsa   "SMSA Code"
+label variable urbca  "Urbanized Area Code"
+label variable trac   "Tracted Area Code"
+label variable uniap  "Universal Area Prefix"
+label variable uniac  "Universal Area Code"
+label variable steac  "State Economic Area Code"
+label variable ecosc  "Economic Subregion Code"
+label variable cebdc  "Central Business District Code"
+label variable arnam  "Area Name"
+label variable btc    "Basic Tract Code"
+label variable tsc    "Tract Suffix Code"
+label variable blgc   "Block Group Code"
+label variable endc   "Enumeration District Code"
+label variable urrc   "Urban/Rural Class Code"
+label variable warc   "Ward Code"
+label variable codc   "Congressional District Code"
+label variable houc   "Housing Count"
+label variable popc   "Population Count"
+label variable sdc    "School District Code"
+label variable sdtc   "School District Type Code"
+label variable aduc   "Administrative Unit Code"
 
 *export delimited using "grf_raw.csv", replace // For inspecting the GRF
 
@@ -511,7 +603,7 @@ save `govtag', replace // GOVIDs tagged with ids labeled as good(1) or bad (0)
 
 
 *--------------------------------------------------------------*
-* C) Build strict 1:1 LEAID↔GOVID crosswalk
+* C) Build strict 1:1 LEAID↔GOVID crosswalk (WITH 1:M RECOVERY)
 *--------------------------------------------------------------*
 
 use "f33_id.dta", clear
@@ -526,8 +618,6 @@ keep LEAID GOVID
     drop if missing(LEAID) // No LEAID means no GRF link so it is useless
 	drop if LEAID == "M" // Junk
 	drop if LEAID == "N" // Junk
-	drop if GOVID == "N" 
-	drop if missing(GOVID) 
     bysort LEAID: gen n_govid = _N       // distinct GOVIDs for this LEAID
     bysort GOVID: gen n_leaid = _N       // distinct LEAIDs for this GOVID
     gen byte rel_type = .
@@ -537,17 +627,99 @@ keep LEAID GOVID
     replace rel_type = 4 if n_govid>1  & n_leaid>1     // M:M
     label define rel 1 "1:1" 2 "1:M (LEAID→GOVID)" 3 "1:M (GOVID→LEAID)" 4 "M:M"
     label values rel_type rel
+	drop if GOVID == "N" & rel_type == 3 // Junk 
+	drop if missing(GOVID) & rel_type == 3 // Junk 
+	
 	tab rel_type
-* 3)--------------------------------- Keep only 1:1 matches (~51% of pairs)
-keep if rel_type == 1 
-isid LEAID  // should be unique now
+
+* 3a)--------------------------------- Save 1:1 cases with recovery flag
+preserve
+keep if rel_type == 1
+gen byte recovered_type = 0  // Flag: 0 = original 1:1
+keep LEAID GOVID recovered_type
+tempfile ones
+save `ones'
+restore
+
+* 3b)--------------------------------- Recover rel_type 2 (LEAID → multiple GOVIDs)
+*     Strategy: Keep the most recent GOVID for each LEAID
+
+preserve
+keep if rel_type == 2
+
+* Need year info to pick most recent - merge back to f33_id
+merge 1:m LEAID GOVID using "f33_id.dta", keepusing(year) keep(match) nogen
+
+* Convert year to numeric if needed
+destring year, replace force
+
+* Keep the most recent year for each LEAID-GOVID pair
+bysort LEAID GOVID (year): keep if _n == _N
+
+* Now pick the GOVID with the most recent appearance for each LEAID
+bysort LEAID (year): keep if _n == _N
+
+* Verify we now have 1 GOVID per LEAID
+isid LEAID
+
+* Keep just the crosswalk variables
+keep LEAID GOVID
+gen byte recovered_type = 2  // Flag: 2 = recovered from rel_type 2
+
+tempfile recovered_type2
+save `recovered_type2'
+restore
+
+* 3c)--------------------------------- Recover rel_type 3 (GOVID → multiple LEAIDs)
+*     Strategy: Keep ALL - each LEAID gets the same GOVID's spending
+
+preserve
+keep if rel_type == 3
+keep LEAID GOVID
+gen byte recovered_type = 3  // Flag: 3 = recovered from rel_type 3
+tempfile recovered_type3
+save `recovered_type3'
+restore
+
+* 3d)--------------------------------- Combine 1:1 and recovered types
+use `ones', clear
+append using `recovered_type2'
+append using `recovered_type3'
+
+bysort GOVID (recovered_type): keep if _n == 1
+
+
+* Report results
+count if recovered_type == 0
+local n_original = r(N)
+count if recovered_type == 2
+local n_recovered_type2 = r(N)
+count if recovered_type == 3
+local n_recovered_type3 = r(N)
+count
+local n_total = r(N)
+
+di as result "========================================"
+di as result "CROSSWALK CONSTRUCTION SUMMARY"
+di as result "========================================"
+di as result "Original 1:1 pairs:              `n_original'"
+di as result "Recovered type 2 (LEAID→GOVID):  `n_recovered_type2'"
+di as result "Recovered type 3 (GOVID→LEAID):  `n_recovered_type3'"
+di as result "Total crosswalk pairs:           `n_total'"
+di as result "========================================"
+* 3e)--------------------------------- Verify uniqueness and save
+
+isid LEAID   // LEAID should be unique
+isid GOVID   // GOVID should now also be unique
+
 tempfile map1to1
-save `map1to1', replace // Crosswalk 1:1 LEAID to GOVID
-save "xwalk_leaid_govid.dta", replace // Hard save for inspection on the side.
+save `map1to1', replace // Crosswalk 1:1 LEAID to GOVID (including recovered)
+save "xwalk_leaid_govid_alt.dta", replace // Hard save for inspection on the side.
 
 *--------------------------------------------------------------*
 * D) Map INDFIN to LEAID via 1:1 crosswalk
 *--------------------------------------------------------------*
+
 
 use `govtag', clear
 merge m:1 GOVID using `map1to1' // GOVIDs in INDFIN which overlap with crosswalk
@@ -559,7 +731,7 @@ label var mapped_1to1   "INDFIN GOVID mapped to LEAID via F-33 1:1"
 label var fail_unmapped "GOVID had no 1:1 LEAID map (excluded from main panel)"
 
 * 2)--------------------------------- Ensure LEAID uniqueness
-drop if _merge == 1 // Dropping GOVIDs that could never effect tracts' goodness. (There is no LEAID that can be linked to a tract)
+drop if _merge == 1 // Dropping GOVIDs that could never effect tracts' goodness
 replace good_govid_baseline = 0 if missing(good_govid_baseline) & _merge == 2
 replace good_govid_baseline_6771 = 0 if missing(good_govid_baseline_6771) & _merge == 2
 replace good_govid_baseline_7072 = 0 if missing(good_govid_baseline_7072) & _merge == 2
@@ -583,7 +755,7 @@ preserve
     keep LEAID county_id
     drop if missing(county_id)
 
-    * Keep most common county_id per LEAID (handles rare cases of multiple county ids)
+    * Keep most common county_id per LEAID (handles rare cases of boundary changes)
     bysort LEAID county_id: gen n = _N
     bysort LEAID: egen max_n = max(n)
     keep if n == max_n
@@ -601,7 +773,7 @@ merge m:1 LEAID using `county_map', keepusing(county_id) keep(master match) noge
 order LEAID GOVID county_id good_govid_baseline good_govid_baseline_6771 good_govid_baseline_7072 ///
       good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 ///
       n_baseline_years_present n_baseline_years_present_6771 n_baseline_years_present_7072 ///
-      mapped_1to1 fail_unmapped
+      mapped_1to1 fail_unmapped recovered_type
 
 *--------------------------------------------------------------*
 * E) Propagate quality tags to district-year panel
@@ -622,31 +794,27 @@ replace good_govid_1967 = 0 if missing(good_govid_1967)
 replace good_govid_1970 = 0 if missing(good_govid_1970)
 replace good_govid_1971 = 0 if missing(good_govid_1971)
 replace good_govid_1972 = 0 if missing(good_govid_1972)
-drop rel_type
 
 * 3)--------------------------------- Save tagged INDFIN panel
-save "indfin_panel_tagged.dta", replace
+save "indfin_panel_tagged_alt.dta", replace
 
 *--------------------------------------------------------------*
 * F) Merge with F-33 and create unified panel
 *--------------------------------------------------------------*
 
 * 1)--------------------------------- Append F-33 and INDFIN panels
-use "xwalk_leaid_govid.dta", clear
+use "xwalk_leaid_govid_alt.dta", clear
 merge 1:m LEAID GOVID using "f33_panel.dta"
 keep if _merge == 3
 drop _merge
 
 rename year year4
-append using "indfin_panel_tagged.dta"
+append using "indfin_panel_tagged_alt.dta"
 
 keep LEAID GOVID county_id year4 pp_exp good_govid_baseline enrollment level ///
-good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072 ///
-bad_pop bad_exp bad_level
-duplicates drop LEAID GOVID year4 pp_exp, force
+good_govid_1967 good_govid_1970 good_govid_1971 good_govid_1972 good_govid_baseline_6771 good_govid_baseline_7072 recovered_type
 
-* Fill bad_level for INDFIN rows (they don't have this issue)
-replace bad_level = 0 if missing(bad_level)
+duplicates drop LEAID GOVID year4 pp_exp, force
 
 * 2)--------------------------------- Propagate good_govid flags across all years
 bysort LEAID: egen __g = min(good_govid_baseline)
@@ -677,12 +845,14 @@ bysort LEAID: egen __g6 = min(good_govid_1972)
 replace good_govid_1972 = __g6 if missing(good_govid_1972)
 drop __g6
 
+
+
 * 3)--------------------------------- Remove duplicates
 drop if missing(year4)
-save "district_panel_tagged.dta", replace
+save "district_panel_tagged_alt.dta", replace
 
 *Plot of spending that i was curious about
-use "district_panel_tagged.dta", clear
+use "district_panel_tagged_alt.dta", clear
 drop if missing(good_govid_baseline)
 collapse (mean) pp_exp, by(year4)
 twoway line pp_exp year4
@@ -694,69 +864,15 @@ twoway line pp_exp year4
 * 1)--------------------------------- Join GRF IDs to district panel
 use grf_id,clear
 isid LEAID
-merge 1:m LEAID using "district_panel_tagged.dta"
+merge 1:m LEAID using "district_panel_tagged_alt.dta"
 keep if _merge ==3
 
 * 2)--------------------------------- Keep only matched records
+isid LEAID year4
 drop _merge
 
-*--------------------------------------------------------------*
-* H) Apply final data quality filters (AFTER all crosswalks built)
-*--------------------------------------------------------------*
-* NOTE: Filtering happens here to maximize LEAID matches in crosswalk
-
-* 1)--------------------------------- Report pre-filter counts
-di as txt "=== Final Filtering (after crosswalk construction) ==="
-count
-di as result "  Total observations before filtering: `r(N)'"
-
-* 2)--------------------------------- Drop bad enrollment
-count if bad_pop == 1
-local n_bad_pop = r(N)
-drop if bad_pop == 1
-di as result "  Dropped for bad enrollment: `n_bad_pop'"
-
-* 3)--------------------------------- Drop bad expenditure
-count if bad_exp == 1
-local n_bad_exp = r(N)
-drop if bad_exp == 1
-di as result "  Dropped for bad expenditure: `n_bad_exp'"
-
-* 4)--------------------------------- Drop non-standard school levels (F-33 only)
-capture confirm variable bad_level
-if !_rc {
-    count if bad_level == 1
-    local n_bad_level = r(N)
-    drop if bad_level == 1
-    di as result "  Dropped for non-standard level: `n_bad_level'"
-}
-
-* 5)--------------------------------- Drop pre-1992 F-33 observations (if any slipped through)
-count if year4 < 1967
-local n_early = r(N)
-drop if year4 < 1967
-di as result "  Dropped for year < 1967: `n_early'"
-
-* 6)--------------------------------- Report post-filter counts
-count
-di as result "  Total observations after filtering: `r(N)'"
-
-* 7)--------------------------------- Deduplicate LEAID-year conflicts (1990 multi-GOVID issue)
-*    Some LEAIDs map to multiple GOVIDs with different 1990 spending; average them
-duplicates tag LEAID year4, gen(_dup)
-count if _dup > 0
-local n_dup = r(N) / 2
-di as result "  Deduplicating `n_dup' LEAID-year pairs (averaging spending)"
- 
-bysort LEAID year4: egen _mean_pp_exp = mean(pp_exp)
-bysort LEAID year4: egen _mean_enroll = mean(enrollment)
-replace pp_exp = _mean_pp_exp if _dup > 0
-replace enrollment = _mean_enroll if _dup > 0
-bysort LEAID year4 (GOVID): keep if _n == 1
-drop _dup _mean_pp_exp _mean_enroll
- 
-* 8)--------------------------------- Verify uniqueness
-isid LEAID year4
-
-* 9)--------------------------------- Save final canonical panel
+* 3)--------------------------------- Save final canonical panel
 save dist_panel, replace
+
+
+

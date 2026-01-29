@@ -23,8 +23,8 @@ Produces coefficient plots with 90% confidence intervals.
 OPTIONS (set below in Section 0)
 --------------------------------------------------------------------------------
 
-use_alt:  0 = use jjp_final.dta (balanced on lexp_ma_strict)
-          1 = use jjp_final_alt.dta (balanced on lexp)
+use_alt:  0 = use analysis_panel_bal.dta (balanced on lexp_ma_strict)
+          1 = use analysis_panel_bal_alt.dta (balanced on lexp)
 
 outcomes: lexp, lexp_ma, lexp_ma_strict (loops over all three)
 
@@ -32,8 +32,8 @@ outcomes: lexp, lexp_ma, lexp_ma_strict (loops over all three)
 INPUTS
 --------------------------------------------------------------------------------
 
-- jjp_final.dta (from 06_build_jjp_final.do) if use_alt == 0
-- jjp_final_alt.dta (from 06_jjp_alt.do) if use_alt == 1
+- analysis_panel_bal.dta (from 06_build_analysis_panel_bal.do) if use_alt == 0
+- analysis_panel_bal_alt.dta (from 06_jjp_alt.do) if use_alt == 1
 
 --------------------------------------------------------------------------------
 OUTPUTS
@@ -63,16 +63,16 @@ set more off
 cd "$SchoolSpending/data"
 
 *--- OPTIONS: Set these before running ---
-global use_alt 1        // 0 = jjp_final (balance on lexp_ma_strict)
-                        // 1 = jjp_final_alt (balance on lexp)
+global use_alt 1        // 0 = analysis_panel_bal (balance on lexp_ma_strict)
+                        // 1 = analysis_panel_bal_alt (balance on lexp)
 
 *--- Determine which dataset to use
 if $use_alt == 1 {
-    local datafile "jjp_final_alt"
+    local datafile "analysis_panel_bal_alt"
     local balance_label "alt"
 }
 else {
-    local datafile "jjp_final"
+    local datafile "analysis_panel_bal"
     local balance_label "orig"
 }
 
@@ -93,7 +93,7 @@ else {
 *** ---------------------------------------------------------------------------
 *** Section 1: Event-Study Regressions by Quartile (Q1, Q2, Q3, Q4)
 *** ---------------------------------------------------------------------------
-local outcomes lexp lexp_ma lexp_ma_strict
+local outcomes lexp  lexp_ma lexp_ma_strict
 
 foreach v of local outcomes {
     forvalues q = 1/4 {
@@ -167,7 +167,7 @@ foreach v of local outcomes {
 *** Section 2: Event-Study Regression - Bottom 3 Quartiles Pooled (Q1-Q3)
 *** ---------------------------------------------------------------------------
 
-local outcomes lexp lexp_ma lexp_ma_strict
+local outcomes lexp  lexp_ma lexp_ma_strict
 
 foreach v of local outcomes {
     use `datafile', clear
@@ -224,5 +224,5 @@ foreach v of local outcomes {
         scheme(s2mono)
 
     *Uncomment to export
-    *graph export "$SchoolSpending/output/fig1_`v'_q123_`balance_label'.png", replace
+    graph export "$SchoolSpending/output/fig1_`v'_q123_`balance_label'.png", replace
 }

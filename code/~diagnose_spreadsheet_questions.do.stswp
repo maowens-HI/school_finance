@@ -1,0 +1,292 @@
+/*==============================================================================
+Project    : School Spending – State-Level Pipeline Diagnostic (Detailed)
+File       : diagnose_spreadsheet_questions.do
+Purpose    : Trace EXACTLY where and why counties drop for Nick's states
+Author     : Myles Owens / Claude
+Date       : 2025-01-26
+
+Pipeline stages:
+  1. indfin_panel.dta     - Raw INDFIN (GOVS codes)
+  2. dist_panel.dta       - After LEAID-GOVID crosswalk (GOVS codes)
+  3. tract_panel.dta      - After tract assignment (FIPS codes)
+  4. county_panel.dta     - After county collapse (FIPS codes)
+  5. analysis_panel_bal.dta - After balance + state filters (FIPS codes)
+
+GOVS-FIPS crosswalk:
+  AZ=03/04, CT=07/09, ME=20/23, MA=22/25, MT=27/30, NH=30/33
+  NY=33/36, OR=38/41, SC=41/45, TN=43/47, VT=46/50
+==============================================================================*/
+
+clear all
+set more off
+cd "$SchoolSpending/data"
+
+/*------------------------------------------------------------------------------
+For each state, we answer:
+  Q1: How many counties in raw INDFIN?
+  Q2: How many counties in dist_panel? (drop = no LEAID-GOVID match)
+  Q3: How many counties in tract_panel? (drop = no tracts link to district)
+  Q4: How many counties in county_panel?
+  Q5: How many counties in analysis_panel_bal?
+  Q6: How many pass good==1 & valid_st_gd==1?
+
+  For drops, we identify WHY:
+  - Stage 1→2: Which counties have no districts in GRF crosswalk?
+  - Stage 2→3: Which counties have no tracts assigned?
+  - Stage 4→5: Which counties fail balanced panel? Why?
+  - Stage 5→5b: Which counties fail good or valid_st_gd?
+------------------------------------------------------------------------------*/
+
+* Create tempfiles to store county lists at each stage
+tempfile indfin_counties dist_counties tract_counties county_counties ///
+         analysis_counties analysis_good
+
+*==============================================================================
+* STAGE 1: Raw INDFIN - unique counties by state
+*==============================================================================
+use "indfin_panel.dta", clear
+
+* Extract GOVS state and county from GOVID
+* GOVID format: SS5CCCDDD (state=1-2, type=3, county=4-6, district=7-9)
+gen govs_st = substr(GOVID, 1, 2)
+gen govs_cty = substr(GOVID, 4, 3)
+
+* Keep only Nick's states (using GOVS codes)
+keep if inlist(govs_st, "03", "07", "20", "22", "27") | ///
+        inlist(govs_st, "30", "33", "38", "41", "43", "46")
+
+* Unique counties
+keep govs_st govs_cty
+duplicates drop
+rename govs_st st
+rename govs_cty cty
+gen stage = 1
+save `indfin_counties', replace
+
+di _n "=== STAGE 1: INDFIN unique counties ==="
+tab st
+
+*==============================================================================
+* STAGE 2: dist_panel - unique counties by state
+*==============================================================================
+use "district_panel_tagged.dta", clear
+
+gen govs_st = substr(GOVID, 1, 2)
+gen govs_cty = substr(GOVID, 4, 3)
+
+keep if inlist(govs_st, "03", "07", "20", "22", "27") | ///
+        inlist(govs_st, "30", "33", "38", "41", "43", "46")
+
+keep govs_st govs_cty
+duplicates drop
+rename govs_st st
+rename govs_cty cty
+gen stage = 2
+save `dist_counties', replace
+
+di _n "=== STAGE 2: dist_panel unique counties ==="
+tab st
+
+*==============================================================================
+* STAGE 1→2 DIAGNOSIS: Which counties dropped?
+*==============================================================================
+use `indfin_counties', clear
+merge 1:1 st cty using `dist_counties', keepusing(stage)
+di _n "=== COUNTIES DROPPED FROM INDFIN → dist_panel ==="
+list st cty if _merge == 1, noobs
+
+*==============================================================================
+* STAGE 3: tract_panel - unique counties by state
+*==============================================================================
+use "tract_panel.dta", clear
+
+* county_code is 5-char FIPS
+gen fips_st = substr(county_code, 1, 2)
+gen fips_cty = substr(county_code, 3, 3)
+
+keep if inlist(fips_st, "04", "09", "23", "25", "30") | ///
+        inlist(fips_st, "33", "36", "41", "45", "47", "50")
+
+keep fips_st fips_cty
+duplicates drop
+rename fips_st st
+rename fips_cty cty
+gen stage = 3
+save `tract_counties', replace
+
+di _n "=== STAGE 3: tract_panel unique counties ==="
+tab st
+
+*==============================================================================
+* STAGE 4: county_panel - unique counties by state
+*==============================================================================
+use "county_panel.dta", clear
+
+gen fips_st = substr(county, 1, 2)
+gen fips_cty = substr(county, 3, 3)
+
+keep if inlist(fips_st, "04", "09", "23", "25", "30") | ///
+        inlist(fips_st, "33", "36", "41", "45", "47", "50")
+
+keep fips_st fips_cty
+duplicates drop
+rename fips_st st
+rename fips_cty cty
+gen stage = 4
+save `county_counties', replace
+
+di _n "=== STAGE 4: county_panel unique counties ==="
+tab st
+
+*==============================================================================
+* STAGE 3→4 DIAGNOSIS: Which counties dropped?
+*==============================================================================
+use `tract_counties', clear
+merge 1:1 st cty using `county_counties', keepusing(stage)
+di _n "=== COUNTIES DROPPED FROM tract_panel → county_panel ==="
+list st cty if _merge == 1, noobs
+
+*==============================================================================
+* STAGE 5: analysis_panel_bal - unique counties by state
+*==============================================================================
+use "analysis_panel_bal.dta", clear
+
+gen fips_st = substr(county_id, 1, 2)
+gen fips_cty = substr(county_id, 3, 3)
+
+keep if inlist(fips_st, "04", "09", "23", "25", "30") | ///
+        inlist(fips_st, "33", "36", "41", "45", "47", "50")
+
+keep fips_st fips_cty
+duplicates drop
+rename fips_st st
+rename fips_cty cty
+gen stage = 5
+save `analysis_counties', replace
+
+di _n "=== STAGE 5: analysis_panel_bal unique counties ==="
+tab st
+
+*==============================================================================
+* STAGE 4→5 DIAGNOSIS: Which counties dropped and why?
+*==============================================================================
+use `county_counties', clear
+merge 1:1 st cty using `analysis_counties', keepusing(stage)
+di _n "=== COUNTIES DROPPED FROM county_panel → analysis_panel_bal ==="
+list st cty if _merge == 1, noobs
+
+*==============================================================================
+* STAGE 5b: good==1 & valid_st_gd==1 counties
+*==============================================================================
+use "analysis_panel_bal.dta", clear
+
+gen fips_st = substr(county_id, 1, 2)
+gen fips_cty = substr(county_id, 3, 3)
+
+keep if inlist(fips_st, "04", "09", "23", "25", "30") | ///
+        inlist(fips_st, "33", "36", "41", "45", "47", "50")
+
+keep if good == 1 & valid_st_gd == 1
+
+keep fips_st fips_cty
+duplicates drop
+rename fips_st st
+rename fips_cty cty
+gen stage = 6
+save `analysis_good', replace
+
+di _n "=== STAGE 5b: analysis_panel_bal with good==1 & valid_st_gd==1 ==="
+tab st
+
+*==============================================================================
+* DETAILED STATE-BY-STATE DIAGNOSIS
+*==============================================================================
+
+di _n _n "==============================================================="
+di "DETAILED DIAGNOSIS BY STATE"
+di "==============================================================="
+
+*--- ARIZONA (GOVS 03, FIPS 04) ---
+di _n "=== ARIZONA (GOVS 03, FIPS 04) ==="
+
+* Count good vs bad tracts
+use "tract_panel.dta", clear
+gen fips_st = substr(county_code, 1, 2)
+keep if fips_st == "04"
+keep county_code good_tract_1972
+duplicates drop
+di "Tract-level good_1972 breakdown:"
+tab county_code good_tract_1972, m
+
+* Why did counties fail balanced panel?
+use "county_panel.dta", clear
+gen fips_st = substr(county, 1, 2)
+keep if fips_st == "04"
+di "Arizona counties in county_panel and their year coverage:"
+tab county year4 if inlist(year4, 1967, 1970, 1971, 1972)
+
+*--- CONNECTICUT (GOVS 07, FIPS 09) ---
+di _n "=== CONNECTICUT (GOVS 07, FIPS 09) ==="
+
+use "tract_panel.dta", clear
+gen fips_st = substr(county_code, 1, 2)
+keep if fips_st == "09"
+keep county_code good_tract_1972
+duplicates drop
+di "Tract-level good_1972 breakdown:"
+tab county_code good_tract_1972, m
+
+use "county_panel.dta", clear
+gen fips_st = substr(county, 1, 2)
+keep if fips_st == "09"
+di "CT counties in county_panel, years 1967-1972:"
+tab county year4 if inlist(year4, 1967, 1970, 1971, 1972)
+
+*--- OREGON (GOVS 38, FIPS 41) ---
+di _n "=== OREGON (GOVS 38, FIPS 41) ==="
+
+use "tract_panel.dta", clear
+gen fips_st = substr(county_code, 1, 2)
+keep if fips_st == "41"
+keep county_code good_tract_1972
+duplicates drop
+di "Tract-level good_1972 breakdown:"
+tab county_code good_tract_1972, m
+
+use "county_panel.dta", clear
+gen fips_st = substr(county, 1, 2)
+keep if fips_st == "41"
+di "OR counties in county_panel, years 1967-1972:"
+tab county year4 if inlist(year4, 1967, 1970, 1971, 1972)
+
+*--- SOUTH CAROLINA (GOVS 41, FIPS 45) ---
+di _n "=== SOUTH CAROLINA (GOVS 41, FIPS 45) ==="
+
+use "tract_panel.dta", clear
+gen fips_st = substr(county_code, 1, 2)
+keep if fips_st == "45"
+keep county_code good_tract_1972
+duplicates drop
+di "Tract-level good_1972 breakdown:"
+tab county_code good_tract_1972, m
+
+use "county_panel.dta", clear
+gen fips_st = substr(county, 1, 2)
+keep if fips_st == "45"
+di "SC counties in county_panel, years 1967-1972:"
+tab county year4 if inlist(year4, 1967, 1970, 1971, 1972)
+
+*--- Check WHY states fail valid_st_gd ---
+di _n "=== COUNT OF GOOD COUNTIES PER STATE (for valid_st_gd check) ==="
+use "analysis_panel_bal.dta", clear
+gen fips_st = substr(county_id, 1, 2)
+keep if inlist(fips_st, "04", "09", "23", "25", "30") | ///
+        inlist(fips_st, "33", "36", "41", "45", "47", "50")
+
+* Keep one row per county
+keep county_id fips_st good
+duplicates drop
+
+* Count good counties per state
+di "Counties by state and good status:"
+tab fips_st good

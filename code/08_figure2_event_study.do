@@ -28,8 +28,8 @@ Two estimation approaches for each spec:
 OPTIONS (set below in Section 0)
 --------------------------------------------------------------------------------
 
-use_alt:  0 = use jjp_final.dta (balanced on lexp_ma_strict)
-          1 = use jjp_final_alt.dta (balanced on lexp)
+use_alt:  0 = use analysis_panel_bal.dta (balanced on lexp_ma_strict)
+          1 = use analysis_panel_bal_alt.dta (balanced on lexp)
 
 outcomes: lexp, lexp_ma, lexp_ma_strict (loops over all three)
 
@@ -37,8 +37,8 @@ outcomes: lexp, lexp_ma, lexp_ma_strict (loops over all three)
 INPUTS
 --------------------------------------------------------------------------------
 
-- jjp_final.dta (from 06_build_jjp_final.do) if use_alt == 0
-- jjp_final_alt.dta (from 06_jjp_alt.do) if use_alt == 1
+- analysis_panel_bal.dta (from 06_build_analysis_panel_bal.do) if use_alt == 0
+- analysis_panel_bal_alt.dta (from 06_jjp_alt.do) if use_alt == 1
 
 --------------------------------------------------------------------------------
 OUTPUTS (saved to output/alt_test/)
@@ -81,7 +81,7 @@ Classification (FIXED 2026-01-15):
   - JJP (2016) approach: High = pred_spend > 0, Low = pred_spend <= 0
     "Roughly two thirds of districts in reform states had Spendd > 0"
   - Never-treated counties: assigned to Low group for regression (they serve as
-    controls since their lag_*/lead_* are always 0)
+    controls since their lag_* and lead_* are always 0)
 
   NOTE ON OVERLAPPING LINES: If all treated counties have pred_spend > 0 (due to
   large positive avg_main and small interaction terms), then:
@@ -110,16 +110,16 @@ set more off
 cd "$SchoolSpending/data"
 
 *--- OPTIONS: Set these before running ---
-global use_alt 1        // 0 = jjp_final (balance on lexp_ma_strict)
-                        // 1 = jjp_final_alt (balance on lexp)
+global use_alt 0        // 0 = analysis_panel_bal (balance on lexp_ma_strict)
+                        // 1 = analysis_panel_bal_alt (balance on lexp)
 
 *--- Determine which dataset to use
 if $use_alt == 1 {
-    local datafile "jjp_final_alt"
+    local datafile "analysis_panel_bal_alt"
     local balance_label "alt"
 }
 else {
-    local datafile "jjp_final"
+    local datafile "analysis_panel_bal"
     local balance_label "orig"
 }
 
@@ -235,28 +235,7 @@ foreach v of local outcomes {
     bysort county_id: egen `county_pred' = mean(pred_spend)
 
     * Calculate quartile cutoffs among treated only
-    _pctile `county_pred' if year == 1971 & never_treated == 0, p(25 50 75)
-    local p25 = r(r1)
-    local p50 = r(r2)
-    local p75 = r(r3)
-
-    gen byte pred_q = .
-    replace pred_q = 1 if pred_spend <= `p25' & never_treated == 0
-    replace pred_q = 2 if pred_spend > `p25' & pred_spend <= `p50' & never_treated == 0
-    replace pred_q = 3 if pred_spend > `p50' & pred_spend <= `p75' & never_treated == 0
-    replace pred_q = 4 if pred_spend > `p75' & never_treated == 0
-
-    *--- DIAGNOSTIC: Show High/Low and Quartile classification
-    di "=== DIAGNOSTIC: High/Low Classification ==="
-    tab high never_treated if year == 1971, m
-    di ""
-    di "=== DIAGNOSTIC: Mean pred_spend by High/Low (Treated Only) ==="
-    tabstat pred_spend if year == 1971, by(high) stat(mean sd n)
-    di ""
-    di "=== DIAGNOSTIC: pred_spend Quartiles (Treated Only) ==="
-    di "Quartile cutoffs: p25=`p25' p50=`p50' p75=`p75'"
-    tabstat pred_spend if year == 1971 & never_treated == 0, by(pred_q) stat(mean sd n)
-    di ""
+egen pred_q = group(pred_spend) if never_treated == 0
 
     *--- Save data with classifications for quartile graph later
     tempfile data_with_pred
@@ -695,6 +674,7 @@ foreach v of local outcomes {
 
     *--- Create grouped reform types variable
     *    Each unique combination of reform dummies becomes a discrete category
+	drop reform_types
     egen reform_types = group(reform_eq reform_mfp reform_ep reform_le reform_sl)
 
     *--- Set reform_types = 0 for never-treated (control) counties
@@ -992,6 +972,7 @@ foreach v of local outcomes {
     use `datafile', clear
 
     *--- Create grouped reform types variable
+	drop reform_types
     egen reform_types = group(reform_eq reform_mfp reform_ep reform_le reform_sl)
     replace reform_types = 0 if never_treated == 1
 
@@ -1298,7 +1279,7 @@ foreach v of local outcomes {
 
     graph export "$SchoolSpending/output/alt_test/fig2_`v'_specB_jk_`balance_label'_quartiles.png", replace
 }
-
+*/
 
 *** ---------------------------------------------------------------------------
 *** Section 3: Summary

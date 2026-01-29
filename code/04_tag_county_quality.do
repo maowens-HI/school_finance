@@ -30,13 +30,13 @@ WHY THIS MATTERS (Workflow Context):
   with complete baseline data. This conservative approach ensures clean comparisons.
 
 INPUTS:
-  - tracts_panel_real.dta  (from 03_adjust_inflation.do)
+  - tract_panel_real.dta  (from 03_adjust_inflation.do)
       └─> Tract-year panel with pp_exp_real and good_tract flags
   - grf_id_tractlevel.dta
       └─> Tract-level metadata including no_tract indicator
 
 OUTPUTS:
-  - county_clean.dta  ★ MAIN OUTPUT ★
+  - county_qual_flags.dta  ★ MAIN OUTPUT ★
       └─> County-year panel with quality flags:
           • county (5 chars: state+county FIPS)
           • good_county              (has complete 1967, 1970-1972 data)
@@ -48,7 +48,7 @@ OUTPUTS:
 
 DEPENDENCIES:
   • Requires: global SchoolSpending "C:\Users\...\path"
-  • Requires: 03_adjust_inflation.do must run first (creates tracts_panel_real.dta)
+  • Requires: 03_adjust_inflation.do must run first (creates tract_panel_real.dta)
   • Stata packages: None (base Stata only)
   • Downstream: 05_create_county_panel.do uses good_county flags for sample restrictions
 
@@ -62,7 +62,7 @@ DEPENDENCIES:
 *--------------------------------------------------------------*
 
 * 1)--------------------------------- Load inflation-adjusted tract panel
-use tracts_panel_real,clear
+use tract_panel_real,clear
 
 *** Rename county_code to county (already correctly defined in File 02)
 rename county_code county
@@ -96,11 +96,11 @@ keep county good_county good_county_6771 good_county_7072 good_county_1967 ///
 
 duplicates drop
 drop if missing(county)
-save county_clean, replace // list of each county tagged
+save county_qual_flags, replace // list of each county tagged
 
 restore
 
 preserve
-use county_clean,clear
+use county_qual_flags,clear
 keep if good_county_1970 == 1
 restore

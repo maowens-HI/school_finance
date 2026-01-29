@@ -1,8 +1,8 @@
 **# Bookmark #1
 /*==============================================================================
-Project    : School Spending - Build jjp_final Dataset
-File       : 06_build_jjp_final.do
-Purpose    : Construct final analysis dataset (jjp_final) from county panel by
+Project    : School Spending - Build analysis_panel_bal Dataset
+File       : 06_build_analysis_panel_bal.do
+Purpose    : Construct final analysis dataset (analysis_panel_bal) from county panel by
              applying balanced panel restrictions and state-level quality filters.
 Author     : Myles Owens
 Institution: Hoover Institution, Stanford University
@@ -16,18 +16,18 @@ WHAT THIS FILE DOES:
   - Step 3: Create rolling mean spending variables
   - Step 4: Apply balanced panel restriction (event window -5 to +17)
   - Step 5: Apply state-level filter (drop states with <10 balanced counties)
-  - Step 6: Save jjp_final.dta
+  - Step 6: Save analysis_panel_bal.dta
 
  
 
 INPUTS:
-  - county_exp_final.dta    (from 05_create_county_panel.do)
-  - county_clean.dta        (from 04_tag_county_quality.do)
+  - county_panel.dta    (from 05_create_county_panel.do)
+  - county_qual_flags.dta        (from 04_tag_county_quality.do)
 
  
 OUTPUTS:
-  - jjp_interp_final.dta    (Full county panel before balance restriction)
-  - jjp_final.dta           (Balanced panel with state filter applied)
+  - analysis_panel_unrestricted.dta    (Full county panel before balance restriction)
+  - analysis_panel_bal.dta           (Balanced panel with state filter applied)
 
  
 ==============================================================================*/
@@ -50,10 +50,10 @@ cd "$SchoolSpending/data"
 *** ---------------------------------------------------------------------------
 
  
-use county_exp_final, clear
+use county_panel, clear
 
  
-merge m:1 county using county_clean
+merge m:1 county using county_qual_flags
 keep if _merge == 3 | _merge == 1
 replace good_county_1972 = 0 if missing(good_county_1972)
 drop _merge
@@ -180,13 +180,15 @@ merge m:1 state_fips county_id using `q_all', nogen
 *** Section 5: Create Income Quartiles
 *** ---------------------------------------------------------------------------
 
+* Clean median family income upfront
+replace median_family_income = subinstr(median_family_income, ",", "", .)
+destring median_family_income, gen(med_fam_inc) force
+drop median_family_income
+
 * inc_q: Good counties only
 preserve
 keep if good_county_1972 == 1
-keep state_fips county_id median_family_income
-gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
-destring med_fam_inc, replace
-drop median_family_income
+keep state_fips county_id med_fam_inc
 duplicates drop
 keep if !missing(med_fam_inc, state_fips, county_id)
 
@@ -199,10 +201,7 @@ restore
 
 * inc_q_all: All counties
 preserve
-keep state_fips county_id median_family_income
-gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
-destring med_fam_inc, replace
-drop median_family_income
+keep state_fips county_id med_fam_inc
 duplicates drop
 keep if !missing(med_fam_inc, state_fips, county_id)
 
@@ -219,10 +218,7 @@ merge m:1 state_fips county_id using `inc_all', nogen
 
 * Get med_fam_inc values for final dataset
 preserve
-keep state_fips county_id median_family_income
-gen med_fam_inc = regexr(median_family_income, "[^0-9]", "")
-destring med_fam_inc, replace
-drop median_family_income
+keep state_fips county_id med_fam_inc
 duplicates drop
 
 tempfile inc_vals
@@ -238,10 +234,10 @@ merge m:1 state_fips county_id using `inc_vals', nogen
 
  
 
-save jjp_interp_final, replace
+save analysis_panel_unrestricted, replace
 
 *SPREADSHEET - Count of counties by state
-use jjp_interp_final, clear
+use analysis_panel_unrestricted, clear
 
 preserve
     * Keep one row per county
@@ -425,8 +421,8 @@ destring med_fam_inc, replace
 
 *--- Drop unnecessary variables
 rename good_county_1972 good
-drop year4 good_county good_county_* never_treated n_obs balanced median_family_income ///
-     county_name dup_tag ever_treated exp_ma  exp_ma_strict treatment
+drop year4 good_county good_county_* never_treated n_obs balanced  ///
+     county_name  ever_treated exp_ma  exp_ma_strict treatment // dup_tag
 *--- Rename for clarity
 rename never_treated2 never_treated
 rename year_unified year
@@ -460,7 +456,7 @@ label var reform_eq "Reform type (0=Adequacy, 1=Equity)"
 *** Section 11: Save Final Dataset
 *** ---------------------------------------------------------------------------
 
-save jjp_final, replace
+save analysis_panel_bal, replace
 
 
 * States in valid_st_gd
@@ -470,14 +466,14 @@ tab state_fips if valid_st_gd == 1
 tab state_fips if valid_st_gd == 1 & good == 1
 
 
-use jjp_final_alt,clear
+use analysis_panel_bal,clear
 keep if good == 1 & valid_st_gd == 1
 keep state_fips
 duplicates drop
 tab state_fips
 
 
-use jjp_final_alt, clear
+use analysis_panel_bal_alt, clear
 
 preserve
     * Keep one row per county

@@ -36,67 +36,47 @@ school_finance/
 ├── README.md                          # Project documentation
 ├── CLAUDE.md                          # AI assistant guide
 ├── run.do                             # Master pipeline runner
+├── data/                              # Data files (generated and raw)
+│   ├── raw/                           # Source files: F-33, INDFIN, GRF, NHGIS, etc.
+│   ├── dist_panel.dta                 # District-year panel with quality flags
+│   ├── tract_panel.dta                # Tract-year panel with spending
+│   ├── county_qual_flags.dta          # County-level quality flags
+│   ├── county_panel.dta               # County-year panel with reform treatment
+│   ├── analysis_panel_bal.dta         # Balanced analysis panel (lexp_ma_strict)
+│   └── analysis_panel_bal_alt.dta     # Alternative balanced panel (lexp)
+├── output/                            # Graphs and tables
 └── code/                              # All Stata scripts
     ├── 01_build_district_panel.do     # Build district panels & ID crosswalks
-    ├── 02_build_tract_panel.do        # Build tract panel from GRF
-    ├── 03_adjust_inflation.do         # Adjust tract spending for inflation
-    ├── 04_tag_county_quality.do       # Tag counties as good/bad (baseline data)
+    ├── 02_build_tract_panel_v2.do     # Build tract panel from GRF
+    ├── 03_tag_county_quality.do       # Tag counties as good/bad (baseline data)
     ├── 05_create_county_panel.do      # Interpolate districts & create county panel
-    ├── 06_build_jjp_final.do          # Build jjp_final balanced panel dataset
-    ├── 07_figure1_event_study.do      # Event-study regressions & Figure 1 plots
-    └── experimental_archive/          # Archived experimental analysis files
+    ├── 06_build_jjp_final.do          # Build balanced analysis panel (lexp_ma_strict)
+    ├── 06_jjp_alt.do                  # Build alternative balanced panel (lexp)
+    ├── 07_figure1_event_study.do      # Figure 1 event-study regressions
+    └── 08_figure2_event_study.do      # Figure 2 heterogeneity analysis
 ```
 
 **Pipeline Organization:**
-- **Core Pipeline (01-05):** Sequential data construction and preparation
+- **Core Pipeline (01–05):** Sequential data construction and preparation
   - 01: Build district panels & ID crosswalks
   - 02: Build tract panel from GRF
-  - 03: Adjust tract spending for inflation
-  - 04: Tag county quality (baseline data completeness)
-  - 05: Interpolate districts & create county panel
-- **Analysis Scripts (06-07):** Main event-study specifications
-  - 06: Build final analysis dataset with balanced panel restrictions and state filters
-  - 07: Run event-study regressions by baseline spending quartile and generate Figure 1 plots
-- **Experimental Archive:** Historical analysis files, robustness checks, and alternative specifications
+  - 03: Tag county quality (baseline data completeness)
+  - 05: Interpolate districts, adjust for inflation, create county panel
+- **Analysis Panel Construction (06):** Build balanced analysis datasets
+  - 06_jjp_alt: Balance on `lexp` (alternative, includes more counties)
+  - 06_build_jjp_final: Balance on `lexp_ma_strict` (13-year rolling mean)
+- **Event-Study Analysis (07–08):** Main regressions and figures
+  - 07: Figure 1 event-study regressions by baseline spending quartile
+  - 08: Figure 2 heterogeneity analysis (High vs Low predicted spending, jackknife)
 
 ---
 
 ### **How to Reproduce**
 
-#### **Step 0: Set Up Directory Structure**
-
-Before running the pipeline, ensure your project folder matches this structure:
-
-```
-your_project_folder/           ← Set $SchoolSpending to this path
-├── run.do                     ← Master pipeline runner (place at root)
-├── code/                      ← All Stata scripts
-│   ├── 01_build_district_panel.do
-│   ├── 02_build_tract_panel.do
-│   ├── 03_adjust_inflation.do
-│   ├── 04_tag_county_quality.do
-│   ├── 05_create_county_panel.do
-│   ├── 06_build_jjp_final.do
-│   ├── 07_figure1_event_study.do
-│   └── experimental_archive/
-├── data/                      ← All data files (create if missing)
-│   ├── raw/                   ← Raw input data
-│   │   ├── F33/               ← NCES F-33 SAS files (.sas7bdat)
-│   │   ├── INDFIN/            ← Historical finance files
-│   │   └── GRF/               ← 1969 Geographic Reference File
-│   ├── crosswalks/            ← ID crosswalk files
-│   ├── reform/                ← Reform timing data (tabula-tabled2.xlsx)
-│   └── [intermediate .dta files created by pipeline]
-├── logs/                      ← Log files (created automatically)
-└── output/                    ← Figures and tables (optional)
-```
-
-**Important:** The `run.do` file must be at the project root, not inside the `code/` folder. All scripts reference paths relative to `$SchoolSpending`.
-
 #### **Step 1: Set Up Global Path**
-In Stata run.do , define the project path:
+In `run.do`, set the project path to your local directory:
 ```stata
-global SchoolSpending "[your file path]"
+global SchoolSpending "C:\Users\<user>\OneDrive - Stanford\school\git"
 ```
 
 #### **Step 2: Run the Full Pipeline**
@@ -105,20 +85,21 @@ Execute the master runner script:
 do run.do
 ```
 
-Or run the core pipeline scripts individually in order:
+Or execute scripts individually in order:
 ```stata
+* Phase I: Data Construction
 do code/01_build_district_panel.do
-do code/02_build_tract_panel.do
-do code/03_adjust_inflation.do
-do code/04_tag_county_quality.do
+do code/02_build_tract_panel_v2.do
+do code/03_tag_county_quality.do
 do code/05_create_county_panel.do
-```
 
-#### **Step 3: Run Analysis**
-Execute main analysis scripts:
-```stata
+* Phase II: Analysis Panel Construction
+do code/06_jjp_alt.do
 do code/06_build_jjp_final.do
+
+* Phase III: Event-Study Analysis
 do code/07_figure1_event_study.do
+do code/08_figure2_event_study.do
 ```
 
 ---
@@ -141,45 +122,45 @@ Where: SS = State FIPS, CCC = County FIPS, DDDDD = District code, BTCTSC = Basic
 ### **Data Notes**
 
 **Coverage:**
-- **Time Period:** 1966, 1968-2021 (F-33 and INDFIN harmonization)
+- **Time Period:** 1967, 1969–2019 (F-33 and INDFIN harmonization)
 - **Geographic Units:** 1970 Census tract definitions
-- **Sample Restrictions:** Counties without missing spending data for baseline year 1971.
+- **Sample Restrictions:** Counties with non-missing 1972 baseline spending; balanced panel requires non-missing spending across the event window (-5 to +17 relative to reform); states with <10 balanced counties are dropped.
 
-**Variable Dictionary (jjp_final.dta):**
+**Variable Dictionary (analysis_panel_bal.dta / analysis_panel_bal_alt.dta):**
 
 *Identifiers:*
 | Variable | Description |
 |----------|-------------|
 | `county_id` | 5-digit FIPS code (state + county) |
 | `state_fips` | 2-digit state FIPS code |
-| `year` | School year (fiscal year end - 1) |
+| `year4` | Fiscal year end year |
+| `year_unified` | School year (year4 - 1) |
 | `relative_year` | Years since reform (missing for never-treated) |
 
 *Outcome Variables:*
 | Variable | Description |
 |----------|-------------|
 | `exp` | Per-pupil expenditure (2000 dollars, winsorized) |
-| `lexp_ma_strict` | Log PPE, 13-year strict rolling mean (primary outcome) |
+| `lexp` | Log per-pupil expenditure |
 | `lexp_ma` | Log PPE, 13-year rolling mean |
+| `lexp_ma_strict` | Log PPE, 13-year strict rolling mean (primary outcome) |
 
 *Baseline Characteristics:*
 | Variable | Description |
 |----------|-------------|
-| `pre_q` | Baseline spending quartile (1971, within-state) - good counties only |
-| `pre_q_all` | Baseline spending quartile (1971, within-state) - all counties |
-| `inc_q` | Income quartile (1970 Census, within-state) - good counties only |
-| `inc_q_all` | Income quartile (1970 Census, within-state) - all counties |
-| `med_fam_inc` | Median family income (1970 Census) |
-| `school_age_pop` | School-age population (weight variable) |
+| `pre_q` | Baseline spending quartile (within-state) |
+| `inc_q` | Income quartile (1970 Census, within-state) |
+| `median_family_income` | Median family income (1970 Census) |
+| `school_age_pop` | School-age population ages 5-17 (weight variable) |
 
 *Treatment Variables:*
 | Variable | Description |
 |----------|-------------|
 | `never_treated` | 1 = control state (no reform) |
 | `reform_year` | Year court-ordered reform took effect |
-| `reform_types` | Group indicator for reform type combination |
+| `reform_types` | Group indicator for reform type combination (via `egen group()`) |
 
-*Binary Reform Type Indicators (from JJP 2013 Table D2):*
+*Binary Reform Type Indicators (from JJP Table D2):*
 | Variable | Description |
 |----------|-------------|
 | `reform_eq` | 0 = Adequacy, 1 = Equity |
@@ -188,24 +169,17 @@ Where: SS = State FIPS, CCC = County FIPS, DDDDD = District code, BTCTSC = Basic
 | `reform_le` | Local Effort Equalization |
 | `reform_sl` | Spending Limits |
 
-*Indicator Flags (for filtering):*
+*Quality Flags:*
 | Variable | Description |
 |----------|-------------|
-| `good` | 1 = non-missing 1972 baseline spending, 0 = missing |
-| `valid_st` | 1 = state has ≥10 total counties |
-| `valid_st_gd` | 1 = state has ≥10 good counties (primary filter) |
+| `good_county_1972` | 1 = non-missing 1972 baseline spending |
+| `good_county` | 1 = complete baseline data (1967, 1970-1972) |
 
 *Event-Study Indicators:*
 | Variable | Description |
 |----------|-------------|
 | `lead_1` to `lead_5` | Pre-reform year dummies (`lead_5` binned at -5 and earlier) |
 | `lag_1` to `lag_17` | Post-reform year dummies (`lag_17` binned at +17 and later) |
-
-**Sample Statistics:**
-| Filter | Observations | Counties | States |
-|--------|--------------|----------|--------|
-| No filter | 83,160 | 1,485 | 26 |
-| `valid_st_gd` filter | 81,032 | 1,447 | 25 |
 
 **Spatial Matching:**
 - Uses 1970 tract definitions from 1969-70 GRF
@@ -225,60 +199,56 @@ Where: SS = State FIPS, CCC = County FIPS, DDDDD = District code, BTCTSC = Basic
 The pipeline follows a sequential process:
 
 **Phase I: Data Construction**
-1. **01_build_district_panel.do** - Builds district-year panels from F-33 and INDFIN, creates canonical LEAID ↔ GOVID crosswalks
-2. **02_build_tract_panel.do** - Parses 1969 GRF to link districts to Census tracts, assigns single LEAID per tract
-3. **03_adjust_inflation.do** - Adjusts tract-level spending for inflation using FRED CPI-U data
-4. **04_tag_county_quality.do** - Tags counties as "good" or "bad" based on baseline year data completeness (1967, 1970-1972)
-5. **05_create_county_panel.do** - Interpolates district panel, re-assigns to tracts, imports enrollment data, collapses to county-year panel
+1. **01_build_district_panel.do** — Imports F-33 SAS files (1992–2019) and INDFIN (1967–1991), builds 1:1 LEAID↔GOVID crosswalk, parses GRF for district-tract-county linkage, creates quality flags for baseline completeness
+   - **Outputs:** `dist_panel.dta`, `f33_panel.dta`, `indfin_panel.dta`, `grf_id_tractlevel.dta`, `xwalk_leaid_govid.dta`
+2. **02_build_tract_panel_v2.do** — Links districts to 1970 Census tracts via GRF allocated population weights, assigns one LEAID per tract, propagates quality flags from districts to tracts
+   - **Outputs:** `tract_panel.dta`, `xwalk_tract_dist.dta`
+3. **03_tag_county_quality.do** — Collapses tract-level quality flags to counties using MIN logic (county is "good" only if all its tracts link to districts with complete baseline data)
+   - **Outputs:** `county_qual_flags.dta`
+4. **05_create_county_panel.do** — Interpolates district spending (gaps ≤ 3 years), adjusts for inflation (CPI-U, 2000 dollars), imports NHGIS enrollment data, handles untracted areas (residual population method), collapses to enrollment-weighted county averages, merges JJP reform treatment data and median family income
+   - **Outputs:** `county_panel.dta`, `dist_panel_interp.dta`, `tract_panel_interp_real.dta`
 
-**Phase II: Analysis Dataset Construction**
-6. **06_build_jjp_final.do** - Constructs the final analysis dataset (jjp_final.dta)
-   - Loads county panel and merges quality flags
-   - Applies baseline data quality filter (good_county_1972)
-   - Creates rolling mean spending variables
-   - Applies balanced panel restriction (event window -5 to +17)
-   - Applies state-level filter (drops states with <10 balanced counties)
-   - **Outputs:** `jjp_interp_final.dta`, `jjp_final.dta`
+**Phase II: Analysis Panel Construction**
+5. **06_jjp_alt.do** — Merges quality flags, applies balanced panel restriction on `lexp` (event window -5 to +17), drops states with <10 balanced counties
+   - **Outputs:** `analysis_panel_bal_alt.dta`, `analysis_panel_unrestricted_alt.dta`
+6. **06_build_jjp_final.do** — Same pipeline but balances on `lexp_ma_strict` (13-year strict rolling mean)
+   - **Outputs:** `analysis_panel_bal.dta`, `analysis_panel_unrestricted.dta`
 
 **Phase III: Event-Study Analysis**
-7. **07_figure1_event_study.do** - Runs event-study regressions and generates Figure 1 plots
-   - **Part A:** Event-study regressions by individual quartile (Q1, Q2, Q3, Q4)
-   - **Part B:** Event-study regression for bottom 3 quartiles pooled (Q1-Q3)
-   - **Specification:** Log 13-year strict rolling mean PPE with county and year FE
-   - **Weights:** School-age population
-   - **Sample:** Reform year < 2000 (excludes late reforms)
-   - **Outputs:** Coefficient plots with 90% confidence intervals
-
-**Archived Experiments**
-- `experimental_archive/` contains historical robustness checks, alternative specifications, jackknife analyses, and exploratory work
+7. **07_figure1_event_study.do** — Event-study regressions by baseline spending quartile
+   - **Part A:** Individual quartile regressions (Q1, Q2, Q3, Q4)
+   - **Part B:** Bottom 3 quartiles pooled (Q1–Q3)
+   - **Specification:** County and year FE, clustered SEs, school-age population weights
+   - **Outcomes:** `lexp`, `lexp_ma`, `lexp_ma_strict`
+   - **Outputs:** Coefficient plots with 90% CIs (PNG)
+8. **08_figure2_event_study.do** — Heterogeneity analysis (JJP Figure 2)
+   - **Spec A:** Baseline spending quartile interactions
+   - **Spec B:** Baseline spending + income × reform type interactions
+   - **Approach:** Full-sample and leave-one-state-out jackknife predictions
+   - **Classification:** Counties split into High vs Low predicted spending increase
+   - **Outputs:** High/Low and quartile event-study graphs (PNG)
 
 ---
 
 ### **Key Outputs**
 
 **Intermediate Datasets:**
-- `districts_panel_canon.dta` - District-year panel with quality flags (from 01)
-- `tracts_panel_canon.dta` - Tract-year panel with assigned LEAIDs (from 02)
-- `tracts_panel_real.dta` - Inflation-adjusted tract panel (from 03)
-- `county_clean.dta` - County quality flags (from 04)
+- `dist_panel.dta` — District-year panel with quality flags (from 01)
+- `tract_panel.dta` — Tract-year panel with assigned LEAIDs (from 02)
+- `county_qual_flags.dta` — County-level quality flags (from 03)
+- `county_panel.dta` — County-year panel with reform treatment data (from 05)
 
 **Final Analysis Datasets:**
-- `county_exp_final.dta` - County-year panel (1967, 1969-2019) with:
-  - Per-pupil spending (nominal and real 2000 dollars)
-  - School-age population weights
-  - Reform exposure variables
-  - Baseline spending quartiles
-
-- `jjp_interp_final.dta` - Full county panel before balance restriction (from 06)
-
-- `jjp_final.dta` - Balanced panel with state filter applied (from 06):
+- `analysis_panel_unrestricted.dta` / `analysis_panel_unrestricted_alt.dta` — Full county panels before balance restriction (from 06)
+- `analysis_panel_bal.dta` — Balanced panel (balanced on `lexp_ma_strict`) with state filter applied (from 06):
   - Counties with complete event windows (-5 to +17)
   - States with ≥10 balanced counties
   - Ready for event-study analysis
+- `analysis_panel_bal_alt.dta` — Alternative balanced panel (balanced on `lexp`, includes more counties)
 
 **Analysis Outputs:**
-- Event-study regression estimates (from 07)
-- Event-study plots by baseline spending quartile showing dynamic treatment effects
+- Figure 1: Event-study coefficient plots by baseline spending quartile (from 07)
+- Figure 2: High vs Low predicted spending increase, with jackknife robustness (from 08)
 
 ---
 
